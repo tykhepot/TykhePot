@@ -1,0 +1,17 @@
+{
+  "files": {
+    "main.css": "/TykhePot/static/css/main.1aad7f03.css",
+    "main.js": "/TykhePot/static/js/main.558b6ba1.js",
+    "static/js/648.8882d0e0.chunk.js": "/TykhePot/static/js/648.8882d0e0.chunk.js",
+    "static/js/227.fa19e11e.chunk.js": "/TykhePot/static/js/227.fa19e11e.chunk.js",
+    "index.html": "/TykhePot/index.html",
+    "main.1aad7f03.css.map": "/TykhePot/static/css/main.1aad7f03.css.map",
+    "main.558b6ba1.js.map": "/TykhePot/static/js/main.558b6ba1.js.map",
+    "648.8882d0e0.chunk.js.map": "/TykhePot/static/js/648.8882d0e0.chunk.js.map",
+    "227.fa19e11e.chunk.js.map": "/TykhePot/static/js/227.fa19e11e.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.1aad7f03.css",
+    "static/js/main.558b6ba1.js"
+  ]
+}

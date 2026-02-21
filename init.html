@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TykhePot - Initialize</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+    }
+    .container {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,215,0,0.3);
+      border-radius: 16px;
+      padding: 40px;
+      max-width: 500px;
+      width: 90%;
+      text-align: center;
+    }
+    h1 {
+      color: #ffd700;
+      margin-bottom: 20px;
+      font-size: 28px;
+    }
+    p {
+      color: #aaa;
+      margin-bottom: 15px;
+      line-height: 1.6;
+    }
+    .wallet-btn {
+      background: linear-gradient(90deg, #512da8, #00d4ff);
+      border: none;
+      padding: 12px 30px;
+      border-radius: 8px;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 16px;
+      margin-top: 20px;
+    }
+    .init-btn {
+      background: linear-gradient(90deg, #ffd700, #ff6b6b);
+      border: none;
+      padding: 15px 40px;
+      border-radius: 8px;
+      color: #000;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 18px;
+      margin-top: 20px;
+    }
+    .status {
+      margin-top: 20px;
+      padding: 15px;
+      border-radius: 8px;
+    }
+    .loading { background: rgba(255,255,255,0.1); color: #ffd700; }
+    .success { background: rgba(0,255,136,0.2); color: #00ff88; }
+    .error { background: rgba(255,68,68,0.2); color: #ff4444; }
+  </style>
+  <script src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>🚀 Initialize TykhePot</h1>
+    <p>One-time setup required to activate the contract.</p>
+    <div id="content">
+      <p style="color:#666">Loading...</p>
+    </div>
+  </div>
+
+  <script>
+    const PROGRAM_ID = new solanaWeb3.PublicKey('5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b');
+    const TOKEN_MINT = new solanaWeb3.PublicKey('FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY');
+    const RESERVE_MINT = new solanaWeb3.PublicKey('9Z3c9tVQo2YfakysXUbLr2UdP4HKnszNUz1BdLjCTQm2');
+    
+    const [statePDA] = solanaWeb3.PublicKey.findProgramAddressSync(
+      [new TextEncoder().encode('state')],
+      PROGRAM_ID
+    );
+
+    const connection = new solanaWeb3.Connection('https://api.devnet.solana.com', 'confirmed');
+    let wallet = null;
+
+    async function checkStatus() {
+      try {
+        const account = await connection.getAccountInfo(statePDA);
+        if (account) {
+          document.getElementById('content').innerHTML = `
+            <div class="status success">
+              <h3>✅ Contract Initialized!</h3>
+              <p>The contract is ready to use.</p>
+              <p style="font-size:12px; margin-top:10px;">State: ${statePDA.toString().slice(0, 20)}...</p>
+            </div>
+            <button class="wallet-btn" onclick="window.location.href='/'">Go to App</button>
+          `;
+          return;
+        }
+        showConnectButton();
+      } catch (e) {
+        showConnectButton();
+      }
+    }
+
+    function showConnectButton() {
+      document.getElementById('content').innerHTML = `
+        <p style="margin-top:20px;">Connect your Phantom wallet to initialize:</p>
+        <button class="wallet-btn" onclick="connectWallet()">Connect Phantom</button>
+        <div id="error" style="margin-top:15px; color:#ff4444;"></div>
+      `;
+    }
+
+    async function connectWallet() {
+      try {
+        if (!window.solana || !window.solana.isPhantom) {
+          document.getElementById('error').textContent = 'Please install Phantom wallet';
+          return;
+        }
+        
+        const resp = await window.solana.connect();
+        wallet = resp.publicKey;
+        
+        document.getElementById('content').innerHTML = `
+          <p style="margin-top:20px;">Connected: <span style="color:#00d4ff">${wallet.toString().slice(0, 8)}...</span></p>
+          <button class="init-btn" onclick="initialize()">Initialize Contract</button>
+          <div id="status" style="margin-top:15px;"></div>
+        `;
+      } catch (e) {
+        document.getElementById('error').textContent = 'Failed to connect: ' + e.message;
+      }
+    }
+
+    async function initialize() {
+      const statusDiv = document.getElementById('status');
+      statusDiv.innerHTML = '<div class="status loading">Processing transaction...</div>';
+      
+      try {
+        // Build transaction
+        const discriminator = new Uint8Array([175, 175, 109, 31, 13, 152, 155, 237]);
+        const params = new Uint8Array(16);
+        
+        const data = new Uint8Array([...discriminator, ...params]);
+        
+        const keys = [
+          { pubkey: wallet, isSigner: true, isWritable: false },
+          { pubkey: statePDA, isSigner: false, isWritable: true },
+          { pubkey: TOKEN_MINT, isSigner: false, isWritable: false },
+          { pubkey: RESERVE_MINT, isSigner: false, isWritable: false },
+          { pubkey: wallet, isSigner: false, isWritable: false },
+          { pubkey: solanaWeb3.SystemProgram.programId, isSigner: false, isWritable: false },
+        ];
+
+        const instruction = new solanaWeb3.TransactionInstruction({
+          keys,
+          programId: PROGRAM_ID,
+          data: Buffer.from(data),
+        });
+
+        const transaction = new solanaWeb3.Transaction().add(instruction);
+        transaction.feePayer = wallet;
+        
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+
+        const signed = await window.solana.signTransaction(transaction);
+        const sig = await connection.sendRawTransaction(signed.serialize());
+        
+        statusDiv.innerHTML = '<div class="status loading">Confirming transaction...</div>';
+        await connection.confirmTransaction(sig);
+        
+        statusDiv.innerHTML = `
+          <div class="status success">
+            <h3>✅ Success!</h3>
+            <p>Transaction: <a href="https://solscan.io/tx/${sig}?cluster=devnet" target="_blank" style="color:#00d4ff">${sig.slice(0, 16)}...</a></p>
+          </div>
+        `;
+        
+        setTimeout(checkStatus, 2000);
+      } catch (e) {
+        statusDiv.innerHTML = `<div class="status error">❌ Error: ${e.message}</div>`;
+      }
+    }
+
+    // Start
+    checkStatus();
+  </script>
+</body>
+</html>
