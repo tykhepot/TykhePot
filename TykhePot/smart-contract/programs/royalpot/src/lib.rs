@@ -218,41 +218,26 @@ pub mod royalpot {
         let prize_amount = amount - burn_amount - platform_amount;
         
         // 执行转账
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_token.to_account_info(),
-                    to: ctx.accounts.burn_account.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            burn_amount,
-        )?;
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.user_token.to_account_info(),
+            to: ctx.accounts.burn_account.to_account_info(),
+            authority: ctx.accounts.user.to_account_info(),
+        };
+        token::transfer(CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts), burn_amount)?;
         
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_token.to_account_info(),
-                    to: ctx.accounts.platform_token.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            platform_amount,
-        )?;
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.user_token.to_account_info(),
+            to: ctx.accounts.platform_token.to_account_info(),
+            authority: ctx.accounts.user.to_account_info(),
+        };
+        token::transfer(CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts), platform_amount)?;
         
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_token.to_account_info(),
-                    to: ctx.accounts.hourly_prize_vault.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            prize_amount,
-        )?;
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.user_token.to_account_info(),
+            to: ctx.accounts.hourly_prize_vault.to_account_info(),
+            authority: ctx.accounts.user.to_account_info(),
+        };
+        token::transfer(CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts), prize_amount)?;
         
         // 更新状态
         state.hourly_pool.total_amount += prize_amount;
@@ -324,54 +309,40 @@ pub mod royalpot {
         let total_prize_amount = user_contribution + reserve_match;
         
         // 转账到销毁账户
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_token.to_account_info(),
-                    to: ctx.accounts.burn_account.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            burn_amount,
-        )?;
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.user_token.to_account_info(),
+            to: ctx.accounts.burn_account.to_account_info(),
+            authority: ctx.accounts.user.to_account_info(),
+        };
+        token::transfer(CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts), burn_amount)?;
         
         // 转账到平台账户
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_token.to_account_info(),
-                    to: ctx.accounts.platform_token.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            platform_amount,
-        )?;
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.user_token.to_account_info(),
+            to: ctx.accounts.platform_token.to_account_info(),
+            authority: ctx.accounts.user.to_account_info(),
+        };
+        token::transfer(CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts), platform_amount)?;
         
         // 转账到奖池
-        token::transfer(
-            CpiContext::new(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.user_token.to_account_info(),
-                    to: ctx.accounts.daily_prize_vault.to_account_info(),
-                    authority: ctx.accounts.user.to_account_info(),
-                },
-            ),
-            user_contribution,
-        )?;
+        let cpi_accounts = Transfer {
+            from: ctx.accounts.user_token.to_account_info(),
+            to: ctx.accounts.daily_prize_vault.to_account_info(),
+            authority: ctx.accounts.user.to_account_info(),
+        };
+        token::transfer(CpiContext::new(ctx.accounts.token_program.to_account_info(), cpi_accounts), user_contribution)?;
         
         // 从储备转账配比
         if reserve_match > 0 {
+            let cpi_accounts = Transfer {
+                from: ctx.accounts.reserve_vault.to_account_info(),
+                to: ctx.accounts.daily_prize_vault.to_account_info(),
+                authority: ctx.accounts.reserve_authority.to_account_info(),
+            };
             token::transfer(
                 CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
-                    Transfer {
-                        from: ctx.accounts.reserve_vault.to_account_info(),
-                        to: ctx.accounts.daily_prize_vault.to_account_info(),
-                        authority: ctx.accounts.reserve_authority.to_account_info(),
-                    },
+                    cpi_accounts,
                     &[&[b"reserve", &[ctx.bumps.reserve_authority]]],
                 ),
                 reserve_match,
@@ -387,14 +358,15 @@ pub mod royalpot {
                 
                 if actual_referral_reward > 0 {
                     // 修复：实际转账推广奖励
+                    let cpi_accounts = Transfer {
+                        from: ctx.accounts.referral_vault.to_account_info(),
+                        to: ctx.accounts.referrer_token.to_account_info(),
+                        authority: ctx.accounts.referral_authority.to_account_info(),
+                    };
                     token::transfer(
                         CpiContext::new_with_signer(
                             ctx.accounts.token_program.to_account_info(),
-                            Transfer {
-                                from: ctx.accounts.referral_vault.to_account_info(),
-                                to: ctx.accounts.referrer_token.to_account_info(),
-                                authority: ctx.accounts.referral_authority.to_account_info(),
-                            },
+                            cpi_accounts,
                             &[&[b"referral", &[ctx.bumps.referral_authority]]],
                         ),
                         actual_referral_reward,
@@ -776,17 +748,21 @@ pub struct Deposit<'info> {
     )]
     pub user_state: Account<'info, UserState>,
     
+    /// CHECK: 用户代币账户
     #[account(mut)]
-    pub user_token: Account<'info, TokenAccount>,
+    pub user_token: AccountInfo<'info>,
     
+    /// CHECK: 销毁账户
     #[account(mut)]
-    pub burn_account: Account<'info, TokenAccount>,
+    pub burn_account: AccountInfo<'info>,
     
+    /// CHECK: 平台账户
     #[account(mut)]
-    pub platform_token: Account<'info, TokenAccount>,
+    pub platform_token: AccountInfo<'info>,
     
+    /// CHECK: 小时奖库
     #[account(mut)]
-    pub hourly_prize_vault: Account<'info, TokenAccount>,
+    pub hourly_prize_vault: AccountInfo<'info>,
     
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
