@@ -1,26 +1,99 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
 
 const DailyPool = () => {
-  const { stats, wallet } = useApp();
+  const { stats, wallet, sdk, refreshStats, userTokenBalance } = useApp();
   const { t, language } = useTranslation();
   const [depositAmount, setDepositAmount] = useState('100');
   const [referrer, setReferrer] = useState('');
   const [isDepositing, setIsDepositing] = useState(false);
+  const [txStatus, setTxStatus] = useState(null); // 'pending' | 'success' | 'error'
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleDeposit = async () => {
+  // 验证邀请人地址
+  const isValidReferrer = (address) => {
+    if (!address) return true;
+    try {
+      // 简单的 Solana 地址验证
+      return address.length >= 32 && address.length <= 44;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleDeposit = useCallback(async () => {
+    // 验证钱包连接
     if (!wallet.publicKey) {
       alert(language === 'en' ? 'Please connect wallet first' : '请先连接钱包');
       return;
     }
+
+    // 验证合约未暂停
+    if (stats.isPaused) {
+      alert(language === 'en' ? 'Contract is paused' : '合约已暂停');
+      return;
+    }
+
+    // 验证输入金额
+    const amount = parseFloat(depositAmount);
+    if (isNaN(amount) || amount < 100) {
+      alert(language === 'en' ? 'Minimum deposit is 100 TPOT' : '最低投入 100 TPOT');
+      return;
+    }
+
+    // 验证余额
+    if (userTokenBalance < amount) {
+      alert(language === 'en' 
+        ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT` 
+        : `余额不足。您有 ${userTokenBalance.toFixed(2)} TPOT`);
+      return;
+    }
+
+    // 验证邀请人地址
+    if (referrer && !isValidReferrer(referrer)) {
+      alert(language === 'en' ? 'Invalid referrer address' : '邀请人地址无效');
+      return;
+    }
+
+    // 检查是否是自己
+    if (referrer === wallet.publicKey.toString()) {
+      alert(language === 'en' ? 'Cannot use your own address as referrer' : '不能使用自己的地址作为邀请人');
+      return;
+    }
+
     setIsDepositing(true);
-    // TODO: 调用合约
-    setTimeout(() => {
+    setTxStatus('pending');
+    setErrorMessage('');
+
+    try {
+      const result = await sdk.depositDaily(amount, referrer || null);
+      
+      if (result.success) {
+        setTxStatus('success');
+        alert(language === 'en' 
+          ? `Success! Transaction: ${result.tx.slice(0, 8)}...` 
+          : `参与成功！交易: ${result.tx.slice(0, 8)}...`);
+        
+        // 刷新数据
+        await refreshStats();
+        
+        // 清空输入
+        setDepositAmount('100');
+        setReferrer('');
+      } else {
+        setTxStatus('error');
+        setErrorMessage(result.error);
+        alert(language === 'en' ? `Failed: ${result.error}` : `失败: ${result.error}`);
+      }
+    } catch (error) {
+      setTxStatus('error');
+      setErrorMessage(error.message);
+      alert(language === 'en' ? `Error: ${error.message}` : `错误: ${error.message}`);
+    } finally {
       setIsDepositing(false);
-      alert(language === 'en' ? 'Success!' : '参与成功！');
-    }, 2000);
-  };
+    }
+  }, [wallet.publicKey, stats.isPaused, depositAmount, userTokenBalance, referrer, sdk, refreshStats, language]);
 
   const formatTime = (timestamp) => {
     const diff = Math.max(0, timestamp - Date.now());
@@ -29,11 +102,42 @@ const DailyPool = () => {
     return language === 'en' ? `${hours}h ${minutes}m` : `${hours}小时 ${minutes}分钟`;
   };
 
+  // 获取按钮状态
+  const getButtonText = () => {
+    if (isDepositing) {
+      if (txStatus === 'pending') return language === 'en' ? 'Confirming...' : '确认中...';
+      return language === 'en' ? 'Processing...' : '处理中...';
+    }
+    if (stats.isPaused) return language === 'en' ? 'Contract Paused' : '合约暂停';
+    return language === 'en' ? '🎰 Join Daily Pool' : '🎰 参与天池';
+  };
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <h1 style={styles.title}>🌙 {t('dailyPool')}</h1>
-        <p style={styles.subtitle}>{language === 'en' ? 'Daily grand prize with referral rewards and 1:1 reserve matching' : '每日大奖，推广有奖励，储备1:1配比'}</p>
+        <p style={styles.subtitle}>
+          {language === 'en' 
+            ? 'Daily grand prize with referral rewards and 1:1 reserve matching' 
+            : '每日大奖，推广有奖励，储备1:1配比'}
+        </p>
+      </div>
+
+      {/* 合约状态警告 */}
+      {stats.isPaused && (
+        <div style={styles.warningBanner}>
+          ⚠️ {language === 'en' ? 'Contract is paused. Deposits are temporarily disabled.' : '合约已暂停，暂时无法参与'}
+        </div>
+      )}
+
+      {/* 用户余额显示 */}
+      <div style={styles.balanceCard}>
+        <span style={styles.balanceLabel}>
+          {language === 'en' ? 'Your TPOT Balance' : '您的 TPOT 余额'}
+        </span>
+        <span style={styles.balanceValue}>
+          {userTokenBalance.toFixed(2)} TPOT
+        </span>
       </div>
 
       {/* 特色标签 */}
@@ -49,68 +153,95 @@ const DailyPool = () => {
           <h2 style={styles.cardTitle}>{language === 'en' ? 'Pool Info' : '奖池信息'}</h2>
           <div style={styles.poolDisplay}>
             <span style={styles.poolLabel}>{t('currentPool')}</span>
-            <span style={styles.poolValue}>🪙 {(stats.dailyPool / 1e9).toFixed(2)}M TPOT</span>
+            <span style={styles.poolValue}>
+              🪙 {(stats.dailyPool / 1e9).toFixed(2)} TPOT
+            </span>
           </div>
           <div style={styles.countdownBox}>
-            <span style={styles.countdownLabel}>距离开奖</span>
-            <span style={styles.countdownValue}>{formatTime(stats.dailyNextDraw)}</span>
+            <span style={styles.countdownLabel}>
+              {language === 'en' ? 'Next Draw' : '距离开奖'}
+            </span>
+            <span style={styles.countdownValue}>
+              {formatTime(stats.dailyNextDraw)}
+            </span>
           </div>
           <div style={styles.infoList}>
             <div style={styles.infoItem}>
-              <span>参与人数</span>
-              <span style={styles.infoValue}>{stats.dailyParticipants} 人</span>
+              <span>{language === 'en' ? 'Participants' : '参与人数'}</span>
+              <span style={styles.infoValue}>{stats.dailyParticipants} {language === 'en' ? '' : '人'}</span>
             </div>
             <div style={styles.infoItem}>
-              <span>最低投入</span>
+              <span>{language === 'en' ? 'Min Deposit' : '最低投入'}</span>
               <span style={styles.infoValue}>100 TPOT</span>
             </div>
             <div style={styles.infoItem}>
-              <span>开奖时间</span>
-              <span style={styles.infoValue}>每日 00:00 UTC</span>
+              <span>{language === 'en' ? 'Draw Time' : '开奖时间'}</span>
+              <span style={styles.infoValue}>00:00 UTC</span>
             </div>
             <div style={styles.infoItem}>
-              <span>锁仓期</span>
-              <span style={styles.infoValue}>开奖前5分钟</span>
+              <span>{language === 'en' ? 'Lock Period' : '锁仓期'}</span>
+              <span style={styles.infoValue}>{language === 'en' ? '5 min before draw' : '开奖前5分钟'}</span>
             </div>
           </div>
         </div>
 
         {/* 参与区域 */}
         <div style={styles.card}>
-          <h2 style={styles.cardTitle}>立即参与</h2>
+          <h2 style={styles.cardTitle}>
+            {language === 'en' ? 'Join Now' : '立即参与'}
+          </h2>
           <div style={styles.depositSection}>
-            <label style={styles.label}>投入数量 (TPOT)</label>
+            <label style={styles.label}>
+              {language === 'en' ? 'Amount (TPOT)' : '投入数量 (TPOT)'}
+            </label>
             <input
               type="number"
               value={depositAmount}
               onChange={(e) => setDepositAmount(e.target.value)}
               min="100"
+              disabled={isDepositing}
               style={styles.input}
-              placeholder="最低 100 TPOT"
+              placeholder={language === 'en' ? 'Min 100 TPOT' : '最低 100 TPOT'}
             />
             <div style={styles.quickButtons}>
-              <button onClick={() => setDepositAmount('100')} style={styles.quickBtn}>100</button>
-              <button onClick={() => setDepositAmount('500')} style={styles.quickBtn}>500</button>
-              <button onClick={() => setDepositAmount('1000')} style={styles.quickBtn}>1000</button>
-              <button onClick={() => setDepositAmount('10000')} style={styles.quickBtn}>10000</button>
+              <button onClick={() => setDepositAmount('100')} disabled={isDepositing} style={styles.quickBtn}>100</button>
+              <button onClick={() => setDepositAmount('500')} disabled={isDepositing} style={styles.quickBtn}>500</button>
+              <button onClick={() => setDepositAmount('1000')} disabled={isDepositing} style={styles.quickBtn}>1000</button>
+              <button onClick={() => setDepositAmount('10000')} disabled={isDepositing} style={styles.quickBtn}>10000</button>
             </div>
 
-            <label style={styles.label}>邀请人地址 (可选)</label>
+            <label style={styles.label}>
+              {language === 'en' ? 'Referrer (Optional)' : '邀请人地址 (可选)'}
+            </label>
             <input
               type="text"
               value={referrer}
               onChange={(e) => setReferrer(e.target.value)}
+              disabled={isDepositing}
               style={styles.input}
-              placeholder="输入邀请人钱包地址"
+              placeholder={language === 'en' ? 'Enter referrer wallet address' : '输入邀请人钱包地址'}
             />
-            <p style={styles.referralNote}>🎁 使用邀请码，邀请人可获得 8% 奖励</p>
+            <p style={styles.referralNote}>
+              🎁 {language === 'en' ? 'Referrer gets 8% reward' : '使用邀请码，邀请人可获得 8% 奖励'}
+            </p>
+
+            {/* 错误提示 */}
+            {errorMessage && (
+              <div style={styles.errorMessage}>
+                ❌ {errorMessage}
+              </div>
+            )}
 
             <button 
               onClick={handleDeposit}
-              disabled={isDepositing}
-              style={styles.depositButton}
+              disabled={isDepositing || stats.isPaused}
+              style={{
+                ...styles.depositButton,
+                opacity: isDepositing || stats.isPaused ? 0.6 : 1,
+                cursor: isDepositing || stats.isPaused ? 'not-allowed' : 'pointer',
+              }}
             >
-              {isDepositing ? '处理中...' : '🎰 参与天池'}
+              {getButtonText()}
             </button>
           </div>
         </div>
@@ -118,67 +249,73 @@ const DailyPool = () => {
 
       {/* 储备配比说明 */}
       <div style={styles.card}>
-        <h2 style={styles.cardTitle}>⚡ 储备配比机制</h2>
+        <h2 style={styles.cardTitle}>⚡ {language === 'en' ? 'Reserve Matching' : '储备配比机制'}</h2>
         <div style={styles.reserveInfo}>
           <div style={styles.reserveVisual}>
             <div style={styles.reserveBox}>
-              <span style={styles.reserveLabel}>您的投入</span>
+              <span style={styles.reserveLabel}>{language === 'en' ? 'Your Deposit' : '您的投入'}</span>
               <span style={styles.reserveArrow}>→</span>
               <span style={styles.reserveValue}>100 TPOT</span>
             </div>
             <span style={styles.plus}>+</span>
             <div style={styles.reserveBox}>
-              <span style={styles.reserveLabel}>储备配比</span>
+              <span style={styles.reserveLabel}>{language === 'en' ? 'Reserve Match' : '储备配比'}</span>
               <span style={styles.reserveArrow}>→</span>
               <span style={styles.reserveValue}>100 TPOT</span>
             </div>
             <span style={styles.equals}>=</span>
             <div style={styles.reserveBoxTotal}>
-              <span style={styles.reserveLabel}>实际入池</span>
+              <span style={styles.reserveLabel}>{language === 'en' ? 'Total in Pool' : '实际入池'}</span>
               <span style={styles.reserveValueTotal}>200 TPOT</span>
             </div>
           </div>
           <p style={styles.reserveDesc}>
-            您的每笔投入都将获得储备池 1:1 配比，翻倍您的中奖机会！
+            {language === 'en' 
+              ? 'Every deposit gets 1:1 matched from reserve pool, doubling your winning chance!' 
+              : '您的每笔投入都将获得储备池 1:1 配比，翻倍您的中奖机会！'}
             <br />
-            <span style={styles.reserveNote}>储备耗尽后停止配比，先到先得。</span>
+            <span style={styles.reserveNote}>
+              {language === 'en' 
+                ? 'Matching stops when reserve is depleted. First come first served.' 
+                : '储备耗尽后停止配比，先到先得。'}
+            </span>
           </p>
         </div>
       </div>
 
       {/* 奖金分配 */}
       <div style={styles.card}>
-        <h2 style={styles.cardTitle}>💰 奖金分配（与小时池相同）</h2>
+        <h2 style={styles.cardTitle}>💰 {language === 'en' ? 'Prize Distribution' : '奖金分配'}</h2>
         <div style={styles.prizeDistribution}>
           <div style={styles.prizeRow}>
-            <span style={styles.prizeName}>🥇 头奖</span>
+            <span style={styles.prizeName}>🥇 {language === 'en' ? 'First Prize' : '头奖'}</span>
             <span style={styles.prizePercent}>30%</span>
-            <span style={styles.prizeDetail}>1人 / 20天释放</span>
+            <span style={styles.prizeDetail}>{language === 'en' ? '1 winner / 20 days vesting' : '1人 / 20天释放'}</span>
           </div>
           <div style={styles.prizeRow}>
-            <span style={styles.prizeName}>🥈 二等奖</span>
+            <span style={styles.prizeName}>🥈 {language === 'en' ? 'Second Prize' : '二等奖'}</span>
             <span style={styles.prizePercent}>20%</span>
-            <span style={styles.prizeDetail}>2人 / 20天释放</span>
+            <span style={styles.prizeDetail}>{language === 'en' ? '2 winners / 20 days' : '2人 / 20天释放'}</span>
           </div>
           <div style={styles.prizeRow}>
-            <span style={styles.prizeName}>🥉 三等奖</span>
+            <span style={styles.prizeName}>🥉 {language === 'en' ? 'Third Prize' : '三等奖'}</span>
             <span style={styles.prizePercent}>15%</span>
-            <span style={styles.prizeDetail}>3人 / 20天释放</span>
+            <span style={styles.prizeDetail}>{language === 'en' ? '3 winners / 20 days' : '3人 / 20天释放'}</span>
           </div>
           <div style={styles.prizeRow}>
-            <span style={styles.prizeName}>🎁 幸运奖</span>
+            <span style={styles.prizeName}>🎁 {language === 'en' ? 'Lucky Prize' : '幸运奖'}</span>
             <span style={styles.prizePercent}>10%</span>
-            <span style={styles.prizeDetail}>5人 / 20天释放</span>
+            <span style={styles.prizeDetail}>{language === 'en' ? '5 winners / 20 days' : '5人 / 20天释放'}</span>
           </div>
           <div style={styles.prizeRowHighlight}>
-            <span style={styles.prizeName}>🌟 普惠奖</span>
+            <span style={styles.prizeName}>🌟 {language === 'en' ? 'Universal Prize' : '普惠奖'}</span>
             <span style={styles.prizePercent}>20%</span>
-            <span style={styles.prizeDetail}>所有未中大奖者 / 立即到账</span>
+            <span style={styles.prizeDetail}>{language === 'en' ? 'All non-winners / Instant' : '所有未中大奖者 / 立即到账'}</span>
           </div>
           <div style={styles.prizeRow}>
-            <span style={styles.prizeName}>🔄 回流</span>
+            <span style={styles.prizeName}>🔄 {language === 'en' ? 'Rollover' : '回流'}</span>
             <span style={styles.prizePercent}>5%</span>
-            <span style={styles.prizeDetail}>滚入下期奖池</span>
+            <span style={styles.prizeDetail}>{language === 'en' ? 'To next round' : '滚入下期奖池'}</span>
           </div>
         </div>
       </div>
@@ -204,6 +341,34 @@ const styles = {
   subtitle: {
     fontSize: '16px',
     color: '#A0A0A0',
+  },
+  warningBanner: {
+    background: 'rgba(255, 0, 0, 0.2)',
+    border: '1px solid rgba(255, 0, 0, 0.5)',
+    borderRadius: '8px',
+    padding: '12px 16px',
+    marginBottom: '16px',
+    color: '#FF6B6B',
+    textAlign: 'center',
+  },
+  balanceCard: {
+    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
+    borderRadius: '12px',
+    padding: '16px 24px',
+    marginBottom: '16px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    border: '1px solid rgba(255, 215, 0, 0.3)',
+  },
+  balanceLabel: {
+    fontSize: '14px',
+    color: '#A0A0A0',
+  },
+  balanceValue: {
+    fontSize: '20px',
+    fontWeight: 'bold',
+    color: '#FFD700',
   },
   features: {
     display: 'flex',
@@ -326,6 +491,14 @@ const styles = {
     color: '#FFD700',
     margin: 0,
   },
+  errorMessage: {
+    background: 'rgba(255, 0, 0, 0.2)',
+    border: '1px solid rgba(255, 0, 0, 0.5)',
+    borderRadius: '6px',
+    padding: '8px 12px',
+    color: '#FF6B6B',
+    fontSize: '14px',
+  },
   depositButton: {
     background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
     color: '#000000',
@@ -334,8 +507,8 @@ const styles = {
     padding: '16px',
     fontSize: '18px',
     fontWeight: 'bold',
-    cursor: 'pointer',
     marginTop: '8px',
+    transition: 'opacity 0.2s',
   },
   reserveInfo: {
     display: 'flex',
