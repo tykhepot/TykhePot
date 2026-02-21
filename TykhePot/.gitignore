@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+.anchor/
+.DS_Store
+
+# Build outputs
+target/
+build/
+dist/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS
+Thumbs.db

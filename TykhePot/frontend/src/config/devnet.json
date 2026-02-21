@@ -1,0 +1,9 @@
+{
+  "network": "devnet",
+  "endpoint": "https://api.devnet.solana.com",
+  "programId": "TBD_AFTER_DEPLOY",
+  "tokenMint": "TBD_AFTER_DEPLOY",
+  "statePDA": "TBD_AFTER_DEPLOY",
+  "tokenDecimals": 9,
+  "tokenSymbol": "TPOT"
+}

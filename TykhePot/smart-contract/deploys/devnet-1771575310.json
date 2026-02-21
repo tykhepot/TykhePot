@@ -1,0 +1,9 @@
+{
+  "network": "devnet",
+  "deployTime": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "deployer": "$(solana address)",
+  "programId": "p3Q9CBUV24Evtcu4fi9yq5UpYMVUjdd2HFb6t4DqbXN",
+  "tokenMint": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+  "status": "pending_contract_fix",
+  "note": "合约需要修复 Anchor 0.29.0 兼容性问题"
+}

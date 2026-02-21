@@ -1,0 +1,11 @@
+{
+  "network": "devnet",
+  "deployTime": "2026-02-20T18:35:00Z",
+  "deployer": "7xSpqbSG9ikANXGDxtsn66a2GfDPKQCpHjiuCQUoJGcL",
+  "programId": "5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b",
+  "tokenMint": "FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY",
+  "reserveMint": "9Z3c9tVQo2YfakysXUbLr2UdP4HKnszNUz1BdLjCTQm2",
+  "statePDA": "61d5xwLqPCAKS3FoEW3crpKnCAx3S5V8jM35NPrjEFbP",
+  "status": "deployed",
+  "note": "合约已部署，前端需要更新 Program ID"
+}
