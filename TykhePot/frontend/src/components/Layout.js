@@ -11,99 +11,95 @@ const Layout = ({ children }) => {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const navItems = [
-    { path: '/', label: '🏠 ' + t('home') },
-    { path: '/hourly', label: '⏰ ' + t('hourlyPool') },
-    { path: '/daily', label: '🌙 ' + t('dailyPool') },
-    { path: '/staking', label: '💰 ' + t('staking') },
-    { path: '/airdrop', label: '🎁 ' + t('airdrop') },
-    { path: '/leaderboard', label: '🏆 ' + t('leaderboard') },
-    { path: '/faq', label: '❓ ' + t('faq') },
+    { path: '/', label: t('home'), icon: '🏠' },
+    { path: '/hourly', label: t('hourlyPool'), icon: '⏰' },
+    { path: '/daily', label: t('dailyPool'), icon: '🌙' },
+    { path: '/staking', label: t('staking'), icon: '💎' },
+    { path: '/airdrop', label: t('airdrop'), icon: '🎁' },
+    { path: '/leaderboard', label: t('leaderboard'), icon: '🏆' },
+    { path: '/faq', label: t('faq'), icon: '❓' },
   ];
 
   return (
-    <div className="layout" style={styles.layout}>
+    <div className="layout">
       {/* Header */}
-      <header style={styles.header}>
-        <div style={styles.headerContainer}>
-          <Link to="/" style={styles.logo} onClick={() => setMenuOpen(false)}>
-            <span style={styles.logoIcon}>👑</span>
-            <span style={styles.logoText}>TykhePot</span>
+      <header className="header">
+        <div className="header-container">
+          {/* Logo */}
+          <Link to="/" className="logo" onClick={() => setMenuOpen(false)}>
+            <span className="logo-icon">👑</span>
+            <span className="logo-text">TykhePot</span>
           </Link>
 
           {/* Desktop Navigation */}
-          <nav style={styles.nav}>
+          <nav className="nav-desktop hide-mobile">
             {navItems.map(item => (
               <Link
                 key={item.path}
                 to={item.path}
-                style={{
-                  ...styles.navLink,
-                  ...(location.pathname === item.path ? styles.navLinkActive : {}),
-                }}
+                className={`nav-link ${location.pathname === item.path ? 'active' : ''}`}
               >
-                {item.label}
+                <span>{item.icon}</span>
+                <span>{item.label}</span>
               </Link>
             ))}
           </nav>
 
-          {/* Desktop Wallet Section */}
-          <div style={styles.walletSection}>
+          {/* Right Section */}
+          <div className="header-actions">
+            {/* Language Toggle */}
             <button 
               onClick={toggleLanguage}
-              style={styles.langButton}
+              className="btn btn-ghost btn-sm lang-btn"
               title={t('language')}
             >
               {language === 'en' ? '🇺🇸 EN' : '🇨🇳 中文'}
             </button>
             
-            {publicKey && (
-              <span style={styles.walletInfo}>
-                {publicKey.toString().slice(0, 4)}...{publicKey.toString().slice(-4)}
-              </span>
-            )}
-            <div style={styles.walletButton}>
-              <WalletMultiButton style={styles.walletBtn} />
+            {/* Wallet Button */}
+            <div className="wallet-btn-container hide-mobile">
+              <WalletMultiButton className="btn btn-primary btn-wallet" />
             </div>
-          </div>
 
-          {/* Mobile Menu Button */}
-          <button 
-            style={styles.menuButton}
-            onClick={() => setMenuOpen(!menuOpen)}
-          >
-            <span style={menuOpen ? styles.menuIconClose : styles.menuIcon}>
-              {menuOpen ? '✕' : '☰'}
-            </span>
-          </button>
+            {/* Mobile Menu Button */}
+            <button 
+              className="btn btn-ghost mobile-menu-btn hide-desktop"
+              onClick={() => setMenuOpen(!menuOpen)}
+              aria-label="Toggle menu"
+            >
+              <span style={{ fontSize: '1.5rem' }}>
+                {menuOpen ? '✕' : '☰'}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Mobile Navigation */}
         {menuOpen && (
-          <div style={styles.mobileNav}>
-            <nav style={styles.mobileNavContent}>
+          <div className="nav-mobile">
+            <nav className="nav-mobile-content">
               {navItems.map(item => (
                 <Link
                   key={item.path}
                   to={item.path}
-                  style={{
-                    ...styles.mobileNavLink,
-                    ...(location.pathname === item.path ? styles.mobileNavLinkActive : {}),
-                  }}
+                  className={`nav-link-mobile ${location.pathname === item.path ? 'active' : ''}`}
                   onClick={() => setMenuOpen(false)}
                 >
-                  {item.label}
+                  <span>{item.icon}</span>
+                  <span>{item.label}</span>
                 </Link>
               ))}
             </nav>
-            <div style={styles.mobileWalletSection}>
+            <div className="nav-mobile-footer">
               <button 
                 onClick={() => { toggleLanguage(); setMenuOpen(false); }}
-                style={styles.mobileLangButton}
+                className="btn btn-ghost btn-sm"
+                style={{ width: '100%', justifyContent: 'center' }}
               >
                 {language === 'en' ? '🇺🇸 English' : '🇨🇳 中文'}
               </button>
-              <div style={styles.mobileWalletBtn}>
-                <WalletMultiButton style={styles.walletBtn} />
+              <div className="wallet-mobile">
+                <WalletMultiButton className="btn btn-primary" style={{ width: '100%' }} />
               </div>
             </div>
           </div>
@@ -111,306 +107,320 @@ const Layout = ({ children }) => {
       </header>
 
       {/* Main Content */}
-      <main style={styles.main}>{children}</main>
+      <main className="main-content">
+        {children}
+      </main>
 
       {/* Footer */}
-      <footer style={styles.footer}>
-        <div style={styles.footerContainer}>
-          <div style={styles.footerSection}>
-            <h4 style={styles.footerTitle}>👑 TykhePot</h4>
-            <p style={styles.footerText}>
+      <footer>
+        <div className="footer-container">
+          <div className="footer-brand">
+            <div className="footer-logo">
+              <span style={{ fontSize: '1.5rem' }}>👑</span>
+              <span style={{ fontSize: '1.25rem', fontWeight: '700', background: 'linear-gradient(135deg, #FFD700, #FF6B6B, #00D4FF)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                TykhePot
+              </span>
+            </div>
+            <p className="footer-tagline">
               {language === 'en' 
-                ? <>Fair & Transparent On-Chain Entertainment<br />The Lottery of Lady Fortune</>
-                : <>基于 Solana 的公平透明链上娱乐协议<br />幸运女神的奖池，命运由链上裁决</>
+                ? 'The On-Chain Lottery of Lady Fortune'
+                : '幸运女神的链上奖池'
+              }
+            </p>
+            <p className="footer-desc">
+              {language === 'en' 
+                ? 'Fair & Transparent Entertainment on Solana'
+                : '基于 Solana 的公平透明娱乐协议'
               }
             </p>
           </div>
 
-          <div style={styles.footerSection}>
-            <h4 style={styles.footerTitle}>{language === 'en' ? 'Quick Links' : '快速链接'}</h4>
-            <div style={styles.footerLinks}>
-              <Link to="/" style={styles.footerLink}>{t('home')}</Link>
-              <Link to="/daily" style={styles.footerLink}>{language === 'en' ? 'Join Lottery' : '参与抽奖'}</Link>
-              <Link to="/staking" style={styles.footerLink}>{language === 'en' ? 'Staking' : '质押收益'}</Link>
-              <Link to="/leaderboard" style={styles.footerLink}>{t('leaderboard')}</Link>
-              <Link to="/faq" style={styles.footerLink}>{language === 'en' ? 'Help' : '帮助中心'}</Link>
-              <a href="https://tykhepot.io/whitepaper" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>{t('whitepaper')}</a>
+          <div className="footer-links">
+            <div className="footer-section">
+              <h4>{language === 'en' ? 'Quick Links' : '快速链接'}</h4>
+              <Link to="/">{t('home')}</Link>
+              <Link to="/daily">{language === 'en' ? 'Join Lottery' : '参与抽奖'}</Link>
+              <Link to="/staking">{t('staking')}</Link>
+              <Link to="/leaderboard">{t('leaderboard')}</Link>
+              <Link to="/faq">{language === 'en' ? 'Help' : '帮助中心'}</Link>
             </div>
-          </div>
 
-          <div style={styles.footerSection}>
-            <h4 style={styles.footerTitle}>{language === 'en' ? 'Community' : '社区'}</h4>
-            <div style={styles.footerLinks}>
-              <a href="https://twitter.com/tykhepot" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>Twitter/X</a>
-              <a href="https://t.me/tykhepot" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>Telegram</a>
-              <a href="https://discord.gg/tykhepot" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>Discord</a>
+            <div className="footer-section">
+              <h4>{language === 'en' ? 'Community' : '社区'}</h4>
+              <a href="https://twitter.com/tykhepot" target="_blank" rel="noopener noreferrer">Twitter/X</a>
+              <a href="https://t.me/tykhepot" target="_blank" rel="noopener noreferrer">Telegram</a>
+              <a href="https://discord.gg/tykhepot" target="_blank" rel="noopener noreferrer">Discord</a>
             </div>
-          </div>
 
-          <div style={styles.footerSection}>
-            <h4 style={styles.footerTitle}>{language === 'en' ? 'Contracts' : '合约'}</h4>
-            <div style={styles.footerLinks}>
-              <a href="https://solscan.io" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>Solscan</a>
-              <a href="https://github.com/tykhepot" target="_blank" rel="noopener noreferrer" style={styles.footerLink}>GitHub</a>
+            <div className="footer-section">
+              <h4>{language === 'en' ? 'Resources' : '资源'}</h4>
+              <a href="https://tykhepot.io/whitepaper" target="_blank" rel="noopener noreferrer">{t('whitepaper')}</a>
+              <a href="https://solscan.io" target="_blank" rel="noopener noreferrer">Solscan</a>
+              <a href="https://github.com/tykhepot" target="_blank" rel="noopener noreferrer">GitHub</a>
             </div>
           </div>
         </div>
 
-        <div style={styles.footerBottom}>
-          <p style={styles.footerDisclaimer}>
+        <div className="footer-bottom">
+          <p className="footer-disclaimer">
             ⚠️ {language === 'en' 
               ? 'Entertainment purposes only. Not investment advice. You may lose all your funds.'
               : '仅供娱乐，不构成投资建议。您可能损失全部资金。'}
           </p>
-          <p style={styles.copyright}>© 2026 TykhePot. All rights reserved.</p>
+          <p className="footer-copyright">
+            © 2026 TykhePot. All rights reserved.
+          </p>
         </div>
       </footer>
+
+      <style>{`
+        /* Header Styles */
+        .header {
+          position: sticky;
+          top: 0;
+          z-index: var(--z-sticky);
+          background: oklch(15% 0.02 280 / 0.8);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .header-container {
+          max-width: 1400px;
+          margin: 0 auto;
+          padding: var(--space-3) var(--space-4);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: var(--space-4);
+        }
+
+        /* Logo */
+        .logo {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          text-decoration: none;
+          font-weight: 700;
+          font-size: 1.25rem;
+        }
+
+        .logo-icon {
+          font-size: 1.5rem;
+        }
+
+        .logo-text {
+          background: linear-gradient(135deg, #FFD700, #FF6B6B, #00D4FF);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+
+        /* Desktop Navigation */
+        .nav-desktop {
+          display: flex;
+          align-items: center;
+          gap: var(--space-1);
+        }
+
+        /* Header Actions */
+        .header-actions {
+          display: flex;
+          align-items: center;
+          gap: var(--space-3);
+        }
+
+        .lang-btn {
+          padding: var(--space-2) var(--space-3);
+          font-size: var(--text-xs);
+        }
+
+        .btn-wallet {
+          background: linear-gradient(135deg, #6B21A8, #8B5CF6) !important;
+          border: none !important;
+          border-radius: var(--radius-md) !important;
+          padding: var(--space-2) var(--space-4) !important;
+          font-weight: 600 !important;
+          font-size: var(--text-sm) !important;
+          cursor: pointer !important;
+          transition: all var(--transition-base) !important;
+        }
+
+        .btn-wallet:hover {
+          transform: translateY(-1px);
+          box-shadow: 0 0 20px oklch(55% 0.2 270 / 0.4);
+        }
+
+        .mobile-menu-btn {
+          padding: var(--space-2);
+          font-size: 1.25rem;
+        }
+
+        /* Mobile Navigation */
+        .nav-mobile {
+          position: absolute;
+          top: 100%;
+          left: 0;
+          right: 0;
+          background: oklch(15% 0.02 280 / 0.98);
+          backdrop-filter: blur(20px);
+          border-bottom: 1px solid var(--border-subtle);
+          padding: var(--space-4);
+          animation: slideDown 0.2s ease-out;
+        }
+
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .nav-mobile-content {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-1);
+          margin-bottom: var(--space-4);
+        }
+
+        .nav-link-mobile {
+          display: flex;
+          align-items: center;
+          gap: var(--space-3);
+          padding: var(--space-3) var(--space-4);
+          color: var(--text-secondary);
+          text-decoration: none;
+          border-radius: var(--radius-md);
+          transition: all var(--transition-fast);
+        }
+
+        .nav-link-mobile:hover,
+        .nav-link-mobile.active {
+          background: oklch(25% 0.04 280);
+          color: var(--color-gold);
+        }
+
+        .nav-mobile-footer {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-3);
+          padding-top: var(--space-4);
+          border-top: 1px solid var(--border-subtle);
+        }
+
+        /* Main Content */
+        .main-content {
+          min-height: calc(100vh - 200px);
+          position: relative;
+          z-index: 1;
+        }
+
+        /* Footer Styles */
+        .footer-container {
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 0 var(--space-4);
+          display: grid;
+          grid-template-columns: 1fr 2fr;
+          gap: var(--space-12);
+        }
+
+        @media (max-width: 768px) {
+          .footer-container {
+            grid-template-columns: 1fr;
+            gap: var(--space-8);
+          }
+        }
+
+        .footer-brand {
+          max-width: 300px;
+        }
+
+        .footer-logo {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          margin-bottom: var(--space-3);
+        }
+
+        .footer-tagline {
+          font-size: var(--text-lg);
+          font-weight: 600;
+          color: var(--color-gold);
+          margin-bottom: var(--space-2);
+        }
+
+        .footer-desc {
+          font-size: var(--text-sm);
+          color: var(--text-tertiary);
+        }
+
+        .footer-links {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: var(--space-8);
+        }
+
+        @media (max-width: 600px) {
+          .footer-links {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
+        .footer-section h4 {
+          font-size: var(--text-sm);
+          font-weight: 600;
+          color: var(--text-primary);
+          margin-bottom: var(--space-3);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+
+        .footer-section a {
+          display: block;
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          text-decoration: none;
+          padding: var(--space-1) 0;
+          transition: color var(--transition-fast);
+        }
+
+        .footer-section a:hover {
+          color: var(--color-gold);
+        }
+
+        .footer-bottom {
+          max-width: 1200px;
+          margin: var(--space-8) auto 0;
+          padding: var(--space-4);
+          text-align: center;
+          border-top: 1px solid var(--border-subtle);
+        }
+
+        .footer-disclaimer {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          margin-bottom: var(--space-2);
+        }
+
+        .footer-copyright {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          opacity: 0.7;
+        }
+
+        /* Responsive */
+        @media (min-width: 769px) {
+          .hide-mobile { display: flex !important; }
+          .hide-desktop { display: none !important; }
+        }
+
+        @media (max-width: 768px) {
+          .hide-mobile { display: none !important; }
+          .hide-desktop { display: flex !important; }
+          .nav-desktop { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 };
-
-const styles = {
-  layout: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  header: {
-    background: 'rgba(26, 26, 46, 0.95)',
-    backdropFilter: 'blur(10px)',
-    borderBottom: '1px solid rgba(255,255,255,0.1)',
-    position: 'sticky',
-    top: 0,
-    zIndex: 100,
-  },
-  headerContainer: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: '0.75rem 1rem',
-    maxWidth: '1400px',
-    margin: '0 auto',
-    flexWrap: 'wrap',
-    gap: '0.5rem',
-  },
-  logo: {
-    fontSize: '1.25rem',
-    fontWeight: 'bold',
-    textDecoration: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem',
-    color: '#FFD700',
-  },
-  logoIcon: {
-    fontSize: '1.5rem',
-  },
-  logoText: {
-    background: 'linear-gradient(135deg, #ffd700 0%, #ff6b6b 50%, #00d4ff 100%)',
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
-  },
-  nav: {
-    display: 'flex',
-    gap: '0.5rem',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-  },
-  navLink: {
-    textDecoration: 'none',
-    color: '#a0a0a0',
-    fontSize: '0.85rem',
-    transition: 'all 0.3s',
-    padding: '0.4rem 0.6rem',
-    borderRadius: '8px',
-  },
-  navLinkActive: {
-    color: '#00d4ff',
-    background: 'rgba(0, 212, 255, 0.1)',
-  },
-  walletSection: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.75rem',
-  },
-  langButton: {
-    background: 'rgba(255,255,255,0.1)',
-    border: '1px solid rgba(255,255,255,0.2)',
-    color: '#fff',
-    padding: '0.4rem 0.6rem',
-    borderRadius: '6px',
-    cursor: 'pointer',
-    fontSize: '0.8rem',
-    transition: 'all 0.3s',
-  },
-  walletInfo: {
-    color: '#00d4ff',
-    fontSize: '0.8rem',
-    fontFamily: 'monospace',
-    display: 'none',
-  },
-  walletButton: {
-    display: 'flex',
-  },
-  walletBtn: {
-    background: 'linear-gradient(135deg, #512da8 0%, #00d4ff 100%)',
-    border: 'none',
-    borderRadius: '8px',
-    padding: '0.4rem 0.8rem',
-    color: '#fff',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-    fontSize: '0.8rem',
-  },
-  menuButton: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '36px',
-    height: '36px',
-    background: 'rgba(255,255,255,0.1)',
-    border: '1px solid rgba(255,255,255,0.2)',
-    borderRadius: '8px',
-    color: '#fff',
-    fontSize: '1.25rem',
-    cursor: 'pointer',
-  },
-  menuIcon: {
-    display: 'block',
-  },
-  menuIconClose: {
-    display: 'block',
-    fontSize: '1.25rem',
-  },
-  mobileNav: {
-    background: 'rgba(26, 26, 46, 0.98)',
-    borderTop: '1px solid rgba(255,255,255,0.1)',
-    padding: '1rem',
-    animation: 'slideDown 0.3s ease',
-    position: 'absolute',
-    top: '100%',
-    left: 0,
-    right: 0,
-    zIndex: 999,
-  },
-  mobileNavContent: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.5rem',
-    marginBottom: '1rem',
-  },
-  mobileNavLink: {
-    textDecoration: 'none',
-    color: '#FFFFFF',
-    fontSize: '1rem',
-    padding: '0.85rem 1rem',
-    borderRadius: '8px',
-    transition: 'all 0.3s',
-    display: 'block',
-    background: 'transparent',
-  },
-  mobileNavLinkActive: {
-    color: '#00d4ff',
-    background: 'rgba(0, 212, 255, 0.1)',
-  },
-  mobileWalletSection: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.75rem',
-  },
-  mobileLangButton: {
-    background: 'rgba(255,255,255,0.1)',
-    border: '1px solid rgba(255,255,255,0.2)',
-    color: '#fff',
-    padding: '0.75rem',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontSize: '1rem',
-  },
-  mobileWalletBtn: {
-    width: '100%',
-  },
-  main: {
-    flex: 1,
-    padding: '1rem',
-  },
-  footer: {
-    background: '#0a0a14',
-    padding: '2rem 0 1rem',
-    borderTop: '1px solid rgba(255,255,255,0.1)',
-    marginTop: 'auto',
-  },
-  footerContainer: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-    gap: '1.5rem',
-    maxWidth: '1200px',
-    margin: '0 auto',
-    padding: '0 1rem',
-  },
-  footerSection: {
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  footerTitle: {
-    color: '#fff',
-    marginBottom: '0.75rem',
-    fontSize: '1rem',
-  },
-  footerText: {
-    color: '#888',
-    fontSize: '0.85rem',
-    lineHeight: '1.6',
-  },
-  footerLinks: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.4rem',
-  },
-  footerLink: {
-    color: '#888',
-    textDecoration: 'none',
-    fontSize: '0.85rem',
-    transition: 'color 0.3s',
-  },
-  footerBottom: {
-    marginTop: '1.5rem',
-    padding: '1rem',
-    textAlign: 'center',
-    borderTop: '1px solid rgba(255,255,255,0.05)',
-  },
-  footerDisclaimer: {
-    color: '#666',
-    fontSize: '0.75rem',
-    marginBottom: '0.5rem',
-  },
-  copyright: {
-    color: '#555',
-    fontSize: '0.75rem',
-  },
-};
-
-// Add responsive styles via JavaScript for the menu button
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes slideDown {
-      from { opacity: 0; transform: translateY(-10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    
-    @media (max-width: 768px) {
-      header nav { display: none !important; }
-      header .wallet-section { display: none !important; }
-      header .menu-button { display: block !important; }
-    }
-    
-    @media (min-width: 769px) {
-      .mobile-nav { display: none !important; }
-    }
-  `;
-  document.head.appendChild(style);
-}
 
 export default Layout;
