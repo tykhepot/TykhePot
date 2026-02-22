@@ -5,10 +5,22 @@ pub const BASE: u64 = 10000;
 pub const BURN: u64 = 300;
 pub const PLAT: u64 = 200;
 pub const REF: u64 = 800;
+pub const REFERRED_BONUS: u64 = 200; // 2% for referred user
 pub const HOUR_MIN: u64 = 200_000_000_000;
 pub const DAY_MIN: u64 = 100_000_000_000;
 pub const FREE_AIRDROP: u64 = 100_000_000_000; // 100 TPOT
+pub const MAX_DEPOSIT: u64 = 1_000_000_000_000_000; // 1 million TPOT
 pub const MIN_PARTICIPANTS: u32 = 10; // Minimum participants to draw
+pub const TIME_TOLERANCE: i64 = 60; // 60 seconds tolerance
+pub const LOCK_PERIOD: i64 = 300; // 5 minutes lock before draw
+
+// Prize distribution constants
+pub const FIRST_PRIZE_RATE: u64 = 3000;  // 30%
+pub const SECOND_PRIZE_RATE: u64 = 2000; // 20%
+pub const THIRD_PRIZE_RATE: u64 = 1500;  // 15%
+pub const LUCKY_PRIZE_RATE: u64 = 1000;  // 10%
+pub const UNIVERSAL_PRIZE_RATE: u64 = 2000; // 20%
+pub const ROLLOVER_RATE: u64 = 500;      // 5%
 
 declare_id!("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
 
@@ -115,13 +127,30 @@ pub struct ClaimAirdrop<'info> {
 #[derive(Accounts)]
 pub struct DrawHourly<'info> {
     #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub first_prize_winner: Account<'info, TokenAccount>,
+    #[account(mut)] pub second_prize_winner: Account<'info, TokenAccount>,
+    #[account(mut)] pub third_prize_winner: Account<'info, TokenAccount>,
+    #[account(mut)] pub lucky_prize_winner: Account<'info, TokenAccount>,
+    #[account(mut)] pub universal_prize_recipients: Account<'info, TokenAccount>,
     pub authority: Signer<'info>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct DrawDaily<'info> {
     #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub first_prize_winner: Account<'info, TokenAccount>,
+    #[account(mut)] pub second_prize_winner_a: Account<'info, TokenAccount>,
+    #[account(mut)] pub second_prize_winner_b: Account<'info, TokenAccount>,
+    #[account(mut)] pub third_prize_winner_a: Account<'info, TokenAccount>,
+    #[account(mut)] pub third_prize_winner_b: Account<'info, TokenAccount>,
+    #[account(mut)] pub third_prize_winner_c: Account<'info, TokenAccount>,
+    #[account(mut)] pub lucky_prize_winner: Account<'info, TokenAccount>,
+    #[account(mut)] pub universal_prize_recipients: Account<'info, TokenAccount>,
     pub authority: Signer<'info>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
@@ -139,6 +168,7 @@ pub enum ErrorCode {
     #[msg("Deposit too frequent")] DepositTooFrequent,
     #[msg("Already claimed")] AlreadyClaimed,
     #[msg("Not time for draw yet")] NotTimeYet,
+    #[msg("Insufficient pool balance")] InsufficientPoolBalance,
 }
 
 #[program]
@@ -380,14 +410,103 @@ pub mod royalpot {
         require!(current_hour > last_draw_hour, ErrorCode::NotTimeYet);
         
         if state.hourly_players < MIN_PARTICIPANTS {
-            // 人数不足，退还所有存款到用户账户（从奖池转回）
-            // 注意：这里简化处理，实际需要遍历所有用户账户
-            // 暂时只清空奖池，不实际转账
+            // 人数不足，清空奖池（不转账，用户从网站查看余额）
             state.hourly_pool = 0;
             state.hourly_players = 0;
         } else {
-            // 人数足够，正常开奖 - 这里简化处理，实际应该随机选择中奖者
-            // 将奖池金额标记为已开奖（实际中奖逻辑需要额外实现）
+            // 人数足够，正常开奖
+            let total_pool = state.hourly_pool;
+            require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
+            
+            // 计算奖金分配
+            let first_prize = total_pool * FIRST_PRIZE_RATE / BASE;
+            let second_prize = total_pool * SECOND_PRIZE_RATE / BASE;
+            let third_prize = total_pool * THIRD_PRIZE_RATE / BASE;
+            let lucky_prize = total_pool * LUCKY_PRIZE_RATE / BASE;
+            let universal_prize = total_pool * UNIVERSAL_PRIZE_RATE / BASE;
+            let rollover = total_pool * ROLLOVER_RATE / BASE;
+            
+            // 分配头奖
+            if first_prize > 0 {
+                let bump = state.bump;
+                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.first_prize_winner.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx, first_prize)?;
+            }
+            
+            // 分配二等奖
+            if second_prize > 0 {
+                let bump = state.bump;
+                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.second_prize_winner.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx, second_prize)?;
+            }
+            
+            // 分配三等奖
+            if third_prize > 0 {
+                let bump = state.bump;
+                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.third_prize_winner.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx, third_prize)?;
+            }
+            
+            // 分配幸运奖
+            if lucky_prize > 0 {
+                let bump = state.bump;
+                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.lucky_prize_winner.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx, lucky_prize)?;
+            }
+            
+            // 分配普惠奖
+            if universal_prize > 0 {
+                let bump = state.bump;
+                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.universal_prize_recipients.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx, universal_prize)?;
+            }
+            
+            // 更新状态
             state.hourly_pool = 0;
             state.hourly_players = 0;
         }
@@ -407,11 +526,137 @@ pub mod royalpot {
         require!(clock.unix_timestamp >= today_start + 86400, ErrorCode::NotTimeYet);
         
         if state.daily_players < MIN_PARTICIPANTS {
-            // 人数不足，退还所有存款
+            // 人数不足，清空奖池
             state.daily_pool = 0;
             state.daily_players = 0;
         } else {
             // 人数足够，正常开奖
+            let total_pool = state.daily_pool;
+            require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
+            
+            // 计算奖金分配
+            let first_prize = total_pool * FIRST_PRIZE_RATE / BASE;
+            let second_prize = total_pool * SECOND_PRIZE_RATE / BASE;
+            let third_prize = total_pool * THIRD_PRIZE_RATE / BASE;
+            let lucky_prize = total_pool * LUCKY_PRIZE_RATE / BASE;
+            let universal_prize = total_pool * UNIVERSAL_PRIZE_RATE / BASE;
+            let rollover = total_pool * ROLLOVER_RATE / BASE;
+            
+            // 分配头奖 (1人)
+            if first_prize > 0 {
+                let bump = state.bump;
+                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.first_prize_winner.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx, first_prize)?;
+            }
+            
+            // 分配二等奖 (2人)
+            if second_prize > 0 {
+                let bump = state.bump;
+                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                let cpi_ctx_a = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.second_prize_winner_a.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx_a, second_prize)?;
+                
+                let cpi_ctx_b = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.second_prize_winner_b.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx_b, second_prize)?;
+            }
+            
+            // 分配三等奖 (3人)
+            if third_prize > 0 {
+                let bump = state.bump;
+                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                
+                let cpi_ctx_a = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.third_prize_winner_a.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx_a, third_prize)?;
+                
+                let cpi_ctx_b = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.third_prize_winner_b.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx_b, third_prize)?;
+                
+                let cpi_ctx_c = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.third_prize_winner_c.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx_c, third_prize)?;
+            }
+            
+            // 分配幸运奖 (1人)
+            if lucky_prize > 0 {
+                let bump = state.bump;
+                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.lucky_prize_winner.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx, lucky_prize)?;
+            }
+            
+            // 分配普惠奖
+            if universal_prize > 0 {
+                let bump = state.bump;
+                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                let cpi_ctx = CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.universal_prize_recipients.to_account_info(),
+                        authority: ctx.accounts.pool_vault.to_account_info(),
+                    },
+                    seeds,
+                );
+                token::transfer(cpi_ctx, universal_prize)?;
+            }
+            
+            // 更新状态
             state.daily_pool = 0;
             state.daily_players = 0;
         }
