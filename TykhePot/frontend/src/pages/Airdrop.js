@@ -506,4 +506,23 @@ const styles = {
 
 
 export default Airdrop;
-// Modern styles
+
+// Modern CSS Override
+const style = document.createElement('style');
+style.textContent = `
+  .airdrop-page { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+  .airdrop-header { text-align: center; margin-bottom: 40px; }
+  .airdrop-title { font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #FFD700, #8B5CF6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .airdrop-subtitle { color: var(--text-secondary); margin-top: 12px; }
+  .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 24px; }
+  .stat-card { background: var(--gradient-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 24px; text-align: center; }
+  .stat-label { font-size: 0.875rem; color: var(--text-tertiary); margin-bottom: 8px; }
+  .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--color-gold); }
+  .user-card { background: var(--gradient-card); border: 1px solid var(--color-gold); border-radius: 16px; padding: 32px; text-align: center; margin-bottom: 24px; }
+  .claim-btn { background: linear-gradient(135deg, #FFD700, #FFA500); color: #000; border: none; padding: 16px 48px; border-radius: 12px; font-size: 1.125rem; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+  .claim-btn:hover { transform: translateY(-2px); box-shadow: 0 0 30px rgba(255,215,0,0.4); }
+  .formula-box { background: var(--surface-overlay); border-radius: 16px; padding: 24px; display: flex; align-items: center; justify-content: center; gap: 32px; flex-wrap: wrap; }
+  .rules-list { background: var(--gradient-card); border-radius: 16px; padding: 24px; }
+  @media (max-width: 768px) { .stats-row { grid-template-columns: repeat(2, 1fr); } }
+`;
+if (document.head) document.head.appendChild(style);

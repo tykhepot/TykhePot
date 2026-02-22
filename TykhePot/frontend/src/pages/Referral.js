@@ -443,4 +443,20 @@ const styles = {
 
 
 export default Referral;
-// Modern styles
+
+// Modern CSS Override
+const style = document.createElement('style');
+style.textContent = `
+  .referral-page { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+  .referral-header { text-align: center; margin-bottom: 40px; }
+  .referral-title { font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #FFD700, #8B5CF6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .referral-card { background: var(--gradient-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 32px; margin-bottom: 24px; }
+  .ref-link-box { background: var(--surface-overlay); border-radius: 12px; padding: 16px; display: flex; align-items: center; gap: 12px; }
+  .ref-link-input { flex: 1; background: transparent; border: none; color: var(--color-gold); font-family: monospace; font-size: 0.875rem; }
+  .copy-btn { background: var(--color-purple); color: #fff; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; }
+  .tiers-grid { display: grid; gap: 16px; }
+  .tier-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; background: var(--surface-overlay); border-radius: 12px; }
+  .tier-name { font-weight: 600; }
+  .tier-reward { color: var(--color-gold); font-weight: 700; }
+`;
+if (document.head) document.head.appendChild(style);
