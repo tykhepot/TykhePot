@@ -78,18 +78,24 @@ const PageWrapper = ({ children }) => (
 );
 
 function AppContent() {
+  // 检测是否为 Android 设备
+  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+  
   // ✅ 使用 useMemo 创建钱包适配器，避免重复创建
-  const wallets = useMemo(() => [
-    // ✅ 使用官方 Phantom 适配器，添加 appUrl 帮助移动端识别
-    new PhantomWalletAdapter({
-      appUrl: window.location.origin,
-    }),
+  const wallets = useMemo(() => {
+    const phantomAdapter = new PhantomWalletAdapter({
+      // Android 上需要明确设置 appUrl
+      appUrl: isAndroid ? 'https://www.tykhepot.io' : window.location.origin,
+    });
     
-    // Solflare 适配器
-    new SolflareWalletAdapter({
-      network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
-    }),
-  ], []);
+    return [
+      phantomAdapter,
+      // Solflare 适配器
+      new SolflareWalletAdapter({
+        network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
+      }),
+    ];
+  }, [isAndroid]);
 
   return (
     <ErrorBoundary>

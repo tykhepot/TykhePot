@@ -59,6 +59,15 @@ const Layout = ({ children }) => {
             {/* Wallet Button */}
             <div className="wallet-btn-container hide-mobile">
               <WalletMultiButton className="btn btn-primary btn-wallet" />
+              {/* 备用手动连接按钮 */}
+              <button 
+                className="btn btn-ghost"
+                onClick={() => window.open('phantom://', '_blank')}
+                title="Open Phantom App"
+                style={{ marginLeft: '8px', padding: '8px 12px' }}
+              >
+                👻
+              </button>
             </div>
 
             {/* Mobile Menu Button */}
