@@ -1,8 +1,9 @@
-import React, { useState, Component } from 'react';
+import React, { useState, Component, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-wallets';
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 
 import { AppProvider } from './context/AppContext';
 import { LanguageProvider } from './i18n/LanguageContext';
@@ -57,51 +58,10 @@ class ErrorBoundary extends Component {
   }
 }
 
-// Lazy load components to identify which one fails
-const LazyHome = React.lazy(() => import('./pages/Home'));
-const LazyHourlyPool = React.lazy(() => import('./pages/HourlyPool'));
-const LazyDailyPool = React.lazy(() => import('./pages/DailyPool'));
-const LazyStaking = React.lazy(() => import('./pages/Staking'));
-const LazyAirdrop = React.lazy(() => import('./pages/Airdrop'));
-const LazyReferral = React.lazy(() => import('./pages/Referral'));
-const LazyUserHistory = React.lazy(() => import('./pages/UserHistory'));
-const LazyLeaderboard = React.lazy(() => import('./pages/Leaderboard'));
-const LazyFAQ = React.lazy(() => import('./pages/FAQ'));
-const LazyContractTest = React.lazy(() => import('./pages/ContractTest'));
-
 const NETWORK = process.env.REACT_APP_SOLANA_NETWORK || 'devnet';
 const ENDPOINT = NETWORK === 'mainnet'
   ? 'https://api.mainnet-beta.solana.com'
   : 'https://api.devnet.solana.com';
-
-// 自定义 Phantom 适配器 - 添加 Android 支持
-class PhantomMobileWalletAdapter extends PhantomWalletAdapter {
-  constructor() {
-    super();
-  }
-
-  async connect() {
-    // 检查是否为 Android
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    
-    if (isAndroid) {
-      // Android 上直接使用 phantom:// URL scheme
-      const url = encodeURIComponent(window.location.href);
-      window.location.href = `phantom://connect?url=${url}`;
-      return;
-    }
-    
-    // iOS 或其他平台使用默认行为
-    return super.connect();
-  }
-}
-
-const wallets = [
-  new PhantomMobileWalletAdapter(),
-  new SolflareWalletAdapter({
-    network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
-  }),
-];
 
 // Loading fallback
 const Loading = () => (
@@ -118,6 +78,37 @@ const PageWrapper = ({ children }) => (
 );
 
 function AppContent() {
+  // ✅ 使用 useMemo 创建钱包适配器，避免重复创建
+  const wallets = useMemo(() => [
+    // ✅ 使用官方 Phantom 适配器，自动处理移动端（iOS/Android）
+    new PhantomWalletAdapter(),
+    
+    // Solflare 适配器
+    new SolflareWalletAdapter({
+      network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
+    }),
+  ], []);
+
+  return (
+    <ErrorBoundary>
+      <LanguageProvider>
+        <ConnectionProvider endpoint={ENDPOINT}>
+          {/* ✅ 移除 autoConnect，避免移动端自动连接问题 */}
+          <WalletProvider wallets={wallets} autoConnect={false}>
+            <WalletModalProvider>
+              <AppProvider>
+                <AppContentInner />
+              </AppProvider>
+            </WalletModalProvider>
+          </WalletProvider>
+        </ConnectionProvider>
+      </LanguageProvider>
+    </ErrorBoundary>
+  );
+}
+
+// 内部组件，使用 Router
+function AppContentInner() {
   return (
     <ErrorBoundary>
       <Router>
@@ -166,21 +157,7 @@ function App() {
     );
   }
 
-  return (
-    <ErrorBoundary>
-      <LanguageProvider>
-        <ConnectionProvider endpoint={ENDPOINT}>
-          <WalletProvider wallets={wallets} autoConnect>
-            <WalletModalProvider>
-              <AppProvider>
-                <AppContent />
-              </AppProvider>
-            </WalletModalProvider>
-          </WalletProvider>
-        </ConnectionProvider>
-      </LanguageProvider>
-    </ErrorBoundary>
-  );
+  return <AppContent />;
 }
 
 export default App;
