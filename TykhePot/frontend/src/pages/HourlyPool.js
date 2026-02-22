@@ -30,133 +30,372 @@ const HourlyPool = () => {
 
   return (
     <div className="page-container">
-      <div className="page-header">
-        <h1 className="page-title">⏰ {t('hourlyPool')}</h1>
-        <p className="page-subtitle">{language === 'en' ? 'Hourly draws, fast-paced gaming' : '每小时开奖，快节奏游戏'}</p>
-      </div>
+      <div className="container">
+        {/* Header */}
+        <div className="page-header-modern">
+          <div className="page-badge">⏰ Hourly Pool</div>
+          <h1 className="page-title-modern">{t('hourlyPool')}</h1>
+          <p className="page-subtitle-modern">
+            {language === 'en' 
+              ? 'Fast-paced gaming with hourly draws'
+              : '每小时开奖，快节奏游戏体验'
+            }
+          </p>
+        </div>
 
-      <div className="card-grid card-grid-2" style={{ marginBottom: '1rem' }}>
-        {/* Pool Info */}
-        <div className="content-card">
-          <h2 className="card-title">{t('poolInfo')}</h2>
-          
-          <div className="pool-display">
-            <span className="pool-label">{language === 'en' ? 'Current Pool' : '当前奖池'}</span>
-            <span className="pool-value">🪙 {(stats.hourlyPool / 1e9).toFixed(2)}M TPOT</span>
+        {/* Main Grid */}
+        <div className="grid grid-cols-2" style={{ gap: 'var(--space-6)', marginBottom: 'var(--space-6)' }}>
+          {/* Pool Info Card */}
+          <div className="card card-glass">
+            <h2 className="card-title-modern">📊 {t('poolInfo')}</h2>
+            
+            <div className="pool-display-modern">
+              <span className="pool-label-modern">{language === 'en' ? 'Current Pool' : '当前奖池'}</span>
+              <span className="pool-value-modern">🪙 {(stats.hourlyPool / 1e9).toFixed(2)}M TPOT</span>
+            </div>
+            
+            <div className="countdown-modern">
+              <span className="countdown-label-modern">{language === 'en' ? 'Next Draw' : '距离开奖'}</span>
+              <span className="countdown-value-modern">{formatTime(stats.hourlyNextDraw)}</span>
+            </div>
+            
+            <div className="info-grid-modern">
+              <div className="info-item-modern">
+                <span className="info-label-modern">{language === 'en' ? 'Participants' : '参与人数'}</span>
+                <span className="info-value-modern">{stats.hourlyParticipants || '--'}</span>
+              </div>
+              <div className="info-item-modern">
+                <span className="info-label-modern">{language === 'en' ? 'Min Deposit' : '最低投入'}</span>
+                <span className="info-value-modern">200 TPOT</span>
+              </div>
+              <div className="info-item-modern">
+                <span className="info-label-modern">{language === 'en' ? 'Draw Time' : '开奖周期'}</span>
+                <span className="info-value-modern">{language === 'en' ? 'Every hour' : '每整点'}</span>
+              </div>
+            </div>
           </div>
-          
-          <div className="countdown-box">
-            <span className="countdown-label">{language === 'en' ? 'Next Draw' : '距离开奖'}</span>
-            <span className="countdown-value">{formatTime(stats.hourlyNextDraw)}</span>
-          </div>
-          
-          <div className="info-list">
-            <div className="info-row">
-              <span className="info-label">{language === 'en' ? 'Participants' : '参与人数'}</span>
-              <span className="info-value">{stats.hourlyParticipants}</span>
+
+          {/* Deposit Card */}
+          <div className="card card-glass">
+            <h2 className="card-title-modern">🎰 {t('joinNowBtn')}</h2>
+            
+            <div className="form-group-modern">
+              <label className="form-label-modern">{language === 'en' ? 'Amount (TPOT)' : '投入数量 (TPOT)'}</label>
+              <input
+                type="number"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                min="200"
+                className="input-modern"
+                placeholder="200"
+              />
             </div>
-            <div className="info-row">
-              <span className="info-label">{language === 'en' ? 'Min Deposit' : '最低投入'}</span>
-              <span className="info-value">200 TPOT</span>
+            
+            <div className="quick-amount-grid">
+              {['200', '500', '1000', '5000'].map(amount => (
+                <button 
+                  key={amount} 
+                  className={`quick-btn ${depositAmount === amount ? 'active' : ''}`}
+                  onClick={() => setDepositAmount(amount)}
+                >
+                  {amount >= 1000 ? `${amount/1000}K` : amount}
+                </button>
+              ))}
             </div>
-            <div className="info-row">
-              <span className="info-label">{language === 'en' ? 'Draw Time' : '开奖周期'}</span>
-              <span className="info-value">{language === 'en' ? 'Every hour' : '每整点'}</span>
-            </div>
+            
+            <button 
+              onClick={handleDeposit}
+              disabled={isDepositing}
+              className="btn btn-primary btn-lg"
+              style={{ width: '100%', marginTop: 'var(--space-4)' }}
+            >
+              {isDepositing ? (language === 'en' ? 'Processing...' : '处理中...') : `🎰 ${language === 'en' ? 'Join Now' : '参与抽奖'}`}
+            </button>
           </div>
         </div>
 
-        {/* Deposit Section */}
-        <div className="content-card">
-          <h2 className="card-title">{t('joinNowBtn')}</h2>
-          
-          <div className="form-group">
-            <label className="form-label">{language === 'en' ? 'Amount (TPOT)' : '投入数量 (TPOT)'}</label>
-            <input
-              type="number"
-              value={depositAmount}
-              onChange={(e) => setDepositAmount(e.target.value)}
-              min="200"
-              className="form-input"
-              placeholder="200"
-            />
+        {/* Prize Distribution */}
+        <div className="card card-glass">
+          <h2 className="card-title-modern">💰 {t('prizeDistribution')}</h2>
+          <div className="prize-grid">
+            {[
+              { name: '🥇 1st Prize', percent: '30%', color: '#FFD700' },
+              { name: '🥈 2nd Prize', percent: '20%', color: '#C0C0C0' },
+              { name: '🥉 3rd Prize', percent: '15%', color: '#CD7F32' },
+              { name: '🎁 Lucky Prize', percent: '10%', color: '#8B5CF6' },
+              { name: '🌟 Universal Prize', percent: '20%', color: '#10B981' },
+              { name: '🔄 Roll Over', percent: '5%', color: '#6B7280' },
+            ].map((prize, idx) => (
+              <div key={idx} className="prize-item-modern">
+                <span className="prize-name-modern">{prize.name}</span>
+                <div className="prize-bar">
+                  <div style={{ width: prize.percent, background: prize.color }}></div>
+                </div>
+                <span className="prize-percent-modern">{prize.percent}</span>
+              </div>
+            ))}
           </div>
-          
-          <div className="quick-amount-grid">
-            <button className="quick-amount-btn" onClick={() => setDepositAmount('200')}>200</button>
-            <button className="quick-amount-btn" onClick={() => setDepositAmount('500')}>500</button>
-            <button className="quick-amount-btn" onClick={() => setDepositAmount('1000')}>1K</button>
-            <button className="quick-amount-btn" onClick={() => setDepositAmount('5000')}>5K</button>
-          </div>
-          
-          <button 
-            onClick={handleDeposit}
-            disabled={isDepositing}
-            className="btn-block btn-primary-gradient"
-          >
-            {isDepositing ? (language === 'en' ? 'Processing...' : '处理中...') : '🎰 ' + (language === 'en' ? 'Join Now' : '参与抽奖')}
-          </button>
         </div>
-      </div>
 
-      {/* Prize Distribution */}
-      <div className="content-card">
-        <h2 className="card-title">💰 {t('prizeDistribution')}</h2>
-        <div className="prize-list">
-          <div className="prize-row">
-            <span className="prize-name">🥇 {language === 'en' ? '1st Prize' : '头奖'}</span>
-            <span className="prize-percent">30%</span>
-          </div>
-          <div className="prize-row">
-            <span className="prize-name">🥈 {language === 'en' ? '2nd Prize' : '二等奖'}</span>
-            <span className="prize-percent">20%</span>
-          </div>
-          <div className="prize-row">
-            <span className="prize-name">🥉 {language === 'en' ? '3rd Prize' : '三等奖'}</span>
-            <span className="prize-percent">15%</span>
-          </div>
-          <div className="prize-row">
-            <span className="prize-name">🎁 {language === 'en' ? 'Lucky Prize' : '幸运奖'}</span>
-            <span className="prize-percent">10%</span>
-          </div>
-          <div className="prize-row">
-            <span className="prize-name">🌟 {language === 'en' ? 'Universal Prize' : '普惠奖'}</span>
-            <span className="prize-percent">20%</span>
-          </div>
-          <div className="prize-row">
-            <span className="prize-name">🔄 {language === 'en' ? 'Roll Over' : '回流'}</span>
-            <span className="prize-percent">5%</span>
+        {/* Fund Allocation */}
+        <div className="card card-glass" style={{ marginTop: 'var(--space-6)' }}>
+          <h2 className="card-title-modern">📊 {t('fundAllocation')}</h2>
+          <div className="fund-grid">
+            {[
+              { label: language === 'en' ? 'Burn' : '销毁', percent: '3%', color: '#EF4444' },
+              { label: language === 'en' ? 'Platform' : '平台', percent: '2%', color: '#3B82F6' },
+              { label: language === 'en' ? 'Pool' : '奖池', percent: '95%', color: '#FFD700' },
+            ].map((fund, idx) => (
+              <div key={idx} className="fund-item-modern">
+                <span className="fund-label-modern">{fund.label}</span>
+                <div className="fund-progress">
+                  <div style={{ width: fund.percent, background: fund.color }}></div>
+                </div>
+                <span className="fund-percent-modern">{fund.percent}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Fund Allocation */}
-      <div className="content-card">
-        <h2 className="card-title">📊 {t('fundAllocation')}</h2>
-        <div className="fund-list">
-          <div className="fund-item">
-            <span className="fund-label">{language === 'en' ? 'Burn' : '销毁'}</span>
-            <div className="fund-bar">
-              <div style={{ width: '3%', background: '#FF4444' }} className="fund-fill"></div>
-            </div>
-            <span className="fund-percent">3%</span>
-          </div>
-          <div className="fund-item">
-            <span className="fund-label">{language === 'en' ? 'Platform' : '平台'}</span>
-            <div className="fund-bar">
-              <div style={{ width: '2%', background: '#4488FF' }} className="fund-fill"></div>
-            </div>
-            <span className="fund-percent">2%</span>
-          </div>
-          <div className="fund-item">
-            <span className="fund-label">{language === 'en' ? 'Pool' : '奖池'}</span>
-            <div className="fund-bar">
-              <div style={{ width: '95%', background: '#FFD700' }} className="fund-fill"></div>
-            </div>
-            <span className="fund-percent">95%</span>
-          </div>
-        </div>
-      </div>
+      <style>{`
+        .page-header-modern {
+          text-align: center;
+          padding: var(--space-12) 0;
+        }
+        
+        .page-badge {
+          display: inline-block;
+          background: oklch(55% 0.2 270 / 0.2);
+          color: var(--color-gold);
+          padding: var(--space-2) var(--space-4);
+          border-radius: var(--radius-full);
+          font-size: var(--text-sm);
+          font-weight: 600;
+          margin-bottom: var(--space-4);
+        }
+        
+        .page-title-modern {
+          font-size: var(--text-4xl);
+          font-weight: 700;
+          margin-bottom: var(--space-3);
+          background: linear-gradient(135deg, #FFD700, #8B5CF6);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+        
+        .page-subtitle-modern {
+          font-size: var(--text-lg);
+          color: var(--text-secondary);
+        }
+        
+        .card-title-modern {
+          font-size: var(--text-xl);
+          font-weight: 600;
+          margin-bottom: var(--space-6);
+          color: var(--text-primary);
+        }
+        
+        .pool-display-modern {
+          background: oklch(15% 0.02 280);
+          padding: var(--space-4);
+          border-radius: var(--radius-lg);
+          text-align: center;
+          margin-bottom: var(--space-4);
+        }
+        
+        .pool-label-modern {
+          display: block;
+          font-size: var(--text-sm);
+          color: var(--text-tertiary);
+          margin-bottom: var(--space-2);
+        }
+        
+        .pool-value-modern {
+          font-size: var(--text-2xl);
+          font-weight: 700;
+          color: var(--color-gold);
+        }
+        
+        .countdown-modern {
+          background: linear-gradient(135deg, oklch(55% 0.2 270 / 0.2), oklch(45% 0.15 280 / 0.2));
+          padding: var(--space-4);
+          border-radius: var(--radius-lg);
+          text-align: center;
+          margin-bottom: var(--space-4);
+        }
+        
+        .countdown-label-modern {
+          display: block;
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          margin-bottom: var(--space-2);
+        }
+        
+        .countdown-value-modern {
+          font-size: var(--text-3xl);
+          font-weight: 700;
+          font-family: var(--font-mono);
+          color: var(--text-primary);
+        }
+        
+        .info-grid-modern {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: var(--space-3);
+        }
+        
+        .info-item-modern {
+          text-align: center;
+          padding: var(--space-3);
+          background: oklch(15% 0.02 280);
+          border-radius: var(--radius-md);
+        }
+        
+        .info-label-modern {
+          display: block;
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          margin-bottom: var(--space-1);
+        }
+        
+        .info-value-modern {
+          font-size: var(--text-base);
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        
+        .form-group-modern {
+          margin-bottom: var(--space-4);
+        }
+        
+        .form-label-modern {
+          display: block;
+          font-size: var(--text-sm);
+          font-weight: 500;
+          color: var(--text-secondary);
+          margin-bottom: var(--space-2);
+        }
+        
+        .input-modern {
+          width: 100%;
+          padding: var(--space-3) var(--space-4);
+          background: oklch(15% 0.02 280);
+          border: 1px solid var(--border-default);
+          border-radius: var(--radius-md);
+          color: var(--text-primary);
+          font-size: var(--text-lg);
+        }
+        
+        .input-modern:focus {
+          border-color: var(--color-purple);
+          box-shadow: 0 0 0 3px oklch(55% 0.2 270 / 0.2);
+          outline: none;
+        }
+        
+        .quick-amount-grid {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: var(--space-2);
+        }
+        
+        .quick-btn {
+          padding: var(--space-2) var(--space-3);
+          background: oklch(15% 0.02 280);
+          border: 1px solid var(--border-default);
+          border-radius: var(--radius-md);
+          color: var(--text-secondary);
+          font-size: var(--text-sm);
+          cursor: pointer;
+          transition: all var(--transition-fast);
+        }
+        
+        .quick-btn:hover, .quick-btn.active {
+          background: oklch(55% 0.2 270 / 0.2);
+          border-color: var(--color-gold);
+          color: var(--color-gold);
+        }
+        
+        .prize-grid {
+          display: grid;
+          gap: var(--space-3);
+        }
+        
+        .prize-item-modern {
+          display: grid;
+          grid-template-columns: 120px 1fr 50px;
+          align-items: center;
+          gap: var(--space-3);
+        }
+        
+        .prize-name-modern {
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+        }
+        
+        .prize-bar {
+          height: 8px;
+          background: oklch(20% 0.02 280);
+          border-radius: var(--radius-full);
+          overflow: hidden;
+        }
+        
+        .prize-bar div {
+          height: 100%;
+          border-radius: var(--radius-full);
+        }
+        
+        .prize-percent-modern {
+          font-size: var(--text-sm);
+          font-weight: 600;
+          color: var(--text-primary);
+          text-align: right;
+        }
+        
+        .fund-grid {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-4);
+        }
+        
+        .fund-item-modern {
+          display: grid;
+          grid-template-columns: 100px 1fr 50px;
+          align-items: center;
+          gap: var(--space-3);
+        }
+        
+        .fund-label-modern {
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+        }
+        
+        .fund-progress {
+          height: 12px;
+          background: oklch(20% 0.02 280);
+          border-radius: var(--radius-full);
+          overflow: hidden;
+        }
+        
+        .fund-progress div {
+          height: 100%;
+          border-radius: var(--radius-full);
+        }
+        
+        .fund-percent-modern {
+          font-size: var(--text-base);
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+        
+        @media (max-width: 768px) {
+          .grid-cols-2 { grid-template-columns: 1fr !important; }
+          .info-grid-modern { grid-template-columns: 1fr !important; }
+          .prize-item-modern { grid-template-columns: 1fr !important; gap: var(--space-2); }
+          .fund-item-modern { grid-template-columns: 1fr !important; gap: var(--space-2); }
+        }
+      `}</style>
     </div>
   );
 };

@@ -420,3 +420,19 @@ const styles = {
 };
 
 export default Staking;
+
+// Modern CSS Styles Override
+const style = document.createElement('style');
+style.textContent = `
+  .staking-container { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
+  .staking-header { text-align: center; margin-bottom: 40px; }
+  .staking-title { font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #FFD700, #8B5CF6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 12px; }
+  .staking-subtitle { color: var(--text-secondary); font-size: 1.1rem; }
+  .staking-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-bottom: 24px; }
+  .staking-card { background: var(--gradient-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 24px; cursor: pointer; transition: all 0.2s; }
+  .staking-card:hover { transform: translateY(-4px); border-color: var(--color-gold); }
+  .staking-card.selected { border-color: var(--color-gold); background: linear-gradient(135deg, rgba(255,215,0,0.1), transparent); }
+  .stake-form { background: var(--gradient-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 24px; }
+  @media (max-width: 768px) { .staking-grid { grid-template-columns: 1fr; } }
+`;
+if (document.head) document.head.appendChild(style);
