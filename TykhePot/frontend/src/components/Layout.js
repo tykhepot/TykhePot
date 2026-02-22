@@ -59,12 +59,28 @@ const Layout = ({ children }) => {
             {/* Wallet Button */}
             <div className="wallet-btn-container hide-mobile">
               <WalletMultiButton className="btn btn-primary btn-wallet" />
-              {/* 备用手动连接按钮 */}
+              {/* 备用手动连接按钮 - 尝试多种方式打开钱包 */}
               <button 
                 className="btn btn-ghost"
-                onClick={() => window.open('phantom://', '_blank')}
-                title="Open Phantom App"
-                style={{ marginLeft: '8px', padding: '8px 12px' }}
+                onClick={() => {
+                  // 尝试多种方式打开 Phantom
+                  const methods = [
+                    'phantom://',
+                    'https://phantom.app/ul/browse/' + encodeURIComponent(window.location.href),
+                    'intent://phantom.app/connect?url=' + encodeURIComponent(window.location.href) + '#Intent;scheme=phantom;package=com.phantom;end'
+                  ];
+                  
+                  // 依次尝试，每种方式等待一小段时间
+                  for (let i = 0; i < methods.length; i++) {
+                    try {
+                      window.location.href = methods[i];
+                    } catch (e) {
+                      console.log('Failed to open:', methods[i]);
+                    }
+                  }
+                }}
+                title="打开钱包 APP"
+                style={{ marginLeft: '8px', padding: '8px 12px', fontSize: '1.2rem' }}
               >
                 👻
               </button>

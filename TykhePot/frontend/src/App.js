@@ -1,9 +1,8 @@
-import React, { useState, Component, useMemo } from 'react';
+import React, { useState, Component, useMemo, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
-import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import { PhantomWalletAdapter } from '@solana/wallet-adapter-wallets';
-import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
+import { ConnectionProvider, WalletProvider, useWallet } from '@solana/wallet-adapter-react';
+import { WalletModalProvider, WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
 
 import { AppProvider } from './context/AppContext';
 import { LanguageProvider } from './i18n/LanguageContext';
@@ -63,6 +62,18 @@ const ENDPOINT = NETWORK === 'mainnet'
   ? 'https://api.mainnet-beta.solana.com'
   : 'https://api.devnet.solana.com';
 
+// 检测是否为移动设备
+const isMobile = () => {
+  if (typeof window === 'undefined') return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
+// 检测是否为 iOS
+const isIOS = () => {
+  if (typeof window === 'undefined') return false;
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+};
+
 // Loading fallback
 const Loading = () => (
   <div style={{ padding: '50px', textAlign: 'center', color: '#FFD700' }}>
@@ -78,30 +89,26 @@ const PageWrapper = ({ children }) => (
 );
 
 function AppContent() {
-  // 检测是否为 Android 设备
-  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
-  
-  // ✅ 使用 useMemo 创建钱包适配器，避免重复创建
+  // 使用 useMemo 创建钱包适配器
   const wallets = useMemo(() => {
     const phantomAdapter = new PhantomWalletAdapter({
-      // Android 上需要明确设置 appUrl
-      appUrl: isAndroid ? 'https://www.tykhepot.io' : window.location.origin,
+      // 设置 appUrl 帮助 Phantom 识别回跳地址
+      appUrl: window.location?.origin || 'https://www.tykhepot.io',
     });
     
     return [
       phantomAdapter,
-      // Solflare 适配器
       new SolflareWalletAdapter({
         network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
       }),
     ];
-  }, [isAndroid]);
+  }, []);
 
   return (
     <ErrorBoundary>
       <LanguageProvider>
         <ConnectionProvider endpoint={ENDPOINT}>
-          {/* ✅ 移除 autoConnect，避免移动端自动连接问题 */}
+          {/* 不使用 autoConnect，让用户手动点击连接 */}
           <WalletProvider wallets={wallets} autoConnect={false}>
             <WalletModalProvider>
               <AppProvider>
@@ -156,9 +163,9 @@ function App() {
     return (
       <ErrorBoundary>
         <LanguageProvider>
-          <RiskDisclaimer
-            onAccept={handleAcceptRisk}
-            onDecline={handleDeclineRisk}
+          <RiskDisclaimer 
+            onAccept={handleAcceptRisk} 
+            onDecline={handleDeclineRisk} 
           />
         </LanguageProvider>
       </ErrorBoundary>
