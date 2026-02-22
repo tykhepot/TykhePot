@@ -20,7 +20,7 @@ const Whitepaper = () => {
             { label: 'Token Name', value: 'TPOT' },
             { label: 'Total Supply', value: '1,000,000,000 TPOT' },
             { label: 'Initial Liquidity', value: '50,000,000 TPOT (5%)' },
-            { label: 'Airdrop', value: '100,000,000 TPOT (10%)' },
+            { label: 'Airdrop', value: '100 TPOT per wallet (free, one-time)' },
             { label: 'Staking Rewards', value: '350,000,000 TPOT (35%)' },
             { label: 'Team', value: '200,000,000 TPOT (20%) - 4 year vesting' },
             { label: 'Marketing', value: '100,000,000 TPOT (10%)' },
@@ -61,8 +61,8 @@ const Whitepaper = () => {
           ]
         },
         {
-          title: '7. Referral Program',
-          content: 'Referrers receive 5% of their referee\'s deposits as rewards. This encourages community growth and rewards active participants.'
+          title: '7. Airdrop & Referral Program',
+          content: 'Airdrop: Every wallet can claim 100 TPOT for FREE (one-time only). No participation requirements!\n\nReferral Program: Referrers receive 8% of their referee\'s daily pool deposits as rewards. Referees receive a one-time 2% bonus on their first deposit. This encourages community growth and rewards active participants.'
         },
         {
           title: '8. Security Features',
@@ -98,7 +98,7 @@ const Whitepaper = () => {
             { label: '代币名称', value: 'TPOT' },
             { label: '总供应量', value: '1,000,000,000 TPOT' },
             { label: '初始流动性', value: '50,000,000 TPOT (5%)' },
-            { label: '空投', value: '100,000,000 TPOT (10%)' },
+            { label: '空投', value: '每个钱包100 TPOT（免费，仅限一次）' },
             { label: '质押奖励', value: '350,000,000 TPOT (35%)' },
             { label: '团队', value: '200,000,000 TPOT (20%) - 4年锁仓' },
             { label: '市场营销', value: '100,000,000 TPOT (10%)' },
@@ -139,8 +139,8 @@ const Whitepaper = () => {
           ]
         },
         {
-          title: '7. 推荐计划',
-          content: '推荐人获得被推荐人投入的 5% 作为奖励。这鼓励社区增长并奖励活跃参与者。'
+          title: '7. 空投与推荐计划',
+          content: '空投：每个钱包可免费领取100 TPOT！（仅限一次，无需任何参与条件）\n\n推荐计划：推荐人获得被推荐人天池投入的8%作为奖励。被推荐人首次存款可获得2%一次性奖励。这鼓励社区增长并奖励活跃参与者。'
         },
         {
           title: '8. 安全功能',
