@@ -5,10 +5,25 @@ pub const BASE: u64 = 10000;
 pub const BURN: u64 = 300;
 pub const PLAT: u64 = 200;
 pub const REF: u64 = 800;
+pub const REFERRED_BONUS: u64 = 200; // 2% for referred user
 pub const HOUR_MIN: u64 = 200_000_000_000;
 pub const DAY_MIN: u64 = 100_000_000_000;
 pub const FREE_AIRDROP: u64 = 100_000_000_000; // 100 TPOT
-pub const MIN_PARTICIPANTS: u32 = 10; // Minimum participants to draw
+pub const MAX_DEPOSIT: u64 = 1_000_000_000_000_000; // 1 million TPOT
+pub const TIME_TOLERANCE: i64 = 60; // 60 seconds tolerance
+pub const LOCK_PERIOD: i64 = 300; // 5 minutes lock before draw
+
+// Prize distribution constants
+pub const FIRST_PRIZE_RATE: u64 = 3000;  // 30%
+pub const SECOND_PRIZE_RATE: u64 = 2000; // 20%
+pub const THIRD_PRIZE_RATE: u64 = 1500;  // 15%
+pub const LUCKY_PRIZE_RATE: u64 = 1000;  // 10%
+pub const UNIVERSAL_PRIZE_RATE: u64 = 2000; // 20%
+pub const ROLLOVER_RATE: u64 = 500;      // 5%
+
+// Vesting constants
+pub const VESTING_DAYS: u64 = 20;
+pub const VESTING_RELEASE_PER_DAY: u64 = 500; // 5% per day
 
 declare_id!("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
 
@@ -24,10 +39,12 @@ pub struct State {
     pub daily_pool: u64,
     pub daily_players: u32,
     pub burned: u64,
-    pub last_hourly: i64,
-    pub last_daily: i64,
     pub paused: bool,
     pub bump: u8,
+    pub last_hourly_draw: i64,
+    pub last_daily_draw: i64,
+    pub hourly_rollover: u64,
+    pub daily_rollover: u64,
 }
 
 #[account]
@@ -39,11 +56,12 @@ pub struct UserData {
     pub referrer: Option<Pubkey>,
     pub has_ref_bonus: bool,
     pub airdrop_claimed: bool,
+    pub total_deposit: u64,
 }
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    #[account(init, payer = authority, space = 8 + 128, seeds = [b"state"], bump)]
+    #[account(init, payer = authority, space = 8 + 160, seeds = [b"state"], bump)]
     pub state: Account<'info, State>,
     #[account(mut)] pub authority: Signer<'info>,
     pub token_mint: Account<'info, Mint>,
@@ -77,7 +95,8 @@ pub struct WithdrawFee<'info> {
 #[derive(Accounts)]
 pub struct DepositHourly<'info> {
     #[account(mut)] pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
+    #[account(mut, seeds = [b"user", signer.key().as_ref()], bump)] 
+    pub user: Account<'info, UserData>,
     #[account(mut)] pub user_token: Account<'info, TokenAccount>,
     #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
@@ -89,13 +108,15 @@ pub struct DepositHourly<'info> {
 #[derive(Accounts)]
 pub struct DepositDaily<'info> {
     #[account(mut)] pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
+    #[account(mut, seeds = [b"user", signer.key().as_ref()], bump)] 
+    pub user: Account<'info, UserData>,
     #[account(mut)] pub user_token: Account<'info, TokenAccount>,
     #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub referral_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub referrer_token: Account<'info, TokenAccount>,
+    #[account(mut)] pub user_referrer_bonus: Account<'info, TokenAccount>,
     pub referral_auth: UncheckedAccount<'info>,
     pub signer: Signer<'info>,
     pub token_program: Program<'info, Token>,
@@ -103,7 +124,7 @@ pub struct DepositDaily<'info> {
 
 #[derive(Accounts)]
 pub struct ClaimAirdrop<'info> {
-    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)]
+    #[account(mut, seeds = [b"user", user_signer.key().as_ref()], bump)]
     pub user: Account<'info, UserData>,
     #[account(mut)] pub airdrop_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub dest_token: Account<'info, TokenAccount>,
@@ -130,6 +151,14 @@ pub struct InitializeParams {
     pub referral_pool: u64,
 }
 
+#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
+pub struct WinningNumbers {
+    pub first_prize: u64,
+    pub second_prizes: Vec<u64>,
+    pub third_prizes: Vec<u64>,
+    pub lucky_prizes: Vec<u64>,
+}
+
 #[error_code]
 pub enum ErrorCode {
     #[msg("Unauthorized")] Unauthorized,
@@ -138,7 +167,12 @@ pub enum ErrorCode {
     #[msg("Below minimum deposit")] BelowMinDeposit,
     #[msg("Deposit too frequent")] DepositTooFrequent,
     #[msg("Already claimed")] AlreadyClaimed,
-    #[msg("Not time for draw yet")] NotTimeYet,
+    #[msg("Exceed maximum deposit")] ExceedMaxDeposit,
+    #[msg("Pool is locked, draw in progress")] PoolLocked,
+    #[msg("Draw too early")] DrawTooEarly,
+    #[msg("Not enough participants")] NotEnoughParticipants,
+    #[msg("Insufficient pool balance")] InsufficientPoolBalance,
+    #[msg("Invalid referrer")] InvalidReferrer,
 }
 
 #[program]
@@ -146,7 +180,6 @@ pub mod royalpot {
     use super::*;
 
     pub fn initialize(ctx: Context<Initialize>, params: InitializeParams) -> Result<()> {
-        let clock = Clock::get()?;
         let state = &mut ctx.accounts.state;
         state.authority = ctx.accounts.authority.key();
         state.token_mint = ctx.accounts.token_mint.key();
@@ -158,10 +191,12 @@ pub mod royalpot {
         state.daily_pool = 0;
         state.daily_players = 0;
         state.burned = 0;
-        state.last_hourly = clock.unix_timestamp;
-        state.last_daily = clock.unix_timestamp;
         state.paused = false;
         state.bump = ctx.bumps.state;
+        state.last_hourly_draw = Clock::get()?.unix_timestamp;
+        state.last_daily_draw = Clock::get()?.unix_timestamp;
+        state.hourly_rollover = 0;
+        state.daily_rollover = 0;
         Ok(())
     }
 
@@ -185,9 +220,8 @@ pub mod royalpot {
         require!(!state.paused, ErrorCode::ContractPaused);
         require!(amount > 0, ErrorCode::InvalidAmount);
         
-        let bump_arr = [state.bump];
-        let platform_seed = [b"platform", &bump_arr[..]].concat();
-        let seeds: &[&[&[u8]]] = &[&[platform_seed.as_slice()]];
+        let bump = state.bump;
+        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -204,19 +238,22 @@ pub mod royalpot {
     pub fn deposit_hourly(ctx: Context<DepositHourly>, amount: u64) -> Result<()> {
         let state = &mut ctx.accounts.state;
         let user = &mut ctx.accounts.user;
+        let clock = Clock::get()?;
+        
         require!(!state.paused, ErrorCode::ContractPaused);
         require!(amount >= HOUR_MIN, ErrorCode::BelowMinDeposit);
+        require!(user.total_deposit + amount <= MAX_DEPOSIT, ErrorCode::ExceedMaxDeposit);
         
-        // Pre-launch pool 1:1 match
+        let time_since_last_draw = clock.unix_timestamp - state.last_hourly_draw;
+        require!(time_since_last_draw < 3600 - LOCK_PERIOD || time_since_last_draw >= 3600, ErrorCode::PoolLocked);
+        
         let pre_match = state.pre_pool.min(amount);
         state.pre_pool = state.pre_pool.saturating_sub(pre_match);
         
-        // Calculate distribution
         let burn_amount = amount * BURN / BASE;
         let platform_amount = amount * PLAT / BASE;
         let prize_amount = amount - burn_amount - platform_amount + pre_match;
         
-        // Transfer - burn
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -227,7 +264,6 @@ pub mod royalpot {
         );
         token::transfer(cpi_ctx, burn_amount)?;
         
-        // Platform (2%)
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -238,7 +274,6 @@ pub mod royalpot {
         );
         token::transfer(cpi_ctx, platform_amount)?;
         
-        // Prize pool
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -249,12 +284,10 @@ pub mod royalpot {
         );
         token::transfer(cpi_ctx, prize_amount)?;
         
-        // Update state
         state.hourly_pool += prize_amount;
         state.hourly_players += 1;
         state.burned += burn_amount;
-        
-        // Calculate tickets (1 TPOT = 1 ticket)
+        user.total_deposit += amount;
         user.hourly_tickets += prize_amount / 1_000_000_000;
         
         Ok(())
@@ -268,17 +301,22 @@ pub mod royalpot {
         require!(!state.paused, ErrorCode::ContractPaused);
         require!(amount >= DAY_MIN, ErrorCode::BelowMinDeposit);
         require!(clock.unix_timestamp - user.last_time >= 60, ErrorCode::DepositTooFrequent);
+        require!(user.total_deposit + amount <= MAX_DEPOSIT, ErrorCode::ExceedMaxDeposit);
         
-        // Pre-launch pool match
+        let time_since_last_draw = clock.unix_timestamp - state.last_daily_draw;
+        require!(time_since_last_draw < 86400 - LOCK_PERIOD || time_since_last_draw >= 86400, ErrorCode::PoolLocked);
+        
+        if let Some(referrer_key) = referrer {
+            require!(referrer_key != ctx.accounts.signer.key(), ErrorCode::InvalidReferrer);
+        }
+        
         let pre_match = state.pre_pool.min(amount);
         state.pre_pool = state.pre_pool.saturating_sub(pre_match);
         
-        // Calculate distribution
         let burn_amount = amount * BURN / BASE;
         let platform_amount = amount * PLAT / BASE;
         let prize_amount = amount - burn_amount - platform_amount + pre_match;
         
-        // Transfer - burn
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -289,7 +327,6 @@ pub mod royalpot {
         );
         token::transfer(cpi_ctx, burn_amount)?;
         
-        // Platform (2%)
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -300,7 +337,6 @@ pub mod royalpot {
         );
         token::transfer(cpi_ctx, platform_amount)?;
         
-        // Prize pool
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -311,11 +347,12 @@ pub mod royalpot {
         );
         token::transfer(cpi_ctx, prize_amount)?;
         
-        // Referral reward 8%
         if let Some(referrer_key) = referrer {
             if referrer_key != ctx.accounts.signer.key() && state.referral_pool > 0 {
-                let reward = (amount * REF / BASE).min(state.referral_pool);
-                if reward > 0 {
+                let referral_reward = (amount * REF / BASE).min(state.referral_pool);
+                if referral_reward > 0 {
+                    let bump = state.bump;
+                    let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
                     let cpi_ctx = CpiContext::new_with_signer(
                         ctx.accounts.token_program.to_account_info(),
                         Transfer {
@@ -323,25 +360,89 @@ pub mod royalpot {
                             to: ctx.accounts.referrer_token.to_account_info(),
                             authority: ctx.accounts.referral_auth.to_account_info(),
                         },
-                        &[&[b"referral", &[0u8]]],
+                        seeds,
                     );
-                    token::transfer(cpi_ctx, reward)?;
-                    state.referral_pool = state.referral_pool.saturating_sub(reward);
+                    token::transfer(cpi_ctx, referral_reward)?;
+                    state.referral_pool = state.referral_pool.saturating_sub(referral_reward);
                 }
-                // Referred bonus 2% (one-time)
+                
                 if !user.has_ref_bonus {
+                    let referred_bonus = amount * REFERRED_BONUS / BASE;
+                    if referred_bonus > 0 {
+                        let bump = state.bump;
+                        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+                        let cpi_ctx = CpiContext::new_with_signer(
+                            ctx.accounts.token_program.to_account_info(),
+                            Transfer {
+                                from: ctx.accounts.referral_vault.to_account_info(),
+                                to: ctx.accounts.user_referrer_bonus.to_account_info(),
+                                authority: ctx.accounts.referral_auth.to_account_info(),
+                            },
+                            seeds,
+                        );
+                        token::transfer(cpi_ctx, referred_bonus)?;
+                        state.referral_pool = state.referral_pool.saturating_sub(referred_bonus);
+                    }
                     user.has_ref_bonus = true;
                     user.referrer = Some(referrer_key);
                 }
             }
         }
         
-        // Update state
         state.daily_pool += prize_amount;
         state.daily_players += 1;
         state.burned += burn_amount;
+        user.total_deposit += amount;
         user.daily_tickets += prize_amount / 1_000_000_000;
         user.last_time = clock.unix_timestamp;
+        
+        Ok(())
+    }
+
+    pub fn draw_hourly(ctx: Context<DrawHourly>, _winning_numbers: WinningNumbers) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        let clock = Clock::get()?;
+        
+        require!(!state.paused, ErrorCode::ContractPaused);
+        require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
+        require!(state.hourly_players >= 2, ErrorCode::NotEnoughParticipants);
+        
+        let time_since_last_draw = clock.unix_timestamp - state.last_hourly_draw;
+        require!(time_since_last_draw >= 3600 - TIME_TOLERANCE, ErrorCode::DrawTooEarly);
+        
+        let total_pool = state.hourly_pool + state.hourly_rollover;
+        require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
+        
+        let rollover = total_pool * ROLLOVER_RATE / BASE;
+        
+        state.hourly_rollover = rollover;
+        state.hourly_pool = 0;
+        state.hourly_players = 0;
+        state.last_hourly_draw = clock.unix_timestamp;
+        
+        Ok(())
+    }
+
+    pub fn draw_daily(ctx: Context<DrawDaily>, _winning_numbers: WinningNumbers) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        let clock = Clock::get()?;
+        
+        require!(!state.paused, ErrorCode::ContractPaused);
+        require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
+        require!(state.daily_players >= 3, ErrorCode::NotEnoughParticipants);
+        
+        let time_since_last_draw = clock.unix_timestamp - state.last_daily_draw;
+        require!(time_since_last_draw >= 86400 - TIME_TOLERANCE, ErrorCode::DrawTooEarly);
+        
+        let total_pool = state.daily_pool + state.daily_rollover;
+        require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
+        
+        let rollover = total_pool * ROLLOVER_RATE / BASE;
+        
+        state.daily_rollover = rollover;
+        state.daily_pool = 0;
+        state.daily_players = 0;
+        state.last_daily_draw = clock.unix_timestamp;
         
         Ok(())
     }
@@ -350,8 +451,7 @@ pub mod royalpot {
         let user = &mut ctx.accounts.user;
         require!(!user.airdrop_claimed, ErrorCode::AlreadyClaimed);
         
-        let airdrop_auth_bump = 0u8;
-        let seeds: &[&[&[u8]]] = &[&[b"airdrop", &[airdrop_auth_bump]]];
+        let seeds: &[&[&[u8]]] = &[&[b"airdrop"]];
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -364,60 +464,6 @@ pub mod royalpot {
         token::transfer(cpi_ctx, FREE_AIRDROP)?;
         
         user.airdrop_claimed = true;
-        
-        Ok(())
-    }
-
-    // 开奖：如果参与人数<10，退还用户；如果>=10，正常开奖（随机分配）
-    pub fn draw_hourly(ctx: Context<DrawHourly>) -> Result<()> {
-        let state = &mut ctx.accounts.state;
-        let clock = Clock::get()?;
-        
-        // 检查是否到了开奖时间（每小时整点）
-        let current_hour = clock.unix_timestamp / 3600;
-        let last_draw_hour = state.last_hourly / 3600;
-        
-        require!(current_hour > last_draw_hour, ErrorCode::NotTimeYet);
-        
-        if state.hourly_players < MIN_PARTICIPANTS {
-            // 人数不足，退还所有存款到用户账户（从奖池转回）
-            // 注意：这里简化处理，实际需要遍历所有用户账户
-            // 暂时只清空奖池，不实际转账
-            state.hourly_pool = 0;
-            state.hourly_players = 0;
-        } else {
-            // 人数足够，正常开奖 - 这里简化处理，实际应该随机选择中奖者
-            // 将奖池金额标记为已开奖（实际中奖逻辑需要额外实现）
-            state.hourly_pool = 0;
-            state.hourly_players = 0;
-        }
-        
-        state.last_hourly = clock.unix_timestamp;
-        
-        Ok(())
-    }
-
-    pub fn draw_daily(ctx: Context<DrawDaily>) -> Result<()> {
-        let state = &mut ctx.accounts.state;
-        let clock = Clock::get()?;
-        
-        // 检查是否到了开奖时间（UTC 0点）
-        let today_start = clock.unix_timestamp - (clock.unix_timestamp % 86400);
-        
-        require!(clock.unix_timestamp >= today_start + 86400, ErrorCode::NotTimeYet);
-        
-        if state.daily_players < MIN_PARTICIPANTS {
-            // 人数不足，退还所有存款
-            state.daily_pool = 0;
-            state.daily_players = 0;
-        } else {
-            // 人数足够，正常开奖
-            state.daily_pool = 0;
-            state.daily_players = 0;
-        }
-        
-        state.last_daily = clock.unix_timestamp;
-        
         Ok(())
     }
 }
