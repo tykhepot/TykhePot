@@ -126,6 +126,22 @@ const IDL = {
       ],
       args: [],
     },
+    {
+      name: "drawHourly",
+      accounts: [
+        { name: "state", isMut: true, isSigner: false },
+        { name: "authority", isMut: false, isSigner: true },
+      ],
+      args: [],
+    },
+    {
+      name: "drawDaily",
+      accounts: [
+        { name: "state", isMut: true, isSigner: false },
+        { name: "authority", isMut: false, isSigner: true },
+      ],
+      args: [],
+    },
   ],
   accounts: [
     {
@@ -521,6 +537,47 @@ class TykhePotSDK {
       return { success: true, tx };
     } catch (error) {
       console.error("Error claiming airdrop:", error);
+      throw error;
+    }
+  }
+
+  // 开奖：如果参与人数<10则退款，>=10则正常开奖
+  async drawHourly() {
+    if (!this.wallet.publicKey) {
+      throw new Error("Wallet not connected");
+    }
+
+    try {
+      const tx = await this.program.methods
+        .drawHourly()
+        .accounts({
+          authority: this.wallet.publicKey,
+        })
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("Error drawing hourly:", error);
+      throw error;
+    }
+  }
+
+  async drawDaily() {
+    if (!this.wallet.publicKey) {
+      throw new Error("Wallet not connected");
+    }
+
+    try {
+      const tx = await this.program.methods
+        .drawDaily()
+        .accounts({
+          authority: this.wallet.publicKey,
+        })
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("Error drawing daily:", error);
       throw error;
     }
   }

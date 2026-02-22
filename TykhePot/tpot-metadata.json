@@ -1,0 +1,10 @@
+{
+  "name": "TykhePot Token",
+  "symbol": "TPOT",
+  "description": "TykhePot Fair Lottery Protocol Token",
+  "decimals": 9,
+  "image": "https://raw.githubusercontent.com/tykhepot/TykhePot/main/assets/tpot-logo.png",
+  "extensions": {
+    "coingeckoId": ""
+  }
+}

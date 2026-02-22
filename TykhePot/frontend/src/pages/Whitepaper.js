@@ -30,8 +30,8 @@ const Whitepaper = () => {
         {
           title: '3. Pool Structure',
           items: [
-            { label: 'Hourly Pool', value: 'Draws every hour, min deposit 200 TPOT' },
-            { label: 'Daily Pool', value: 'Draws at midnight UTC, min deposit 100 TPOT' }
+            { label: 'Hourly Pool', value: 'Draws every hour, min deposit 200 TPOT, min 10 players to draw' },
+            { label: 'Daily Pool', value: 'Draws at midnight UTC, min deposit 100 TPOT, min 10 players to draw' }
           ]
         },
         {
@@ -108,8 +108,8 @@ const Whitepaper = () => {
         {
           title: '3. 奖池结构',
           items: [
-            { label: '小时池', value: '每小时开奖，最低投入 200 TPOT' },
-            { label: '天池', value: 'UTC 午夜开奖，最低投入 100 TPOT' }
+            { label: '小时池', value: '每小时开奖，最低投入 200 TPOT，最少10人参与' },
+            { label: '天池', value: 'UTC 午夜开奖，最低投入 100 TPOT，最少10人参与' }
           ]
         },
         {

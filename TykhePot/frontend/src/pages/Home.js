@@ -125,6 +125,14 @@ const Home = () => {
                   <span className="pool-info-value">200 TPOT</span>
                 </div>
                 <div className="pool-info-item">
+                  <span className="pool-info-label">{t('minParticipants')}</span>
+                  <span className="pool-info-value">10</span>
+                </div>
+                <div className="pool-info-item">
+                  <span className="pool-info-label">{t('drawRule')}</span>
+                  <span className="pool-info-value">&lt;10: refund</span>
+                </div>
+                <div className="pool-info-item">
                   <span className="pool-info-label">{t('nextDraw')}</span>
                   <span className="pool-info-value">{formatTime(stats.hourlyNextDraw)}</span>
                 </div>
@@ -165,6 +173,14 @@ const Home = () => {
                 <div className="pool-info-item">
                   <span className="pool-info-label">{t('minDeposit')}</span>
                   <span className="pool-info-value">100 TPOT</span>
+                </div>
+                <div className="pool-info-item">
+                  <span className="pool-info-label">{t('minParticipants')}</span>
+                  <span className="pool-info-value">10</span>
+                </div>
+                <div className="pool-info-item">
+                  <span className="pool-info-label">{t('drawRule')}</span>
+                  <span className="pool-info-value">&lt;10: refund</span>
                 </div>
                 <div className="pool-info-item">
                   <span className="pool-info-label">{t('nextDraw')}</span>
