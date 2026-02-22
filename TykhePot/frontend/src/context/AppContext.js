@@ -2,6 +2,22 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import TykhePotSDK from '../utils/tykhepot-sdk';
 
+// 计算下一次小时池开奖时间（下一个整点）
+const getNextHourlyDraw = () => {
+  const now = new Date();
+  const nextHour = new Date(now);
+  nextHour.setMinutes(0, 0, 0);
+  nextHour.setHours(nextHour.getHours() + 1);
+  return nextHour.getTime();
+};
+
+// 计算下一次天池开奖时间（下一个UTC 0点）
+const getNextDailyDraw = () => {
+  const now = new Date();
+  const nextUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0, 0));
+  return nextUTC.getTime();
+};
+
 const AppContext = createContext();
 
 export const AppProvider = ({ children }) => {
@@ -16,8 +32,8 @@ export const AppProvider = ({ children }) => {
     dailyPool: 0,
     hourlyParticipants: 0,
     dailyParticipants: 0,
-    hourlyNextDraw: Date.now() + 3600 * 1000,
-    dailyNextDraw: Date.now() + 24 * 3600 * 1000,
+    hourlyNextDraw: getNextHourlyDraw(),
+    dailyNextDraw: getNextDailyDraw(),
     isLoading: true,
     isPaused: false,
   });
@@ -60,8 +76,8 @@ export const AppProvider = ({ children }) => {
           dailyPool: poolStats.dailyPool,
           hourlyParticipants: poolStats.hourlyParticipants,
           dailyParticipants: poolStats.dailyParticipants,
-          hourlyNextDraw: hourlyLastDraw + 3600 * 1000,
-          dailyNextDraw: dailyLastDraw + 24 * 3600 * 1000,
+          hourlyNextDraw: getNextHourlyDraw(),
+          dailyNextDraw: getNextDailyDraw(),
           isLoading: false,
           isPaused: poolStats.paused,
         });
