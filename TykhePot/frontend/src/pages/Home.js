@@ -91,7 +91,6 @@ const Home = () => {
             {/* Hourly Pool */}
             <div className="pool-card pool-hourly">
               <div className="pool-header">
-                <span className="pool-icon">⏰</span>
                 <h3>{t('hourlyTitle')}</h3>
               </div>
               <p className="pool-desc">{t('hourlyDesc')}</p>
@@ -130,11 +129,10 @@ const Home = () => {
             {/* Daily Pool */}
             <div className="pool-card pool-daily">
               <div className="pool-badge-featured">
-                <span>🔥 {language === 'en' ? 'Most Popular' : '最热门'}</span>
+                <span>{language === 'en' ? 'Most Popular' : '最热门'}</span>
               </div>
               
               <div className="pool-header">
-                <span className="pool-icon">🌙</span>
                 <h3>{t('dailyTitle')}</h3>
               </div>
               <p className="pool-desc">{t('dailyDesc')}</p>
