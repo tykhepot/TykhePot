@@ -36,10 +36,19 @@ pub struct State {
     pub daily_pool: u64,
     pub daily_players: u32,
     pub burned: u64,
+    pub hourly_rollover: u64,
+    pub daily_rollover: u64,
     pub last_hourly: i64,
     pub last_daily: i64,
     pub paused: bool,
     pub bump: u8,
+    // Universal prize tracking
+    pub hourly_universal_per_user: u64,
+    pub daily_universal_per_user: u64,
+    pub hourly_universal_distributed: u32,
+    pub daily_universal_distributed: u32,
+    pub hourly_draw_completed: bool,
+    pub daily_draw_completed: bool,
 }
 
 #[account]
@@ -51,6 +60,9 @@ pub struct UserData {
     pub referrer: Option<Pubkey>,
     pub has_ref_bonus: bool,
     pub airdrop_claimed: bool,
+    pub total_deposit: u64,
+    pub hourly_universal_received: bool,
+    pub daily_universal_received: bool,
 }
 
 #[derive(Accounts)]
@@ -153,6 +165,28 @@ pub struct DrawDaily<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+#[derive(Accounts)]
+pub struct ClaimHourlyUniversal<'info> {
+    #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)]
+    pub user: Account<'info, UserData>,
+    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
+    pub authority: Signer<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimDailyUniversal<'info> {
+    #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)]
+    pub user: Account<'info, UserData>,
+    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
+    pub authority: Signer<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct InitializeParams {
     pub pre_pool: u64,
@@ -169,6 +203,12 @@ pub enum ErrorCode {
     #[msg("Already claimed")] AlreadyClaimed,
     #[msg("Not time for draw yet")] NotTimeYet,
     #[msg("Insufficient pool balance")] InsufficientPoolBalance,
+    #[msg("Exceed maximum deposit")] ExceedMaxDeposit,
+    #[msg("Pool is locked")] PoolLocked,
+    #[msg("Invalid referrer")] InvalidReferrer,
+    #[msg("Universal prize already received")] UniversalPrizeAlreadyReceived,
+    #[msg("Draw not completed")] DrawNotCompleted,
+    #[msg("Distribution not started")] DistributionNotStarted,
 }
 
 #[program]
@@ -188,10 +228,19 @@ pub mod royalpot {
         state.daily_pool = 0;
         state.daily_players = 0;
         state.burned = 0;
+        state.hourly_rollover = 0;
+        state.daily_rollover = 0;
         state.last_hourly = clock.unix_timestamp;
         state.last_daily = clock.unix_timestamp;
         state.paused = false;
         state.bump = ctx.bumps.state;
+        // Initialize universal prize tracking
+        state.hourly_universal_per_user = 0;
+        state.daily_universal_per_user = 0;
+        state.hourly_universal_distributed = 0;
+        state.daily_universal_distributed = 0;
+        state.hourly_draw_completed = false;
+        state.daily_draw_completed = false;
         Ok(())
     }
 
@@ -214,7 +263,7 @@ pub mod royalpot {
         require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
         require!(!state.paused, ErrorCode::ContractPaused);
         require!(amount > 0, ErrorCode::InvalidAmount);
-        
+
         let bump_arr = [state.bump];
         let platform_seed = [b"platform", &bump_arr[..]].concat();
         let seeds: &[&[&[u8]]] = &[&[platform_seed.as_slice()]];
@@ -234,18 +283,34 @@ pub mod royalpot {
     pub fn deposit_hourly(ctx: Context<DepositHourly>, amount: u64) -> Result<()> {
         let state = &mut ctx.accounts.state;
         let user = &mut ctx.accounts.user;
+        let clock = Clock::get()?;
+
         require!(!state.paused, ErrorCode::ContractPaused);
         require!(amount >= HOUR_MIN, ErrorCode::BelowMinDeposit);
-        
+        require!(amount <= MAX_DEPOSIT, ErrorCode::ExceedMaxDeposit);
+
+        // Check lock period before draw
+        let time_since_last = clock.unix_timestamp - state.last_hourly;
+        if time_since_last < 3600 {
+            require!(time_since_last < 3600 - LOCK_PERIOD, ErrorCode::PoolLocked);
+        }
+
+        // Reset for new round if draw completed
+        if state.hourly_draw_completed {
+            state.hourly_draw_completed = false;
+            state.hourly_universal_distributed = 0;
+            state.hourly_universal_per_user = 0;
+        }
+
         // Pre-launch pool 1:1 match
         let pre_match = state.pre_pool.min(amount);
         state.pre_pool = state.pre_pool.saturating_sub(pre_match);
-        
+
         // Calculate distribution
         let burn_amount = amount * BURN / BASE;
         let platform_amount = amount * PLAT / BASE;
         let prize_amount = amount - burn_amount - platform_amount + pre_match;
-        
+
         // Transfer - burn
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -256,7 +321,7 @@ pub mod royalpot {
             },
         );
         token::transfer(cpi_ctx, burn_amount)?;
-        
+
         // Platform (2%)
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -267,7 +332,7 @@ pub mod royalpot {
             },
         );
         token::transfer(cpi_ctx, platform_amount)?;
-        
+
         // Prize pool
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -278,15 +343,19 @@ pub mod royalpot {
             },
         );
         token::transfer(cpi_ctx, prize_amount)?;
-        
+
         // Update state
         state.hourly_pool += prize_amount;
         state.hourly_players += 1;
         state.burned += burn_amount;
-        
+        user.total_deposit += amount;
+
+        // Reset universal prize flag for new round
+        user.hourly_universal_received = false;
+
         // Calculate tickets (1 TPOT = 1 ticket)
         user.hourly_tickets += prize_amount / 1_000_000_000;
-        
+
         Ok(())
     }
 
@@ -294,20 +363,34 @@ pub mod royalpot {
         let state = &mut ctx.accounts.state;
         let user = &mut ctx.accounts.user;
         let clock = Clock::get()?;
-        
+
         require!(!state.paused, ErrorCode::ContractPaused);
         require!(amount >= DAY_MIN, ErrorCode::BelowMinDeposit);
+        require!(amount <= MAX_DEPOSIT, ErrorCode::ExceedMaxDeposit);
         require!(clock.unix_timestamp - user.last_time >= 60, ErrorCode::DepositTooFrequent);
-        
+
+        // Check lock period before draw
+        let time_since_last = clock.unix_timestamp - state.last_daily;
+        if time_since_last < 86400 {
+            require!(time_since_last < 86400 - LOCK_PERIOD, ErrorCode::PoolLocked);
+        }
+
+        // Reset for new round if draw completed
+        if state.daily_draw_completed {
+            state.daily_draw_completed = false;
+            state.daily_universal_distributed = 0;
+            state.daily_universal_per_user = 0;
+        }
+
         // Pre-launch pool match
         let pre_match = state.pre_pool.min(amount);
         state.pre_pool = state.pre_pool.saturating_sub(pre_match);
-        
+
         // Calculate distribution
         let burn_amount = amount * BURN / BASE;
         let platform_amount = amount * PLAT / BASE;
         let prize_amount = amount - burn_amount - platform_amount + pre_match;
-        
+
         // Transfer - burn
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -318,7 +401,7 @@ pub mod royalpot {
             },
         );
         token::transfer(cpi_ctx, burn_amount)?;
-        
+
         // Platform (2%)
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -329,7 +412,7 @@ pub mod royalpot {
             },
         );
         token::transfer(cpi_ctx, platform_amount)?;
-        
+
         // Prize pool
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -340,7 +423,7 @@ pub mod royalpot {
             },
         );
         token::transfer(cpi_ctx, prize_amount)?;
-        
+
         // Referral reward 8%
         if let Some(referrer_key) = referrer {
             if referrer_key != ctx.accounts.signer.key() && state.referral_pool > 0 {
@@ -358,28 +441,47 @@ pub mod royalpot {
                     token::transfer(cpi_ctx, reward)?;
                     state.referral_pool = state.referral_pool.saturating_sub(reward);
                 }
-                // Referred bonus 2% (one-time)
+                // Referred bonus 2% (one-time) - TRANSFER TO USER
                 if !user.has_ref_bonus {
                     user.has_ref_bonus = true;
                     user.referrer = Some(referrer_key);
+
+                    // Transfer 2% referred bonus to user
+                    let referred_bonus = amount * REFERRED_BONUS / BASE;
+                    if referred_bonus > 0 {
+                        let cpi_ctx = CpiContext::new_with_signer(
+                            ctx.accounts.token_program.to_account_info(),
+                            Transfer {
+                                from: ctx.accounts.referral_vault.to_account_info(),
+                                to: ctx.accounts.user_token.to_account_info(),
+                                authority: ctx.accounts.referral_auth.to_account_info(),
+                            },
+                            &[&[b"referral", &[0u8]]],
+                        );
+                        token::transfer(cpi_ctx, referred_bonus)?;
+                    }
                 }
             }
         }
-        
+
         // Update state
         state.daily_pool += prize_amount;
         state.daily_players += 1;
         state.burned += burn_amount;
+        user.total_deposit += amount;
         user.daily_tickets += prize_amount / 1_000_000_000;
         user.last_time = clock.unix_timestamp;
-        
+
+        // Reset universal prize flag for new round
+        user.daily_universal_received = false;
+
         Ok(())
     }
 
     pub fn claim_airdrop(ctx: Context<ClaimAirdrop>) -> Result<()> {
         let user = &mut ctx.accounts.user;
         require!(!user.airdrop_claimed, ErrorCode::AlreadyClaimed);
-        
+
         let airdrop_auth_bump = 0u8;
         let seeds: &[&[&[u8]]] = &[&[b"airdrop", &[airdrop_auth_bump]]];
         let cpi_ctx = CpiContext::new_with_signer(
@@ -392,13 +494,13 @@ pub mod royalpot {
             seeds,
         );
         token::transfer(cpi_ctx, FREE_AIRDROP)?;
-        
+
         user.airdrop_claimed = true;
-        
+
         Ok(())
     }
 
-    // 开奖：如果参与人数<10，退还用户；如果>=10，正常开奖（随机分配）
+    // 开奖：如果参与人数<10，回流5%；如果>=10，正常开奖
     pub fn draw_hourly(ctx: Context<DrawHourly>) -> Result<()> {
         let state = &mut ctx.accounts.state;
         let clock = Clock::get()?;
@@ -410,21 +512,29 @@ pub mod royalpot {
         require!(current_hour > last_draw_hour, ErrorCode::NotTimeYet);
         
         if state.hourly_players < MIN_PARTICIPANTS {
-            // 人数不足，清空奖池（不转账，用户从网站查看余额）
+            // 人数不足，5%回流，其余清空
+            let rollover = state.hourly_pool * ROLLOVER_RATE / BASE;
+            state.hourly_rollover += rollover;
             state.hourly_pool = 0;
             state.hourly_players = 0;
+            state.hourly_draw_completed = true;
         } else {
-            // 人数足够，正常开奖
-            let total_pool = state.hourly_pool;
+            // 人数足够，正常开奖（包含回流）
+            let total_pool = state.hourly_pool + state.hourly_rollover;
             require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
             
             // 计算奖金分配
             let first_prize = total_pool * FIRST_PRIZE_RATE / BASE;
-            let second_prize = total_pool * SECOND_PRIZE_RATE / BASE;
-            let third_prize = total_pool * THIRD_PRIZE_RATE / BASE;
+            // 二等奖均分给2人
+            let second_prize_each = (total_pool * SECOND_PRIZE_RATE / BASE) / 2;
+            // 三等奖均分给3人
+            let third_prize_each = (total_pool * THIRD_PRIZE_RATE / BASE) / 3;
             let lucky_prize = total_pool * LUCKY_PRIZE_RATE / BASE;
-            let universal_prize = total_pool * UNIVERSAL_PRIZE_RATE / BASE;
+            let universal_total = total_pool * UNIVERSAL_PRIZE_RATE / BASE;
             let rollover = total_pool * ROLLOVER_RATE / BASE;
+            
+            // 计算每人可获得的普惠奖金额
+            state.hourly_universal_per_user = universal_total / (state.hourly_players as u64);
             
             // 分配头奖
             if first_prize > 0 {
@@ -442,8 +552,8 @@ pub mod royalpot {
                 token::transfer(cpi_ctx, first_prize)?;
             }
             
-            // 分配二等奖
-            if second_prize > 0 {
+            // 分配二等奖 (每人10%)
+            if second_prize_each > 0 {
                 let bump = state.bump;
                 let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
                 let cpi_ctx = CpiContext::new_with_signer(
@@ -455,11 +565,11 @@ pub mod royalpot {
                     },
                     seeds,
                 );
-                token::transfer(cpi_ctx, second_prize)?;
+                token::transfer(cpi_ctx, second_prize_each)?;
             }
-            
-            // 分配三等奖
-            if third_prize > 0 {
+
+            // 分配三等奖 (每人5%)
+            if third_prize_each > 0 {
                 let bump = state.bump;
                 let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
                 let cpi_ctx = CpiContext::new_with_signer(
@@ -471,7 +581,7 @@ pub mod royalpot {
                     },
                     seeds,
                 );
-                token::transfer(cpi_ctx, third_prize)?;
+                token::transfer(cpi_ctx, third_prize_each)?;
             }
             
             // 分配幸运奖
@@ -490,25 +600,15 @@ pub mod royalpot {
                 token::transfer(cpi_ctx, lucky_prize)?;
             }
             
-            // 分配普惠奖
-            if universal_prize > 0 {
-                let bump = state.bump;
-                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
-                let cpi_ctx = CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    Transfer {
-                        from: ctx.accounts.pool_vault.to_account_info(),
-                        to: ctx.accounts.universal_prize_recipients.to_account_info(),
-                        authority: ctx.accounts.pool_vault.to_account_info(),
-                    },
-                    seeds,
-                );
-                token::transfer(cpi_ctx, universal_prize)?;
-            }
+            // 普惠奖不直接发放，由用户调用claim领取
             
-            // 更新状态
-            state.hourly_pool = 0;
-            state.hourly_players = 0;
+            // 保存回流
+            state.hourly_rollover = rollover;
+            state.hourly_draw_completed = true;
+            state.hourly_universal_distributed = 0;
+            
+            // 保留奖池余额用于普惠奖发放
+            state.hourly_pool = total_pool - first_prize - second_prize_each - third_prize_each - lucky_prize - universal_total - rollover;
         }
         
         state.last_hourly = clock.unix_timestamp;
@@ -519,29 +619,37 @@ pub mod royalpot {
     pub fn draw_daily(ctx: Context<DrawDaily>) -> Result<()> {
         let state = &mut ctx.accounts.state;
         let clock = Clock::get()?;
-        
+
         // 检查是否到了开奖时间（UTC 0点）
         let today_start = clock.unix_timestamp - (clock.unix_timestamp % 86400);
-        
+
         require!(clock.unix_timestamp >= today_start + 86400, ErrorCode::NotTimeYet);
-        
+
         if state.daily_players < MIN_PARTICIPANTS {
-            // 人数不足，清空奖池
+            // 人数不足，5%回流，其余清空
+            let rollover = state.daily_pool * ROLLOVER_RATE / BASE;
+            state.daily_rollover += rollover;
             state.daily_pool = 0;
             state.daily_players = 0;
+            state.daily_draw_completed = true;
         } else {
-            // 人数足够，正常开奖
-            let total_pool = state.daily_pool;
+            // 人数足够，正常开奖（包含回流）
+            let total_pool = state.daily_pool + state.daily_rollover;
             require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
-            
+
             // 计算奖金分配
             let first_prize = total_pool * FIRST_PRIZE_RATE / BASE;
-            let second_prize = total_pool * SECOND_PRIZE_RATE / BASE;
-            let third_prize = total_pool * THIRD_PRIZE_RATE / BASE;
+            // 二等奖均分给2人 (每人10%)
+            let second_prize_each = (total_pool * SECOND_PRIZE_RATE / BASE) / 2;
+            // 三等奖均分给3人 (每人5%)
+            let third_prize_each = (total_pool * THIRD_PRIZE_RATE / BASE) / 3;
             let lucky_prize = total_pool * LUCKY_PRIZE_RATE / BASE;
-            let universal_prize = total_pool * UNIVERSAL_PRIZE_RATE / BASE;
+            let universal_total = total_pool * UNIVERSAL_PRIZE_RATE / BASE;
             let rollover = total_pool * ROLLOVER_RATE / BASE;
             
+            // 计算每人可获得的普惠奖金额
+            state.daily_universal_per_user = universal_total / (state.daily_players as u64);
+
             // 分配头奖 (1人)
             if first_prize > 0 {
                 let bump = state.bump;
@@ -557,9 +665,9 @@ pub mod royalpot {
                 );
                 token::transfer(cpi_ctx, first_prize)?;
             }
-            
+
             // 分配二等奖 (2人)
-            if second_prize > 0 {
+            if second_prize_each > 0 {
                 let bump = state.bump;
                 let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
                 let cpi_ctx_a = CpiContext::new_with_signer(
@@ -571,8 +679,8 @@ pub mod royalpot {
                     },
                     seeds,
                 );
-                token::transfer(cpi_ctx_a, second_prize)?;
-                
+                token::transfer(cpi_ctx_a, second_prize_each)?;
+
                 let cpi_ctx_b = CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
                     Transfer {
@@ -582,14 +690,14 @@ pub mod royalpot {
                     },
                     seeds,
                 );
-                token::transfer(cpi_ctx_b, second_prize)?;
+                token::transfer(cpi_ctx_b, second_prize_each)?;
             }
-            
+
             // 分配三等奖 (3人)
-            if third_prize > 0 {
+            if third_prize_each > 0 {
                 let bump = state.bump;
                 let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
-                
+
                 let cpi_ctx_a = CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
                     Transfer {
@@ -599,8 +707,8 @@ pub mod royalpot {
                     },
                     seeds,
                 );
-                token::transfer(cpi_ctx_a, third_prize)?;
-                
+                token::transfer(cpi_ctx_a, third_prize_each)?;
+
                 let cpi_ctx_b = CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
                     Transfer {
@@ -610,8 +718,8 @@ pub mod royalpot {
                     },
                     seeds,
                 );
-                token::transfer(cpi_ctx_b, third_prize)?;
-                
+                token::transfer(cpi_ctx_b, third_prize_each)?;
+
                 let cpi_ctx_c = CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
                     Transfer {
@@ -621,9 +729,9 @@ pub mod royalpot {
                     },
                     seeds,
                 );
-                token::transfer(cpi_ctx_c, third_prize)?;
+                token::transfer(cpi_ctx_c, third_prize_each)?;
             }
-            
+
             // 分配幸运奖 (1人)
             if lucky_prize > 0 {
                 let bump = state.bump;
@@ -639,29 +747,81 @@ pub mod royalpot {
                 );
                 token::transfer(cpi_ctx, lucky_prize)?;
             }
+
+            // 普惠奖不直接发放，由用户调用claim领取
+
+            // 保存回流
+            state.daily_rollover = rollover;
+            state.daily_draw_completed = true;
+            state.daily_universal_distributed = 0;
             
-            // 分配普惠奖
-            if universal_prize > 0 {
-                let bump = state.bump;
-                let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
-                let cpi_ctx = CpiContext::new_with_signer(
-                    ctx.accounts.token_program.to_account_info(),
-                    Transfer {
-                        from: ctx.accounts.pool_vault.to_account_info(),
-                        to: ctx.accounts.universal_prize_recipients.to_account_info(),
-                        authority: ctx.accounts.pool_vault.to_account_info(),
-                    },
-                    seeds,
-                );
-                token::transfer(cpi_ctx, universal_prize)?;
-            }
-            
-            // 更新状态
-            state.daily_pool = 0;
-            state.daily_players = 0;
+            // 保留奖池余额用于普惠奖发放
+            state.daily_pool = total_pool - first_prize - second_prize_each - third_prize_each - lucky_prize - universal_total - rollover;
         }
-        
+
         state.last_daily = clock.unix_timestamp;
+
+        Ok(())
+    }
+
+    // 用户领取普惠奖
+    pub fn claim_hourly_universal(ctx: Context<ClaimHourlyUniversal>) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        let user = &mut ctx.accounts.user;
+        
+        require!(state.hourly_draw_completed, ErrorCode::DrawNotCompleted);
+        require!(!user.hourly_universal_received, ErrorCode::UniversalPrizeAlreadyReceived);
+        require!(state.hourly_universal_per_user > 0, ErrorCode::DistributionNotStarted);
+        
+        let prize = state.hourly_universal_per_user;
+        
+        // 使用 PDA 签名转移代币
+        let bump = state.bump;
+        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.pool_vault.to_account_info(),
+                to: ctx.accounts.user_token.to_account_info(),
+                authority: ctx.accounts.pool_vault.to_account_info(),
+            },
+            seeds,
+        );
+        token::transfer(cpi_ctx, prize)?;
+        
+        user.hourly_universal_received = true;
+        state.hourly_universal_distributed += 1;
+        
+        Ok(())
+    }
+
+    // 用户领取每日普惠奖
+    pub fn claim_daily_universal(ctx: Context<ClaimDailyUniversal>) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        let user = &mut ctx.accounts.user;
+        
+        require!(state.daily_draw_completed, ErrorCode::DrawNotCompleted);
+        require!(!user.daily_universal_received, ErrorCode::UniversalPrizeAlreadyReceived);
+        require!(state.daily_universal_per_user > 0, ErrorCode::DistributionNotStarted);
+        
+        let prize = state.daily_universal_per_user;
+        
+        // 使用 PDA 签名转移代币
+        let bump = state.bump;
+        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.pool_vault.to_account_info(),
+                to: ctx.accounts.user_token.to_account_info(),
+                authority: ctx.accounts.pool_vault.to_account_info(),
+            },
+            seeds,
+        );
+        token::transfer(cpi_ctx, prize)?;
+        
+        user.daily_universal_received = true;
+        state.daily_universal_distributed += 1;
         
         Ok(())
     }
