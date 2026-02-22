@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, Component } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ConnectionProvider, WalletProvider, useConnection } from '@solana/wallet-adapter-react';
+import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
 
@@ -8,7 +8,6 @@ import { AppProvider } from './context/AppContext';
 import { LanguageProvider } from './i18n/LanguageContext';
 import Layout from './components/Layout';
 import RiskDisclaimer from './components/RiskDisclaimer';
-import ContractInit from './components/ContractInit';
 import InitPage from './pages/InitPage';
 import Home from './pages/Home';
 import HourlyPool from './pages/HourlyPool';
@@ -20,9 +19,55 @@ import UserHistory from './pages/UserHistory';
 import Leaderboard from './pages/Leaderboard';
 import FAQ from './pages/FAQ';
 import ContractTest from './pages/ContractTest';
+import Whitepaper from './pages/Whitepaper';
 
 import '@solana/wallet-adapter-react-ui/styles.css';
 import './styles.css';
+
+// Error Boundary to catch rendering errors
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Error Boundary caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '50px', color: 'red', background: '#000', minHeight: '100vh' }}>
+          <h1>🚨 渲染错误</h1>
+          <pre style={{ color: 'red', fontSize: '12px' }}>
+            {this.state.error?.toString()}
+          </pre>
+          <button onClick={() => window.location.reload()} style={{ padding: '10px 20px' }}>
+            重新加载
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Lazy load components to identify which one fails
+const LazyHome = React.lazy(() => import('./pages/Home'));
+const LazyHourlyPool = React.lazy(() => import('./pages/HourlyPool'));
+const LazyDailyPool = React.lazy(() => import('./pages/DailyPool'));
+const LazyStaking = React.lazy(() => import('./pages/Staking'));
+const LazyAirdrop = React.lazy(() => import('./pages/Airdrop'));
+const LazyReferral = React.lazy(() => import('./pages/Referral'));
+const LazyUserHistory = React.lazy(() => import('./pages/UserHistory'));
+const LazyLeaderboard = React.lazy(() => import('./pages/Leaderboard'));
+const LazyFAQ = React.lazy(() => import('./pages/FAQ'));
+const LazyContractTest = React.lazy(() => import('./pages/ContractTest'));
 
 const NETWORK = process.env.REACT_APP_SOLANA_NETWORK || 'devnet';
 const ENDPOINT = NETWORK === 'mainnet'
@@ -30,37 +75,48 @@ const ENDPOINT = NETWORK === 'mainnet'
   : 'https://api.devnet.solana.com';
 
 const wallets = [
-  new PhantomWalletAdapter(),
-  new SolflareWalletAdapter(),
+  new PhantomWalletAdapter({
+    appUrl: window.location.origin,
+  }),
+  new SolflareWalletAdapter({
+    network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
+  }),
 ];
 
-// 包装组件处理初始化
+// Loading fallback
+const Loading = () => (
+  <div style={{ padding: '50px', textAlign: 'center', color: '#FFD700' }}>
+    <h2>加载中...</h2>
+  </div>
+);
+
+// Page wrapper with error handling
+const PageWrapper = ({ children }) => (
+  <ErrorBoundary>
+    <Layout>{children}</Layout>
+  </ErrorBoundary>
+);
+
 function AppContent() {
   return (
-    <Router>
-      <Routes>
-        {/* Init page without Layout */}
-        <Route path="/init" element={<InitPage />} />
-        
-        {/* All other pages with Layout */}
-        <Route path="*" element={
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/hourly" element={<HourlyPool />} />
-              <Route path="/daily" element={<DailyPool />} />
-              <Route path="/staking" element={<Staking />} />
-              <Route path="/airdrop" element={<Airdrop />} />
-              <Route path="/referral" element={<Referral />} />
-              <Route path="/history" element={<UserHistory />} />
-              <Route path="/leaderboard" element={<Leaderboard />} />
-              <Route path="/faq" element={<FAQ />} />
-              <Route path="/test" element={<ContractTest />} />
-            </Routes>
-          </Layout>
-        } />
-      </Routes>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <Routes>
+          <Route path="/init" element={<InitPage />} />
+          <Route path="/" element={<PageWrapper><Home /></PageWrapper>} />
+          <Route path="/hourly" element={<PageWrapper><HourlyPool /></PageWrapper>} />
+          <Route path="/daily" element={<PageWrapper><DailyPool /></PageWrapper>} />
+          <Route path="/staking" element={<PageWrapper><Staking /></PageWrapper>} />
+          <Route path="/airdrop" element={<PageWrapper><Airdrop /></PageWrapper>} />
+          <Route path="/referral" element={<PageWrapper><Referral /></PageWrapper>} />
+          <Route path="/history" element={<PageWrapper><UserHistory /></PageWrapper>} />
+          <Route path="/leaderboard" element={<PageWrapper><Leaderboard /></PageWrapper>} />
+          <Route path="/faq" element={<PageWrapper><FAQ /></PageWrapper>} />
+          <Route path="/whitepaper" element={<PageWrapper><Whitepaper /></PageWrapper>} />
+          <Route path="/test" element={<PageWrapper><ContractTest /></PageWrapper>} />
+        </Routes>
+      </Router>
+    </ErrorBoundary>
   );
 }
 
@@ -79,25 +135,31 @@ function App() {
 
   if (showDisclaimer) {
     return (
-      <RiskDisclaimer
-        onAccept={handleAcceptRisk}
-        onDecline={handleDeclineRisk}
-      />
+      <ErrorBoundary>
+        <LanguageProvider>
+          <RiskDisclaimer
+            onAccept={handleAcceptRisk}
+            onDecline={handleDeclineRisk}
+          />
+        </LanguageProvider>
+      </ErrorBoundary>
     );
   }
 
   return (
-    <LanguageProvider>
-      <ConnectionProvider endpoint={ENDPOINT}>
-        <WalletProvider wallets={wallets} autoConnect>
-          <WalletModalProvider>
-            <AppProvider>
-              <AppContent />
-            </AppProvider>
-          </WalletModalProvider>
-        </WalletProvider>
-      </ConnectionProvider>
-    </LanguageProvider>
+    <ErrorBoundary>
+      <LanguageProvider>
+        <ConnectionProvider endpoint={ENDPOINT}>
+          <WalletProvider wallets={wallets} autoConnect>
+            <WalletModalProvider>
+              <AppProvider>
+                <AppContent />
+              </AppProvider>
+            </WalletModalProvider>
+          </WalletProvider>
+        </ConnectionProvider>
+      </LanguageProvider>
+    </ErrorBoundary>
   );
 }
 

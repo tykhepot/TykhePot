@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
@@ -8,6 +8,7 @@ const Layout = ({ children }) => {
   const { publicKey } = useWallet();
   const location = useLocation();
   const { t, language, toggleLanguage } = useTranslation();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const navItems = [
     { path: '/', label: '🏠 ' + t('home') },
@@ -23,11 +24,13 @@ const Layout = ({ children }) => {
     <div className="layout" style={styles.layout}>
       {/* Header */}
       <header style={styles.header}>
-        <div className="container" style={styles.headerContainer}>
-          <Link to="/" style={styles.logo}>
-            👑 <span style={styles.logoText}>TykhePot</span>
+        <div style={styles.headerContainer}>
+          <Link to="/" style={styles.logo} onClick={() => setMenuOpen(false)}>
+            <span style={styles.logoIcon}>👑</span>
+            <span style={styles.logoText}>TykhePot</span>
           </Link>
 
+          {/* Desktop Navigation */}
           <nav style={styles.nav}>
             {navItems.map(item => (
               <Link
@@ -43,8 +46,8 @@ const Layout = ({ children }) => {
             ))}
           </nav>
 
+          {/* Desktop Wallet Section */}
           <div style={styles.walletSection}>
-            {/* Language Switcher */}
             <button 
               onClick={toggleLanguage}
               style={styles.langButton}
@@ -58,9 +61,53 @@ const Layout = ({ children }) => {
                 {publicKey.toString().slice(0, 4)}...{publicKey.toString().slice(-4)}
               </span>
             )}
-            <WalletMultiButton style={styles.walletButton} />
+            <div style={styles.walletButton}>
+              <WalletMultiButton style={styles.walletBtn} />
+            </div>
           </div>
+
+          {/* Mobile Menu Button */}
+          <button 
+            style={styles.menuButton}
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            <span style={menuOpen ? styles.menuIconClose : styles.menuIcon}>
+              {menuOpen ? '✕' : '☰'}
+            </span>
+          </button>
         </div>
+
+        {/* Mobile Navigation */}
+        {menuOpen && (
+          <div style={styles.mobileNav}>
+            <nav style={styles.mobileNavContent}>
+              {navItems.map(item => (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  style={{
+                    ...styles.mobileNavLink,
+                    ...(location.pathname === item.path ? styles.mobileNavLinkActive : {}),
+                  }}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+            <div style={styles.mobileWalletSection}>
+              <button 
+                onClick={() => { toggleLanguage(); setMenuOpen(false); }}
+                style={styles.mobileLangButton}
+              >
+                {language === 'en' ? '🇺🇸 English' : '🇨🇳 中文'}
+              </button>
+              <div style={styles.mobileWalletBtn}>
+                <WalletMultiButton style={styles.walletBtn} />
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Main Content */}
@@ -68,7 +115,7 @@ const Layout = ({ children }) => {
 
       {/* Footer */}
       <footer style={styles.footer}>
-        <div className="container" style={styles.footerContainer}>
+        <div style={styles.footerContainer}>
           <div style={styles.footerSection}>
             <h4 style={styles.footerTitle}>👑 TykhePot</h4>
             <p style={styles.footerText}>
@@ -140,17 +187,23 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: '1rem 2rem',
+    padding: '0.75rem 1rem',
     maxWidth: '1400px',
     margin: '0 auto',
+    flexWrap: 'wrap',
+    gap: '0.5rem',
   },
   logo: {
-    fontSize: '1.5rem',
+    fontSize: '1.25rem',
     fontWeight: 'bold',
     textDecoration: 'none',
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
+    color: '#FFD700',
+  },
+  logoIcon: {
+    fontSize: '1.5rem',
   },
   logoText: {
     background: 'linear-gradient(135deg, #ffd700 0%, #ff6b6b 50%, #00d4ff 100%)',
@@ -160,63 +213,141 @@ const styles = {
   },
   nav: {
     display: 'flex',
-    gap: '1.5rem',
+    gap: '0.5rem',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   navLink: {
     textDecoration: 'none',
     color: '#a0a0a0',
-    fontSize: '0.95rem',
-    transition: 'color 0.3s',
-    padding: '0.5rem 0',
+    fontSize: '0.85rem',
+    transition: 'all 0.3s',
+    padding: '0.4rem 0.6rem',
+    borderRadius: '8px',
   },
   navLinkActive: {
     color: '#00d4ff',
-    borderBottom: '2px solid #00d4ff',
+    background: 'rgba(0, 212, 255, 0.1)',
   },
   walletSection: {
     display: 'flex',
     alignItems: 'center',
-    gap: '1rem',
+    gap: '0.75rem',
   },
   langButton: {
     background: 'rgba(255,255,255,0.1)',
     border: '1px solid rgba(255,255,255,0.2)',
     color: '#fff',
-    padding: '0.5rem 0.75rem',
+    padding: '0.4rem 0.6rem',
     borderRadius: '6px',
     cursor: 'pointer',
-    fontSize: '0.85rem',
+    fontSize: '0.8rem',
     transition: 'all 0.3s',
   },
   walletInfo: {
     color: '#00d4ff',
-    fontSize: '0.9rem',
+    fontSize: '0.8rem',
     fontFamily: 'monospace',
+    display: 'none',
   },
   walletButton: {
+    display: 'flex',
+  },
+  walletBtn: {
     background: 'linear-gradient(135deg, #512da8 0%, #00d4ff 100%)',
     border: 'none',
     borderRadius: '8px',
-    padding: '0.5rem 1rem',
+    padding: '0.4rem 0.8rem',
     color: '#fff',
     fontWeight: 'bold',
     cursor: 'pointer',
+    fontSize: '0.8rem',
+  },
+  menuButton: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '36px',
+    height: '36px',
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(255,255,255,0.2)',
+    borderRadius: '8px',
+    color: '#fff',
+    fontSize: '1.25rem',
+    cursor: 'pointer',
+  },
+  menuIcon: {
+    display: 'block',
+  },
+  menuIconClose: {
+    display: 'block',
+    fontSize: '1.25rem',
+  },
+  mobileNav: {
+    background: 'rgba(26, 26, 46, 0.98)',
+    borderTop: '1px solid rgba(255,255,255,0.1)',
+    padding: '1rem',
+    animation: 'slideDown 0.3s ease',
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    zIndex: 999,
+  },
+  mobileNavContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.5rem',
+    marginBottom: '1rem',
+  },
+  mobileNavLink: {
+    textDecoration: 'none',
+    color: '#FFFFFF',
+    fontSize: '1rem',
+    padding: '0.85rem 1rem',
+    borderRadius: '8px',
+    transition: 'all 0.3s',
+    display: 'block',
+    background: 'transparent',
+  },
+  mobileNavLinkActive: {
+    color: '#00d4ff',
+    background: 'rgba(0, 212, 255, 0.1)',
+  },
+  mobileWalletSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.75rem',
+  },
+  mobileLangButton: {
+    background: 'rgba(255,255,255,0.1)',
+    border: '1px solid rgba(255,255,255,0.2)',
+    color: '#fff',
+    padding: '0.75rem',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '1rem',
+  },
+  mobileWalletBtn: {
+    width: '100%',
   },
   main: {
     flex: 1,
+    padding: '1rem',
   },
   footer: {
     background: '#0a0a14',
-    padding: '3rem 0 1rem',
+    padding: '2rem 0 1rem',
     borderTop: '1px solid rgba(255,255,255,0.1)',
+    marginTop: 'auto',
   },
   footerContainer: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '2rem',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+    gap: '1.5rem',
     maxWidth: '1200px',
     margin: '0 auto',
-    padding: '0 2rem',
+    padding: '0 1rem',
   },
   footerSection: {
     display: 'flex',
@@ -224,40 +355,62 @@ const styles = {
   },
   footerTitle: {
     color: '#fff',
-    marginBottom: '1rem',
-    fontSize: '1.1rem',
+    marginBottom: '0.75rem',
+    fontSize: '1rem',
   },
   footerText: {
     color: '#888',
-    fontSize: '0.9rem',
+    fontSize: '0.85rem',
     lineHeight: '1.6',
   },
   footerLinks: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.5rem',
+    gap: '0.4rem',
   },
   footerLink: {
     color: '#888',
     textDecoration: 'none',
-    fontSize: '0.9rem',
+    fontSize: '0.85rem',
     transition: 'color 0.3s',
   },
   footerBottom: {
-    marginTop: '2rem',
-    padding: '1rem 2rem',
+    marginTop: '1.5rem',
+    padding: '1rem',
     textAlign: 'center',
     borderTop: '1px solid rgba(255,255,255,0.05)',
   },
   footerDisclaimer: {
     color: '#666',
-    fontSize: '0.8rem',
+    fontSize: '0.75rem',
     marginBottom: '0.5rem',
   },
   copyright: {
     color: '#555',
-    fontSize: '0.8rem',
+    fontSize: '0.75rem',
   },
 };
+
+// Add responsive styles via JavaScript for the menu button
+if (typeof document !== 'undefined') {
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    
+    @media (max-width: 768px) {
+      header nav { display: none !important; }
+      header .wallet-section { display: none !important; }
+      header .menu-button { display: block !important; }
+    }
+    
+    @media (min-width: 769px) {
+      .mobile-nav { display: none !important; }
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 export default Layout;
