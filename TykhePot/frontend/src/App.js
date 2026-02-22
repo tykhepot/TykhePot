@@ -74,10 +74,30 @@ const ENDPOINT = NETWORK === 'mainnet'
   ? 'https://api.mainnet-beta.solana.com'
   : 'https://api.devnet.solana.com';
 
+// 自定义 Phantom 适配器 - 添加 Android 支持
+class PhantomMobileWalletAdapter extends PhantomWalletAdapter {
+  constructor() {
+    super();
+  }
+
+  async connect() {
+    // 检查是否为 Android
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    
+    if (isAndroid) {
+      // Android 上直接使用 phantom:// URL scheme
+      const url = encodeURIComponent(window.location.href);
+      window.location.href = `phantom://connect?url=${url}`;
+      return;
+    }
+    
+    // iOS 或其他平台使用默认行为
+    return super.connect();
+  }
+}
+
 const wallets = [
-  new PhantomWalletAdapter({
-    appUrl: 'https://www.tykhepot.io',
-  }),
+  new PhantomMobileWalletAdapter(),
   new SolflareWalletAdapter({
     network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
   }),
