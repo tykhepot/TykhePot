@@ -295,4 +295,22 @@ const styles = {
 
 
 export default Whitepaper;
-// Modern styles
+
+// Modern CSS Override
+const style = document.createElement('style');
+style.textContent = `
+  .whitepaper-page { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+  .whitepaper-header { text-align: center; margin-bottom: 48px; padding-bottom: 32px; border-bottom: 1px solid var(--border-subtle); }
+  .whitepaper-title { font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #FFD700, #8B5CF6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 16px; }
+  .whitepaper-section { background: var(--gradient-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 32px; margin-bottom: 24px; }
+  .whitepaper-section h2 { color: var(--color-gold); font-size: 1.5rem; margin-bottom: 16px; }
+  .whitepaper-section h3 { color: var(--text-primary); font-size: 1.125rem; margin: 24px 0 12px; }
+  .whitepaper-section p { color: var(--text-secondary); line-height: 1.7; margin-bottom: 12px; }
+  .whitepaper-section ul { color: var(--text-secondary); padding-left: 24px; }
+  .whitepaper-section li { margin-bottom: 8px; }
+  .token-table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  .token-table th, .token-table td { padding: 12px; text-align: left; border-bottom: 1px solid var(--border-subtle); }
+  .token-table th { color: var(--color-gold); font-weight: 600; }
+  .token-table td { color: var(--text-secondary); }
+`;
+if (document.head) document.head.appendChild(style);

@@ -327,4 +327,16 @@ const styles = {
 
 
 export default UserHistory;
-// Modern styles
+
+// Modern CSS Override
+const style = document.createElement('style');
+style.textContent = `
+  .history-page { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
+  .history-header { text-align: center; margin-bottom: 40px; }
+  .history-title { font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #FFD700, #8B5CF6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .history-card { background: var(--gradient-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 24px; margin-bottom: 24px; }
+  .history-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid var(--border-subtle); }
+  .history-item:last-child { border-bottom: none; }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-tertiary); }
+`;
+if (document.head) document.head.appendChild(style);
