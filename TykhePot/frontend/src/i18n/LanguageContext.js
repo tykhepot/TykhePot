@@ -37,6 +37,10 @@ const translations = {
     nextDraw: 'Next Draw',
     participants: 'Participants',
     enterPool: 'Enter Pool',
+    poolInfo: 'Pool Info',
+    joinNowBtn: 'Join Now',
+    prizeDistribution: 'Prize Distribution',
+    fundAllocation: 'Fund Allocation',
     
     // Features
     featuresTitle: 'Why TykhePot?',
@@ -54,6 +58,73 @@ const translations = {
     apr: 'APR',
     stake: 'Stake',
     withdraw: 'Withdraw',
+    myStakes: 'My Stakes',
+    stakingFaq: 'Staking FAQ',
+    stakingSuccessful: 'Staking successful!',
+    
+    // Airdrop
+    airdropClaim: 'Claim Airdrop',
+    airdropSubtitle: 'Claim airdrop after earning profits from games, up to 10,000 TPOT',
+    totalAirdropPool: 'Total Airdrop Pool',
+    myAirdropStatus: 'My Airdrop Status',
+    airdropRules: 'Airdrop Rules',
+    needParticipate: 'You need to participate in Hourly or Daily pool and earn profits to claim airdrop.',
+    participateHourly: 'Participate Hourly',
+    participateDaily: 'Participate Daily',
+    airdropAvailable: 'Airdrop Available',
+    claimAirdrop: 'Claim Airdrop',
+    claiming: 'Claiming...',
+    claimed: 'You have claimed',
+    formula: 'Formula',
+    claimableAirdrop: 'Claimable Airdrop',
+    minProfitRequirement: 'Min profit requirement: 1,000 TPOT',
+    rule1: 'Participate in Hourly or Daily pool games.',
+    rule2: 'Earn profits through prizes or staking.',
+    rule3: 'Claimable = Total Profits × 10, max 10,000 TPOT.',
+    
+    // Referral
+    referralTitle: 'Referral Rewards',
+    myReferralLink: 'My Referral Link',
+    copyLink: 'Copy Link',
+    referralMechanism: 'Referral Mechanism',
+    referralRecords: 'Referral Records',
+    referralTips: 'Referral Tips',
+    
+    // Leaderboard
+    recentWinners: 'Recent Winners',
+    topWinners: 'Top Winners',
+    leaderboardUpdated: 'Leaderboard updates every hour. Be an active player!',
+    
+    // History
+    myHistory: 'My History',
+    
+    // Contract Test
+    contractTest: 'Contract Test',
+    connectWalletFirst: 'Please connect wallet first',
+    contractIntegrationTest: 'Contract Integration Test',
+    error: 'Error',
+    balance: 'Balance',
+    hourlyPoolTotal: 'Hourly Pool',
+    dailyPoolTotal: 'Daily Pool',
+    hourlyTickets: 'Hourly Tickets',
+    dailyTickets: 'Daily Tickets',
+    participating: 'Processing...',
+    claimPrize: 'Claim Prize',
+    
+    // FAQ
+    frequentlyAskedQuestions: 'Frequently Asked Questions',
+    joinCommunity: 'Join our community for help',
+    
+    // Alerts
+    walletNotConnected: 'Please connect wallet first',
+    contractPaused: 'Contract is paused',
+    minDeposit100: 'Minimum deposit is 100 TPOT',
+    insufficientBalance: 'Insufficient balance',
+    invalidReferrer: 'Invalid referrer address',
+    cannotUseOwnAddress: 'Cannot use your own address as referrer',
+    depositSuccess: 'Deposit successful!',
+    depositFailed: 'Deposit failed',
+    erroroccurred: 'Error occurred',
     
     // Language
     language: 'Language',
@@ -96,6 +167,10 @@ const translations = {
     nextDraw: '下次开奖',
     participants: '参与人数',
     enterPool: '进入奖池',
+    poolInfo: '奖池信息',
+    joinNowBtn: '立即参与',
+    prizeDistribution: '奖金分配',
+    fundAllocation: '资金分配说明',
     
     // Features
     featuresTitle: '为什么选择 TykhePot？',
@@ -113,6 +188,73 @@ const translations = {
     apr: '年化收益',
     stake: '质押',
     withdraw: '赎回',
+    myStakes: '我的质押',
+    stakingFaq: '质押常见问题',
+    stakingSuccessful: '质押成功！',
+    
+    // Airdrop
+    airdropClaim: '领取空投',
+    airdropSubtitle: '参与游戏获利后即可领取空投，最高 10,000 TPOT',
+    totalAirdropPool: '总空投池',
+    myAirdropStatus: '我的空投状态',
+    airdropRules: '空投规则',
+    needParticipate: '您需要先参与小时池或天池游戏并获利，才能领取空投。',
+    participateHourly: '参与小时池',
+    participateDaily: '参与天池',
+    airdropAvailable: '可领空投',
+    claimAirdrop: '立即领取空投',
+    claiming: '领取中...',
+    claimed: '您已领取空投',
+    formula: '计算公式',
+    claimableAirdrop: '可领空投',
+    minProfitRequirement: '最低获利要求: 1,000 TPOT',
+    rule1: '参与小时池或天池游戏，投入 TPOT 参与抽奖。',
+    rule2: '中奖后获得奖金，或通过普惠奖、质押等方式获利。',
+    rule3: '可领取空投 = 累计获利 × 10，最高 10,000 TPOT。',
+    
+    // Referral
+    referralTitle: '推广奖励',
+    myReferralLink: '我的推广链接',
+    copyLink: '复制链接',
+    referralMechanism: '推广奖励机制',
+    referralRecords: '推广记录',
+    referralTips: '推广技巧',
+    
+    // Leaderboard
+    recentWinners: '最近大奖',
+    topWinners: '排行榜',
+    leaderboardUpdated: '排行榜每小时更新一次。成为活跃玩家，也许下一个幸运儿就是你！',
+    
+    // History
+    myHistory: '我的历史',
+    
+    // Contract Test
+    contractTest: '合约测试',
+    connectWalletFirst: '请先连接钱包',
+    contractIntegrationTest: '合约集成测试',
+    error: '错误',
+    balance: '余额',
+    hourlyPoolTotal: '小时池',
+    dailyPoolTotal: '天池',
+    hourlyTickets: '小时池票数',
+    dailyTickets: '天池票数',
+    participating: '处理中...',
+    claimPrize: '领取奖金',
+    
+    // FAQ
+    frequentlyAskedQuestions: '常见问题',
+    joinCommunity: '加入我们的社区获取帮助',
+    
+    // Alerts
+    walletNotConnected: '请先连接钱包',
+    contractPaused: '合约已暂停',
+    minDeposit100: '最低投入 100 TPOT',
+    insufficientBalance: '余额不足',
+    invalidReferrer: '邀请人地址无效',
+    cannotUseOwnAddress: '不能使用自己的地址作为邀请人',
+    depositSuccess: '参与成功！',
+    depositFailed: '参与失败',
+    erroroccurred: '错误',
     
     // Language
     language: '语言',
@@ -127,7 +269,7 @@ export function LanguageProvider({ children }) {
   const [language, setLanguage] = useState('en'); // 默认英文
   
   const t = (key) => {
-    return translations[language][key] || key;
+    return translations[language][key] || translations['en'][key] || key;
   };
   
   const toggleLanguage = () => {

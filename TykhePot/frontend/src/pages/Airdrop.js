@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { useTranslation } from '../i18n/LanguageContext';
 
 const Airdrop = () => {
   const { wallet } = useApp();
+  const { t } = useTranslation();
   const [isClaiming, setIsClaiming] = useState(false);
 
   // 模拟数据
@@ -25,79 +27,78 @@ const Airdrop = () => {
 
   const handleClaim = async () => {
     if (!wallet.publicKey) {
-      alert('请先连接钱包');
+      alert(t('walletNotConnected'));
       return;
     }
     setIsClaiming(true);
-    // TODO: 调用合约
     setTimeout(() => {
       setIsClaiming(false);
-      alert('领取成功！');
+      alert(t('claimSuccess') || 'Claim successful!');
     }, 2000);
   };
 
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>🎁 空投领取</h1>
-        <p style={styles.subtitle}>参与游戏获利后即可领取空投，最高 10,000 TPOT</p>
+        <h1 style={styles.title}>🎁 {t('airdropClaim')}</h1>
+        <p style={styles.subtitle}>{t('airdropSubtitle')}</p>
       </div>
 
       {/* 全局统计 */}
       <div style={styles.statsGrid}>
         <div style={styles.statCard}>
-          <span style={styles.statLabel}>总空投池</span>
+          <span style={styles.statLabel}>{t('totalAirdropPool')}</span>
           <span style={styles.statValue}>{airdropData.totalAirdrop} TPOT</span>
         </div>
         <div style={styles.statCard}>
-          <span style={styles.statLabel}>已领取</span>
+          <span style={styles.statLabel}>Claimed</span>
           <span style={styles.statValue}>{airdropData.claimedAmount} TPOT</span>
         </div>
         <div style={styles.statCard}>
-          <span style={styles.statLabel}>剩余</span>
+          <span style={styles.statLabel}>Remaining</span>
           <span style={styles.statValue}>{airdropData.remainingAmount} TPOT</span>
         </div>
         <div style={styles.statCard}>
-          <span style={styles.statLabel}>领取人数</span>
+          <span style={styles.statLabel}>Claimed / Total</span>
           <span style={styles.statValue}>{airdropData.claimedCount} / {airdropData.participantCount}</span>
         </div>
       </div>
 
       {/* 我的空投状态 */}
       <div style={styles.card}>
-        <h2 style={styles.cardTitle}>📋 我的空投状态</h2>
+        <h2 style={styles.cardTitle}>📋 {t('myAirdropStatus')}</h2>
         
         {!userData.hasParticipated ? (
           <div style={styles.notParticipated}>
             <span style={styles.notParticipatedIcon}>🎮</span>
-            <h3 style={styles.notParticipatedTitle}>尚未参与游戏</h3>
+            <h3 style={styles.notParticipatedTitle}>Not Participated Yet</h3>
             <p style={styles.notParticipatedText}>
-              您需要先参与小时池或天池游戏并获利，才能领取空投。
+              {t('needParticipate')}
             </p>
             <div style={styles.actionButtons}>
-              <a href="/hourly" style={styles.actionButton}>参与小时池</a>
-              <a href="/daily" style={styles.actionButton}>参与天池</a>
+              <a href="/hourly" style={styles.actionButton}>{t('participateHourly')}</a>
+              <a href="/daily" style={styles.actionButton}>{t('participateDaily')}</a>
             </div>
           </div>
         ) : (
           <div style={styles.participatedSection}>
             <div style={styles.statusGrid}>
               <div style={styles.statusItem}>
-                <span style={styles.statusLabel}>参与状态</span>
-                <span style={styles.statusValueGood}>✅ 已参与</span>
+                <span style={styles.statusLabel}>Status</span>
+                <span style={styles.statusValueGood}>✅ Participated</span>
               </div>
               <div style={styles.statusItem}>
-                <span style={styles.statusLabel}>累计获利</span>
+                <span style={styles.statusLabel}>Total Profit</span>
                 <span style={styles.statusValue}>{userData.totalProfit.toLocaleString()} TPOT</span>
               </div>
               <div style={styles.statusItem}>
-                <span style={styles.statusLabel}>可领空投</span>
+                <span style={styles.statusLabel}>{t('airdropAvailable')}</span>
                 <span style={styles.statusValueHighlight}>{userData.eligibleAirdrop.toLocaleString()} TPOT</span>
               </div>
               <div style={styles.statusItem}>
-                <span style={styles.statusLabel}>领取状态</span>
+                <span style={styles.statusLabel}>Claim Status</span>
                 <span style={userData.hasClaimed ? styles.statusValueBad : styles.statusValueGood}>
-                  {userData.hasClaimed ? '✅ 已领取' : '⏳ 未领取'}
+                  {userData.hasClaimed ? '✅ Claimed' : '⏳ Not Claimed'}
                 </span>
               </div>
             </div>
@@ -105,10 +106,10 @@ const Airdrop = () => {
             {userData.canClaim && !userData.hasClaimed && (
               <div style={styles.claimSection}>
                 <div style={styles.claimBox}>
-                  <span style={styles.claimLabel}>可领取空投</span>
+                  <span style={styles.claimLabel}>{t('claimableAirdrop')}</span>
                   <span style={styles.claimAmount}>{userData.eligibleAirdrop.toLocaleString()} TPOT</span>
                   <span style={styles.claimFormula}>
-                    基于获利 {userData.totalProfit.toLocaleString()} TPOT × 10倍
+                    Based on profit {userData.totalProfit.toLocaleString()} TPOT × 10
                   </span>
                 </div>
                 <button 
@@ -116,7 +117,7 @@ const Airdrop = () => {
                   disabled={isClaiming}
                   style={styles.claimButton}
                 >
-                  {isClaiming ? '领取中...' : '🎁 立即领取空投'}
+                  {isClaiming ? t('claiming') : '🎁 ' + t('claimAirdrop')}
                 </button>
               </div>
             )}
@@ -124,7 +125,7 @@ const Airdrop = () => {
             {userData.hasClaimed && (
               <div style={styles.claimedBox}>
                 <span style={styles.claimedIcon}>✅</span>
-                <span style={styles.claimedText}>您已领取空投</span>
+                <span style={styles.claimedText}>{t('claimed')}</span>
               </div>
             )}
           </div>
@@ -133,34 +134,34 @@ const Airdrop = () => {
 
       {/* 规则说明 */}
       <div style={styles.card}>
-        <h2 style={styles.cardTitle}>📖 空投规则</h2>
+        <h2 style={styles.cardTitle}>📖 {t('airdropRules')}</h2>
         <div style={styles.rulesList}>
           <div style={styles.ruleItem}>
             <span style={styles.ruleNumber}>1</span>
             <div style={styles.ruleContent}>
-              <h4 style={styles.ruleTitle}>参与游戏</h4>
-              <p style={styles.ruleText}>参与小时池或天池游戏，投入 TPOT 参与抽奖。</p>
+              <h4 style={styles.ruleTitle}>Participate</h4>
+              <p style={styles.ruleText}>{t('rule1')}</p>
             </div>
           </div>
           <div style={styles.ruleItem}>
             <span style={styles.ruleNumber}>2</span>
             <div style={styles.ruleContent}>
-              <h4 style={styles.ruleTitle}>获得利润</h4>
-              <p style={styles.ruleText}>中奖后获得奖金，或通过普惠奖、质押等方式获利。</p>
+              <h4 style={styles.ruleTitle}>Earn Profit</h4>
+              <p style={styles.ruleText}>{t('rule2')}</p>
             </div>
           </div>
           <div style={styles.ruleItem}>
             <span style={styles.ruleNumber}>3</span>
             <div style={styles.ruleContent}>
-              <h4 style={styles.ruleTitle}>计算额度</h4>
-              <p style={styles.ruleText}>可领取空投 = 累计获利 × 10，最高 10,000 TPOT。</p>
+              <h4 style={styles.ruleTitle}>Calculate</h4>
+              <p style={styles.ruleText}>{t('rule3')}</p>
             </div>
           </div>
           <div style={styles.ruleItem}>
             <span style={styles.ruleNumber}>4</span>
             <div style={styles.ruleContent}>
-              <h4 style={styles.ruleTitle}>领取空投</h4>
-              <p style={styles.ruleText}>累计获利 ≥ 1,000 TPOT 后即可领取，每人限领一次。</p>
+              <h4 style={styles.ruleTitle}>{t('claimAirdrop')}</h4>
+              <p style={styles.ruleText}>Claim when profit ≥ 1,000 TPOT. One claim per person.</p>
             </div>
           </div>
         </div>
@@ -168,31 +169,31 @@ const Airdrop = () => {
 
       {/* 计算公式 */}
       <div style={styles.card}>
-        <h2 style={styles.cardTitle}>🧮 计算公式</h2>
+        <h2 style={styles.cardTitle}>🧮 {t('formula')}</h2>
         <div style={styles.formulaBox}>
           <div style={styles.formulaVisual}>
             <div style={styles.formulaItem}>
-              <span style={styles.formulaLabel}>累计获利</span>
+              <span style={styles.formulaLabel}>Total Profit</span>
               <span style={styles.formulaValue}>× 10</span>
             </div>
             <span style={styles.formulaArrow}>=</span>
             <div style={styles.formulaItemResult}>
-              <span style={styles.formulaLabel}>可领空投</span>
-              <span style={styles.formulaValueHighlight}>最高 10,000 TPOT</span>
+              <span style={styles.formulaLabel}>{t('claimableAirdrop')}</span>
+              <span style={styles.formulaValueHighlight}>Max 10,000 TPOT</span>
             </div>
           </div>
           <div style={styles.formulaConstraints}>
             <div style={styles.constraint}>
               <span style={styles.constraintIcon}>✓</span>
-              <span>最低获利要求: 1,000 TPOT</span>
+              <span>{t('minProfitRequirement')}</span>
             </div>
             <div style={styles.constraint}>
               <span style={styles.constraintIcon}>✓</span>
-              <span>单人最高额度: 10,000 TPOT</span>
+              <span>Max per person: 10,000 TPOT</span>
             </div>
             <div style={styles.constraint}>
               <span style={styles.constraintIcon}>✓</span>
-              <span>每人限领: 1 次</span>
+              <span>One claim per person</span>
             </div>
           </div>
         </div>

@@ -25,20 +25,20 @@ const DailyPool = () => {
   const handleDeposit = useCallback(async () => {
     // 验证钱包连接
     if (!wallet.publicKey) {
-      alert(language === 'en' ? 'Please connect wallet first' : '请先连接钱包');
+      alert(t('walletNotConnected'));
       return;
     }
 
     // 验证合约未暂停
     if (stats.isPaused) {
-      alert(language === 'en' ? 'Contract is paused' : '合约已暂停');
+      alert(t('contractPaused'));
       return;
     }
 
     // 验证输入金额
     const amount = parseFloat(depositAmount);
     if (isNaN(amount) || amount < 100) {
-      alert(language === 'en' ? 'Minimum deposit is 100 TPOT' : '最低投入 100 TPOT');
+      alert(t('minDeposit100'));
       return;
     }
 
@@ -46,19 +46,19 @@ const DailyPool = () => {
     if (userTokenBalance < amount) {
       alert(language === 'en' 
         ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT` 
-        : `余额不足。您有 ${userTokenBalance.toFixed(2)} TPOT`);
+        : t('insufficientBalance') + '. You have ' + userTokenBalance.toFixed(2) + ' TPOT');
       return;
     }
 
     // 验证邀请人地址
     if (referrer && !isValidReferrer(referrer)) {
-      alert(language === 'en' ? 'Invalid referrer address' : '邀请人地址无效');
+      alert(t('invalidReferrer'));
       return;
     }
 
     // 检查是否是自己
     if (referrer === wallet.publicKey.toString()) {
-      alert(language === 'en' ? 'Cannot use your own address as referrer' : '不能使用自己的地址作为邀请人');
+      alert(t('cannotUseOwnAddress'));
       return;
     }
 
@@ -73,7 +73,7 @@ const DailyPool = () => {
         setTxStatus('success');
         alert(language === 'en' 
           ? `Success! Transaction: ${result.tx.slice(0, 8)}...` 
-          : `参与成功！交易: ${result.tx.slice(0, 8)}...`);
+          : t('depositSuccess') + '! Tx: ' + result.tx.slice(0, 8) + '...');
         
         // 刷新数据
         await refreshStats();
@@ -99,7 +99,7 @@ const DailyPool = () => {
     const diff = Math.max(0, timestamp - Date.now());
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    return language === 'en' ? `${hours}h ${minutes}m` : `${hours}小时 ${minutes}分钟`;
+    return `${hours}h ${minutes}m`;
   };
 
   // 获取按钮状态
@@ -108,7 +108,7 @@ const DailyPool = () => {
       if (txStatus === 'pending') return language === 'en' ? 'Confirming...' : '确认中...';
       return language === 'en' ? 'Processing...' : '处理中...';
     }
-    if (stats.isPaused) return language === 'en' ? 'Contract Paused' : '合约暂停';
+    if (stats.isPaused) return t('contractPaused');
     return language === 'en' ? '🎰 Join Daily Pool' : '🎰 参与天池';
   };
 

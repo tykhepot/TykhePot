@@ -112,7 +112,7 @@ const FAQ = () => {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>❓ 常见问题</h1>
+        <h1 style={styles.title}>❓ {t('frequentlyAskedQuestions')}</h1>
         <p style={styles.subtitle}>关于 TykhePot 的一切</p>
       </div>
 
@@ -155,7 +155,7 @@ const FAQ = () => {
 
       <div style={styles.moreHelp}>
         <h3>还有其他问题？</h3>
-        <p>加入我们的社区获取帮助</p>
+        <p>{t('joinCommunity')}</p>
         <div style={styles.socialLinks}>
           <a href="https://t.me/tykhepot" target="_blank" rel="noopener noreferrer" style={styles.socialLink}>
             💬 Telegram

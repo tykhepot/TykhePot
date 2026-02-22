@@ -76,26 +76,26 @@ const ContractTest = () => {
   if (!isConnected) {
     return (
       <div style={styles.container}>
-        <h2>合约测试</h2>
-        <p>请先连接钱包</p>
+        <h2>{t('contractTest')}</h2>
+        <p>{t('connectWalletFirst')}</p>
       </div>
     );
   }
 
   return (
     <div style={styles.container}>
-      <h2>🧪 合约集成测试</h2>
+      <h2>🧪 {t('contractIntegrationTest')}</h2>
       
       {error && (
         <div style={styles.error}>
-          错误: {error}
+          {t('error')}: {error}
         </div>
       )}
 
       <div style={styles.section}>
         <h3>钱包信息</h3>
         <p>地址: {publicKey?.toString()}</p>
-        <p>余额: {formatAmount(balance)} TPOT</p>
+        <p>{t('balance')}: {formatAmount(balance)} TPOT</p>
         <button onClick={loadData} disabled={isLoading}>
           刷新数据
         </button>
@@ -105,8 +105,8 @@ const ContractTest = () => {
         <h3>协议状态</h3>
         {protocolState ? (
           <div>
-            <p>小时池: {formatAmount(protocolState.hourlyPool?.totalAmount || 0)} TPOT</p>
-            <p>天池: {formatAmount(protocolState.dailyPool?.totalAmount || 0)} TPOT</p>
+            <p>{t('hourlyPoolTotal')}: {formatAmount(protocolState.hourlyPool?.totalAmount || 0)} TPOT</p>
+            <p>{t('dailyPoolTotal')}: {formatAmount(protocolState.dailyPool?.totalAmount || 0)} TPOT</p>
             <p>总销毁: {formatAmount(protocolState.totalBurned || 0)} TPOT</p>
           </div>
         ) : (
@@ -118,11 +118,11 @@ const ContractTest = () => {
         <h3>用户状态</h3>
         {userState ? (
           <div>
-            <p>小时池票数: {userState.hourlyTickets?.toString() || 0}</p>
-            <p>天池票数: {userState.dailyTickets?.toString() || 0}</p>
+            <p>{t('hourlyTickets')}: {userState.hourlyTickets?.toString() || 0}</p>
+            <p>{t('dailyTickets')}: {userState.dailyTickets?.toString() || 0}</p>
           </div>
         ) : (
-          <p>未获取到用户状态 (可能需要先参与)</p>
+          <p>No user state found. You may need to participate first.</p>
         )}
       </div>
 
@@ -137,10 +137,10 @@ const ContractTest = () => {
         />
         <div style={styles.buttons}>
           <button onClick={handleDepositHourly} disabled={isLoading}>
-            {isLoading ? '处理中...' : '参与小时池'}
+            {isLoading ? t('participating') : t('enterPool')}
           </button>
           <button onClick={handleDepositDaily} disabled={isLoading}>
-            {isLoading ? '处理中...' : '参与天池'}
+            {isLoading ? t('participating') : t('enterPool')}
           </button>
           <button onClick={handleClaim} disabled={isLoading}>
             {isLoading ? '处理中...' : '领取奖金'}

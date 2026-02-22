@@ -31,7 +31,7 @@ const Referral = () => {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>🤝 推广奖励</h1>
+        <h1 style={styles.title}>🤝 {t('referralTitle')}</h1>
         <p style={styles.subtitle}>邀请好友参与天池，获得 8% 奖励</p>
       </div>
 
@@ -53,7 +53,7 @@ const Referral = () => {
 
       {/* 推广链接 */}
       <div style={styles.card}>
-        <h2 style={styles.cardTitle}>🔗 我的推广链接</h2>
+        <h2 style={styles.cardTitle}>🔗 {t('myReferralLink')}</h2>
         <div style={styles.referralBox}>
           <div style={styles.linkDisplay}>
             <input 
@@ -86,7 +86,7 @@ const Referral = () => {
 
       {/* 推广说明 */}
       <div style={styles.card}>
-        <h2 style={styles.cardTitle}>🎁 推广奖励机制</h2>
+        <h2 style={styles.cardTitle}>🎁 {t('referralMechanism')}</h2>
         <div style={styles.rewardSteps}>
           <div style={styles.step}>
             <div style={styles.stepNumber}>1</div>
@@ -127,7 +127,7 @@ const Referral = () => {
 
       {/* 推广记录 */}
       <div style={styles.card}>
-        <h2 style={styles.cardTitle}>📊 推广记录</h2>
+        <h2 style={styles.cardTitle}>📊 {t('referralRecords')}</h2>
         {referralData.referralList.length > 0 ? (
           <div style={styles.tableContainer}>
             <table style={styles.table}>
@@ -160,7 +160,7 @@ const Referral = () => {
 
       {/* 推广技巧 */}
       <div style={styles.card}>
-        <h2 style={styles.cardTitle}>💡 推广技巧</h2>
+        <h2 style={styles.cardTitle}>💡 {t('referralTips')}</h2>
         <div style={styles.tipsGrid}>
           <div style={styles.tipCard}>
             <span style={styles.tipIcon}>🐦</span>

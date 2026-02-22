@@ -15,14 +15,14 @@ const Staking = () => {
 
   const handleStake = async () => {
     if (!wallet.publicKey) {
-      alert(language === 'en' ? 'Please connect wallet first' : '请先连接钱包');
+      alert(t('walletNotConnected'));
       return;
     }
     setIsStaking(true);
     // TODO: 调用合约
     setTimeout(() => {
       setIsStaking(false);
-      alert(language === 'en' ? 'Staking successful!' : '质押成功！');
+      alert(t('stakingSuccessful'));
     }, 2000);
   };
 

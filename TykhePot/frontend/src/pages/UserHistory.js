@@ -37,7 +37,7 @@ const UserHistory = () => {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>📜 我的历史</h1>
+        <h1 style={styles.title}>📜 {t('myHistory')}</h1>
         <p style={styles.subtitle}>查看您的参与记录、收益和质押</p>
       </div>
 

@@ -43,13 +43,13 @@ const Leaderboard = () => {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>🏆 排行榜</h1>
+        <h1 style={styles.title}>🏆 {t('leaderboard')}</h1>
         <p style={styles.subtitle}>TykhePot 最幸运的玩家</p>
       </div>
 
       {/* 最近大奖 */}
       <div style={styles.bigWinsSection}>
-        <h2 style={styles.sectionTitle}>🎉 最近大奖</h2>
+        <h2 style={styles.sectionTitle}>🎉 {t('recentWinners')}</h2>
         <div style={styles.bigWinsList}>
           {recentBigWins.map((win, index) => (
             <div key={index} style={styles.bigWinItem}>
@@ -128,7 +128,7 @@ const Leaderboard = () => {
 
       {/* 提示 */}
       <div style={styles.tip}>
-        <p>💡 排行榜每小时更新一次。成为活跃玩家，也许下一个幸运儿就是你！</p>
+        <p>💡 {t('leaderboardUpdated')}</p>
       </div>
     </div>
   );
