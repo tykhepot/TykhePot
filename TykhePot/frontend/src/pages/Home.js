@@ -35,7 +35,6 @@ const Home = () => {
           
           <div className="hero-actions animate-slide-up delay-4">
             <Link to="/daily" className="btn btn-primary btn-lg btn-glow">
-              <span>🎰</span>
               {t('joinNow')}
             </Link>
             <a 
@@ -44,7 +43,6 @@ const Home = () => {
               rel="noopener noreferrer"
               className="btn btn-ghost btn-lg"
             >
-              <span>📄</span>
               {t('whitepaper')}
             </a>
           </div>
@@ -172,7 +170,6 @@ const Home = () => {
               </div>
               
               <Link to="/daily" className="btn btn-primary btn-lg btn-glow" style={{ width: '100%' }}>
-                <span>🎰</span>
                 {t('joinNowBtn')}
               </Link>
             </div>
