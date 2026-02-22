@@ -100,10 +100,12 @@ function AppContent() {
     });
     
     return [
-      phantomAdapter,
+      // Solflare 放前面，移动端更容易连接
       new SolflareWalletAdapter({
         network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
       }),
+      // Phantom 放后面
+      phantomAdapter,
     ];
   }, []);
 
