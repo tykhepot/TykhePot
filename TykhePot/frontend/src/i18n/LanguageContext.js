@@ -50,6 +50,8 @@ const translations = {
     burnDesc: '3% of every deposit is permanently burned, creating scarcity',
     prizeTitle: '💰 Generous Rewards',
     prizeDesc: '95% of deposits go to prize pools, only 2% platform fee',
+    airdropTitle: '🎁 Free Airdrop',
+    airdropDesc: '100 TPOT free for every wallet! One-time claim, no requirements.',
     
     // Staking
     stakingTitle: 'Staking',
@@ -64,15 +66,15 @@ const translations = {
     
     // Airdrop
     airdropClaim: 'Claim Airdrop',
-    airdropSubtitle: 'Claim airdrop after earning profits from games, up to 10,000 TPOT',
+    airdropSubtitle: 'Free 100 TPOT for every wallet! One-time claim.',
     totalAirdropPool: 'Total Airdrop Pool',
     myAirdropStatus: 'My Airdrop Status',
     airdropRules: 'Airdrop Rules',
-    needParticipate: 'You need to participate in Hourly or Daily pool and earn profits to claim airdrop.',
+    needParticipate: 'Every wallet can claim 100 TPOT for FREE! One-time only.',
     participateHourly: 'Participate Hourly',
     participateDaily: 'Participate Daily',
     airdropAvailable: 'Airdrop Available',
-    claimAirdrop: 'Claim Airdrop',
+    claimAirdrop: 'Claim 100 TPOT',
     claiming: 'Claiming...',
     claimed: 'You have claimed',
     formula: 'Formula',
@@ -180,6 +182,8 @@ const translations = {
     burnDesc: '每笔投入的 3% 永久销毁，创造稀缺性',
     prizeTitle: '💰 丰厚奖励',
     prizeDesc: '95% 投入进入奖池，仅 2% 平台费用',
+    airdropTitle: '🎁 免费空投',
+    airdropDesc: '每个钱包可免费领取100 TPOT！仅限一次，无需任何条件。',
     
     // Staking
     stakingTitle: '质押',
@@ -194,23 +198,23 @@ const translations = {
     
     // Airdrop
     airdropClaim: '领取空投',
-    airdropSubtitle: '参与游戏获利后即可领取空投，最高 10,000 TPOT',
+    airdropSubtitle: '每个钱包可免费领取100 TPOT！仅限一次。',
     totalAirdropPool: '总空投池',
     myAirdropStatus: '我的空投状态',
     airdropRules: '空投规则',
-    needParticipate: '您需要先参与小时池或天池游戏并获利，才能领取空投。',
+    needParticipate: '每个钱包可免费领取100 TPOT！仅限一次。',
     participateHourly: '参与小时池',
     participateDaily: '参与天池',
     airdropAvailable: '可领空投',
-    claimAirdrop: '立即领取空投',
+    claimAirdrop: '立即领取100 TPOT',
     claiming: '领取中...',
     claimed: '您已领取空投',
     formula: '计算公式',
     claimableAirdrop: '可领空投',
     minProfitRequirement: '最低获利要求: 1,000 TPOT',
-    rule1: '参与小时池或天池游戏，投入 TPOT 参与抽奖。',
-    rule2: '中奖后获得奖金，或通过普惠奖、质押等方式获利。',
-    rule3: '可领取空投 = 累计获利 × 10，最高 10,000 TPOT。',
+    rule1: '每个钱包地址可免费领取100 TPOT空投。',
+    rule2: '仅限领取一次，无法重复领取。',
+    rule3: '领取后可在奖池中使用或参与质押。',
     
     // Referral
     referralTitle: '推广奖励',

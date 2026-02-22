@@ -113,6 +113,19 @@ const IDL = {
       ],
       args: [],
     },
+    {
+      name: "claimAirdrop",
+      accounts: [
+        { name: "user", isMut: true, isSigner: true },
+        { name: "userData", isMut: true, isSigner: false, seeds: ["user", { kind: "account", type: "publicKey" }] },
+        { name: "airdropVault", isMut: true, isSigner: false },
+        { name: "destToken", isMut: true, isSigner: false },
+        { name: "airdropAuth", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
+      ],
+      args: [],
+    },
   ],
   accounts: [
     {
@@ -492,8 +505,24 @@ class TykhePotSDK {
   // ===== 空投相关 (Airdrop) =====
 
   async claimAirdrop() {
-    console.log("Claiming airdrop");
-    return { success: false, error: "Not implemented yet" };
+    if (!this.wallet.publicKey) {
+      throw new Error("Wallet not connected");
+    }
+
+    try {
+      const tx = await this.program.methods
+        .claimAirdrop()
+        .accounts({
+          user: this.wallet.publicKey,
+          userData: this.wallet.publicKey,
+        })
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("Error claiming airdrop:", error);
+      throw error;
+    }
   }
 
   // ===== 监听事件 =====

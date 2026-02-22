@@ -172,7 +172,7 @@ const Home = () => {
                 </div>
                 <div className="pool-info-item highlight">
                   <span className="pool-info-label">🎁 Referral</span>
-                  <span className="pool-info-value">+8%</span>
+                  <span className="pool-info-value">+8% (referrer) / +2% (referred)</span>
                 </div>
               </div>
               
@@ -214,6 +214,12 @@ const Home = () => {
               <div className="feature-icon">💰</div>
               <h3>{t('prizeTitle')}</h3>
               <p>{t('prizeDesc')}</p>
+            </div>
+            
+            <div className="feature-card">
+              <div className="feature-icon">🎁</div>
+              <h3>{t('airdropTitle')}</h3>
+              <p>{t('airdropDesc')}</p>
             </div>
           </div>
         </div>
