@@ -159,6 +159,30 @@ const IDL = {
       ],
       args: [],
     },
+    {
+      name: "claimHourlyUniversal",
+      accounts: [
+        { name: "state", isMut: true, isSigner: false },
+        { name: "user", isMut: true, isSigner: false },
+        { name: "poolVault", isMut: true, isSigner: false },
+        { name: "userToken", isMut: true, isSigner: false },
+        { name: "authority", isMut: false, isSigner: true },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "claimDailyUniversal",
+      accounts: [
+        { name: "state", isMut: true, isSigner: false },
+        { name: "user", isMut: true, isSigner: false },
+        { name: "poolVault", isMut: true, isSigner: false },
+        { name: "userToken", isMut: true, isSigner: false },
+        { name: "authority", isMut: false, isSigner: true },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [],
+    },
   ],
   accounts: [
     {
@@ -595,6 +619,58 @@ class TykhePotSDK {
       return { success: true, tx };
     } catch (error) {
       console.error("Error drawing daily:", error);
+      throw error;
+    }
+  }
+
+  // 领取小时池普惠奖
+  async claimHourlyUniversal(userTokenAccount) {
+    if (!this.wallet.publicKey) {
+      throw new Error("Wallet not connected");
+    }
+
+    try {
+      const userPDA = await this.getUserPDA(this.wallet.publicKey);
+      const tx = await this.program.methods
+        .claimHourlyUniversal()
+        .accounts({
+          authority: this.wallet.publicKey,
+          user: userPDA,
+          poolVault: this.poolVault,
+          userToken: userTokenAccount,
+          tokenProgram: this.tokenProgram,
+        })
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("Error claiming hourly universal:", error);
+      throw error;
+    }
+  }
+
+  // 领取每日池普惠奖
+  async claimDailyUniversal(userTokenAccount) {
+    if (!this.wallet.publicKey) {
+      throw new Error("Wallet not connected");
+    }
+
+    try {
+      const userPDA = await this.getUserPDA(this.wallet.publicKey);
+      const tx = await this.program.methods
+        .claimDailyUniversal()
+        .accounts({
+          authority: this.wallet.publicKey,
+          user: userPDA,
+          poolVault: this.dailyPoolVault,
+          userToken: userTokenAccount,
+          tokenProgram: this.tokenProgram,
+        })
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("Error claiming daily universal:", error);
       throw error;
     }
   }
