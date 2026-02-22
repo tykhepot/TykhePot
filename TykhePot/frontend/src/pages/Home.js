@@ -7,6 +7,15 @@ const Home = () => {
   const { stats, isLoading } = useApp();
   const { t, language } = useTranslation();
 
+  const formatTime = (timestamp) => {
+    if (!timestamp || timestamp === '--') return '--';
+    const diff = Math.max(0, timestamp - Date.now());
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
   return (
     <div className="home-page">
       {/* Hero Section */}
@@ -117,7 +126,7 @@ const Home = () => {
                 </div>
                 <div className="pool-info-item">
                   <span className="pool-info-label">{t('nextDraw')}</span>
-                  <span className="pool-info-value">{stats.hourlyNextDraw || '--'}</span>
+                  <span className="pool-info-value">{formatTime(stats.hourlyNextDraw)}</span>
                 </div>
               </div>
               
@@ -159,7 +168,7 @@ const Home = () => {
                 </div>
                 <div className="pool-info-item">
                   <span className="pool-info-label">{t('nextDraw')}</span>
-                  <span className="pool-info-value">{stats.dailyNextDraw || '--'}</span>
+                  <span className="pool-info-value">{formatTime(stats.dailyNextDraw)}</span>
                 </div>
                 <div className="pool-info-item highlight">
                   <span className="pool-info-label">🎁 Referral</span>
