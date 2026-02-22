@@ -76,7 +76,10 @@ const ENDPOINT = NETWORK === 'mainnet'
 
 const wallets = [
   new PhantomWalletAdapter({
-    appUrl: window.location.origin,
+    // Mobile deep link support
+    mobileWalletAdapterConfig: {
+      bridge: 'https://mobile.phantom.foundation/bridge',
+    },
   }),
   new SolflareWalletAdapter({
     network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
