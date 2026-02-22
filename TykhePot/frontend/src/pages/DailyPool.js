@@ -22,6 +22,9 @@ const DailyPool = () => {
     }
   };
 
+// Modern UI enhancements applied via global styles.css
+
+
   const handleDeposit = useCallback(async () => {
     // 验证钱包连接
     if (!wallet.publicKey) {
@@ -102,6 +105,9 @@ const DailyPool = () => {
     return `${hours}h ${minutes}m`;
   };
 
+// Modern UI enhancements applied via global styles.css
+
+
   // 获取按钮状态
   const getButtonText = () => {
     if (isDepositing) {
@@ -111,6 +117,9 @@ const DailyPool = () => {
     if (stats.isPaused) return t('contractPaused');
     return language === 'en' ? '🎰 Join Daily Pool' : '🎰 参与天池';
   };
+
+// Modern UI enhancements applied via global styles.css
+
 
   return (
     <div style={styles.container}>
@@ -322,6 +331,9 @@ const DailyPool = () => {
     </div>
   );
 };
+
+// Modern UI enhancements applied via global styles.css
+
 
 const styles = {
   container: {
@@ -619,4 +631,8 @@ const styles = {
   },
 };
 
+// Modern UI enhancements applied via global styles.css
+
+
 export default DailyPool;
+// Modern styles

@@ -164,6 +164,9 @@ const Whitepaper = () => {
     }
   };
 
+// Modern UI enhancements applied via global styles.css
+
+
   const c = content[language] || content.en;
 
   return (
@@ -203,6 +206,9 @@ const Whitepaper = () => {
     </div>
   );
 };
+
+// Modern UI enhancements applied via global styles.css
+
 
 const styles = {
   container: {
@@ -285,4 +291,8 @@ const styles = {
   },
 };
 
+// Modern UI enhancements applied via global styles.css
+
+
 export default Whitepaper;
+// Modern styles

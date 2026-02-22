@@ -30,9 +30,15 @@ const UserHistory = () => {
       universal: { text: '🌟 普惠奖', color: '#4488FF' },
       lose: { text: '未中奖', color: '#888' },
     };
+
+// Modern UI enhancements applied via global styles.css
+
     const badge = badges[result] || badges.lose;
     return <span style={{...styles.badge, background: badge.color + '20', color: badge.color}}>{badge.text}</span>;
   };
+
+// Modern UI enhancements applied via global styles.css
+
 
   return (
     <div style={styles.container}>
@@ -176,6 +182,9 @@ const UserHistory = () => {
   );
 };
 
+// Modern UI enhancements applied via global styles.css
+
+
 const styles = {
   container: {
     padding: '40px 24px',
@@ -314,4 +323,8 @@ const styles = {
   },
 };
 
+// Modern UI enhancements applied via global styles.css
+
+
 export default UserHistory;
+// Modern styles

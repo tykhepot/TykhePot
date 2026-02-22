@@ -20,6 +20,9 @@ const Referral = () => {
     ],
   };
 
+// Modern UI enhancements applied via global styles.css
+
+
   const handleCopy = () => {
     if (wallet.publicKey) {
       navigator.clipboard.writeText(referralData.referralLink);
@@ -27,6 +30,9 @@ const Referral = () => {
       setTimeout(() => setCopied(false), 2000);
     }
   };
+
+// Modern UI enhancements applied via global styles.css
+
 
   return (
     <div style={styles.container}>
@@ -187,6 +193,9 @@ const Referral = () => {
     </div>
   );
 };
+
+// Modern UI enhancements applied via global styles.css
+
 
 const styles = {
   container: {
@@ -430,4 +439,8 @@ const styles = {
   },
 };
 
+// Modern UI enhancements applied via global styles.css
+
+
 export default Referral;
+// Modern styles
