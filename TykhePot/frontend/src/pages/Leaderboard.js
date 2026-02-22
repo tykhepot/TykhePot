@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { useTranslation } from '../i18n/LanguageContext';
 
 const Leaderboard = () => {
   const [activeTab, setActiveTab] = useState('winners');
+  const { t } = useTranslation();
 
   // 模拟排行榜数据
   const topWinners = [
