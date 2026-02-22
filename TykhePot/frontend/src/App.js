@@ -89,6 +89,9 @@ const PageWrapper = ({ children }) => (
 );
 
 function AppContent() {
+  // 检测移动设备
+  const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  
   // 使用 useMemo 创建钱包适配器
   const wallets = useMemo(() => {
     const phantomAdapter = new PhantomWalletAdapter({
@@ -103,6 +106,13 @@ function AppContent() {
       }),
     ];
   }, []);
+
+  // 移动端连接处理 - 在页面加载时检测并提示
+  useEffect(() => {
+    if (isMobile) {
+      console.log('Mobile device detected, using Deep Link for wallet connection');
+    }
+  }, [isMobile]);
 
   return (
     <ErrorBoundary>
