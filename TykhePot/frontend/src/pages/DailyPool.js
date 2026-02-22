@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
 
@@ -8,58 +8,67 @@ const DailyPool = () => {
   const [depositAmount, setDepositAmount] = useState('100');
   const [referrer, setReferrer] = useState('');
   const [isDepositing, setIsDepositing] = useState(false);
-  const [txStatus, setTxStatus] = useState(null); // 'pending' | 'success' | 'error'
+  const [txStatus, setTxStatus] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [countdown, setCountdown] = useState({ hours: '00', minutes: '00', seconds: '00' });
 
-  // 验证邀请人地址
+  // Update countdown every second
+  useEffect(() => {
+    const updateCountdown = () => {
+      const diff = Math.max(0, stats.dailyNextDraw - Date.now());
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      setCountdown({
+        hours: hours.toString().padStart(2, '0'),
+        minutes: minutes.toString().padStart(2, '0'),
+        seconds: seconds.toString().padStart(2, '0'),
+      });
+    };
+    
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [stats.dailyNextDraw]);
+
   const isValidReferrer = (address) => {
     if (!address) return true;
     try {
-      // 简单的 Solana 地址验证
       return address.length >= 32 && address.length <= 44;
     } catch {
       return false;
     }
   };
 
-// Modern UI enhancements applied via global styles.css
-
-
   const handleDeposit = useCallback(async () => {
-    // 验证钱包连接
     if (!wallet.publicKey) {
       alert(t('walletNotConnected'));
       return;
     }
 
-    // 验证合约未暂停
     if (stats.isPaused) {
       alert(t('contractPaused'));
       return;
     }
 
-    // 验证输入金额
     const amount = parseFloat(depositAmount);
     if (isNaN(amount) || amount < 100) {
       alert(t('minDeposit100'));
       return;
     }
 
-    // 验证余额
     if (userTokenBalance < amount) {
       alert(language === 'en' 
         ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT` 
-        : t('insufficientBalance') + '. You have ' + userTokenBalance.toFixed(2) + ' TPOT');
+        : `余额不足。您有 ${userTokenBalance.toFixed(2)} TPOT`);
       return;
     }
 
-    // 验证邀请人地址
     if (referrer && !isValidReferrer(referrer)) {
       alert(t('invalidReferrer'));
       return;
     }
 
-    // 检查是否是自己
     if (referrer === wallet.publicKey.toString()) {
       alert(t('cannotUseOwnAddress'));
       return;
@@ -76,167 +85,133 @@ const DailyPool = () => {
         setTxStatus('success');
         alert(language === 'en' 
           ? `Success! Transaction: ${result.tx.slice(0, 8)}...` 
-          : t('depositSuccess') + '! Tx: ' + result.tx.slice(0, 8) + '...');
-        
-        // 刷新数据
-        await refreshStats();
-        
-        // 清空输入
+          : `成功！交易: ${result.tx.slice(0, 8)}...`);
+        refreshStats();
         setDepositAmount('100');
         setReferrer('');
       } else {
         setTxStatus('error');
-        setErrorMessage(result.error);
-        alert(language === 'en' ? `Failed: ${result.error}` : `失败: ${result.error}`);
+        setErrorMessage(result.error || 'Transaction failed');
       }
-    } catch (error) {
+    } catch (err) {
       setTxStatus('error');
-      setErrorMessage(error.message);
-      alert(language === 'en' ? `Error: ${error.message}` : `错误: ${error.message}`);
+      setErrorMessage(err.message || 'Unknown error');
     } finally {
       setIsDepositing(false);
     }
-  }, [wallet.publicKey, stats.isPaused, depositAmount, userTokenBalance, referrer, sdk, refreshStats, language]);
+  }, [wallet, depositAmount, referrer, stats.isPaused, userTokenBalance, language, sdk, refreshStats, t]);
 
-  const formatTime = (timestamp) => {
-    const diff = Math.max(0, timestamp - Date.now());
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    return `${hours}h ${minutes}m`;
-  };
-
-// Modern UI enhancements applied via global styles.css
-
-
-  // 获取按钮状态
   const getButtonText = () => {
-    if (isDepositing) {
-      if (txStatus === 'pending') return language === 'en' ? 'Confirming...' : '确认中...';
-      return language === 'en' ? 'Processing...' : '处理中...';
-    }
-    if (stats.isPaused) return t('contractPaused');
-    return language === 'en' ? '🎰 Join Daily Pool' : '🎰 参与天池';
+    if (isDepositing) return language === 'en' ? 'Processing...' : '处理中...';
+    if (stats.isPaused) return language === 'en' ? 'Paused' : '已暂停';
+    return language === 'en' ? 'Join Now' : '立即参与';
   };
-
-// Modern UI enhancements applied via global styles.css
-
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>🌙 {t('dailyPool')}</h1>
-        <p style={styles.subtitle}>
-          {language === 'en' 
-            ? 'Daily grand prize with referral rewards and 1:1 reserve matching' 
-            : '每日大奖，推广有奖励，储备1:1配比'}
-        </p>
-      </div>
-
-      {/* 合约状态警告 */}
-      {stats.isPaused && (
-        <div style={styles.warningBanner}>
-          ⚠️ {language === 'en' ? 'Contract is paused. Deposits are temporarily disabled.' : '合约已暂停，暂时无法参与'}
-        </div>
-      )}
-
-      {/* 用户余额显示 */}
-      <div style={styles.balanceCard}>
-        <span style={styles.balanceLabel}>
-          {language === 'en' ? 'Your TPOT Balance' : '您的 TPOT 余额'}
-        </span>
-        <span style={styles.balanceValue}>
-          {userTokenBalance.toFixed(2)} TPOT
-        </span>
-      </div>
-
-      {/* 特色标签 */}
-      <div style={styles.features}>
-        <span style={styles.featureTag}>🎁 {language === 'en' ? 'Referral 8%' : '推广奖励 8%'}</span>
-        <span style={styles.featureTag}>⚡ {language === 'en' ? '1:1 Reserve' : '储备1:1配比'}</span>
-        <span style={styles.featureTag}>💎 {language === 'en' ? 'Daily 00:00 Draw' : '每日0点开奖'}</span>
-      </div>
-
-      <div style={styles.grid}>
-        {/* 奖池信息 */}
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>{language === 'en' ? 'Pool Info' : '奖池信息'}</h2>
-          <div style={styles.poolDisplay}>
-            <span style={styles.poolLabel}>{t('currentPool')}</span>
-            <span style={styles.poolValue}>
-              🪙 {(stats.dailyPool / 1e9).toFixed(2)} TPOT
-            </span>
-          </div>
-          <div style={styles.countdownBox}>
-            <span style={styles.countdownLabel}>
-              {language === 'en' ? 'Next Draw' : '距离开奖'}
-            </span>
-            <span style={styles.countdownValue}>
-              {formatTime(stats.dailyNextDraw)}
-            </span>
-          </div>
-          <div style={styles.infoList}>
-            <div style={styles.infoItem}>
-              <span>{language === 'en' ? 'Participants' : '参与人数'}</span>
-              <span style={styles.infoValue}>{stats.dailyParticipants} {language === 'en' ? '' : '人'}</span>
-            </div>
-            <div style={styles.infoItem}>
-              <span>{language === 'en' ? 'Min Deposit' : '最低投入'}</span>
-              <span style={styles.infoValue}>100 TPOT</span>
-            </div>
-            <div style={styles.infoItem}>
-              <span>{language === 'en' ? 'Draw Time' : '开奖时间'}</span>
-              <span style={styles.infoValue}>00:00 UTC</span>
-            </div>
-            <div style={styles.infoItem}>
-              <span>{language === 'en' ? 'Lock Period' : '锁仓期'}</span>
-              <span style={styles.infoValue}>{language === 'en' ? '5 min before draw' : '开奖前5分钟'}</span>
-            </div>
-          </div>
+    <div className="page-container">
+      <div className="container">
+        {/* Header */}
+        <div className="page-header-modern">
+          <div className="page-badge">🌙 Daily Pool</div>
+          <h1 className="page-title-modern">{t('dailyPool')}</h1>
+          <p className="page-subtitle-modern">
+            {language === 'en' 
+              ? 'Daily draws at 00:00 UTC with bigger prizes!'
+              : '每日 0 点开奖，更大奖池！'
+            }
+          </p>
         </div>
 
-        {/* 参与区域 */}
-        <div style={styles.card}>
-          <h2 style={styles.cardTitle}>
-            {language === 'en' ? 'Join Now' : '立即参与'}
-          </h2>
-          <div style={styles.depositSection}>
-            <label style={styles.label}>
-              {language === 'en' ? 'Amount (TPOT)' : '投入数量 (TPOT)'}
-            </label>
-            <input
-              type="number"
-              value={depositAmount}
-              onChange={(e) => setDepositAmount(e.target.value)}
-              min="100"
-              disabled={isDepositing}
-              style={styles.input}
-              placeholder={language === 'en' ? 'Min 100 TPOT' : '最低 100 TPOT'}
-            />
-            <div style={styles.quickButtons}>
-              <button onClick={() => setDepositAmount('100')} disabled={isDepositing} style={styles.quickBtn}>100</button>
-              <button onClick={() => setDepositAmount('500')} disabled={isDepositing} style={styles.quickBtn}>500</button>
-              <button onClick={() => setDepositAmount('1000')} disabled={isDepositing} style={styles.quickBtn}>1000</button>
-              <button onClick={() => setDepositAmount('10000')} disabled={isDepositing} style={styles.quickBtn}>10000</button>
+        {/* Features Tags */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-6)', flexWrap: 'wrap' }}>
+          <span className="feature-tag">🎁 {language === 'en' ? 'Referral 8%' : '推广奖励 8%'}</span>
+          <span className="feature-tag">⚡ {language === 'en' ? '1:1 Reserve' : '储备1:1配比'}</span>
+          <span className="feature-tag">💎 {language === 'en' ? 'Daily 00:00 Draw' : '每日0点开奖'}</span>
+        </div>
+
+        {/* Main Grid */}
+        <div className="grid grid-cols-2" style={{ gap: 'var(--space-6)', marginBottom: 'var(--space-6)' }}>
+          {/* Pool Info Card */}
+          <div className="card card-glass">
+            <h2 className="card-title-modern">📊 {t('poolInfo')}</h2>
+            
+            <div className="pool-display-modern">
+              <span className="pool-label-modern">{language === 'en' ? 'Current Pool' : '当前奖池'}</span>
+              <span className="pool-value-modern">🪙 {(stats.dailyPool / 1e9).toFixed(2)}M TPOT</span>
+            </div>
+            
+            <div className="countdown-modern">
+              <span className="countdown-label-modern">{language === 'en' ? 'Next Draw' : '距离开奖'}</span>
+              <div className="countdown-timer">
+                <span className="countdown-unit">{countdown.hours}</span>
+                <span className="countdown-sep">:</span>
+                <span className="countdown-unit">{countdown.minutes}</span>
+                <span className="countdown-sep">:</span>
+                <span className="countdown-unit">{countdown.seconds}</span>
+              </div>
+            </div>
+            
+            <div className="info-grid-modern">
+              <div className="info-item-modern">
+                <span className="info-label-modern">{language === 'en' ? 'Participants' : '参与人数'}</span>
+                <span className="info-value-modern">{stats.dailyParticipants || '--'}</span>
+              </div>
+              <div className="info-item-modern">
+                <span className="info-label-modern">{language === 'en' ? 'Min Deposit' : '最低投入'}</span>
+                <span className="info-value-modern">100 TPOT</span>
+              </div>
+              <div className="info-item-modern">
+                <span className="info-label-modern">{language === 'en' ? 'Draw Time' : '开奖时间'}</span>
+                <span className="info-value-modern">00:00 UTC</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Deposit Card */}
+          <div className="card card-glass">
+            <h2 className="card-title-modern">🎰 {t('joinNowBtn')}</h2>
+            
+            <div className="form-group-modern">
+              <label className="form-label-modern">{language === 'en' ? 'Amount (TPOT)' : '投入数量 (TPOT)'}</label>
+              <input
+                type="number"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                min="100"
+                className="input-modern"
+                placeholder="100"
+              />
+            </div>
+            
+            <div className="quick-amount-grid">
+              {['100', '500', '1000', '10000'].map(amount => (
+                <button 
+                  key={amount} 
+                  className={`quick-btn ${depositAmount === amount ? 'active' : ''}`}
+                  onClick={() => setDepositAmount(amount)}
+                >
+                  {amount >= 1000 ? `${amount/1000}K` : amount}
+                </button>
+              ))}
             </div>
 
-            <label style={styles.label}>
-              {language === 'en' ? 'Referrer (Optional)' : '邀请人地址 (可选)'}
-            </label>
-            <input
-              type="text"
-              value={referrer}
-              onChange={(e) => setReferrer(e.target.value)}
-              disabled={isDepositing}
-              style={styles.input}
-              placeholder={language === 'en' ? 'Enter referrer wallet address' : '输入邀请人钱包地址'}
-            />
-            <p style={styles.referralNote}>
+            <div className="form-group-modern" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label-modern">{language === 'en' ? 'Referrer (Optional)' : '邀请人地址 (可选)'}</label>
+              <input
+                type="text"
+                value={referrer}
+                onChange={(e) => setReferrer(e.target.value)}
+                className="input-modern"
+                placeholder={language === 'en' ? 'Enter referrer wallet address' : '输入邀请人钱包地址'}
+              />
+            </div>
+
+            <p className="referral-note">
               🎁 {language === 'en' ? 'Referrer gets 8% reward' : '使用邀请码，邀请人可获得 8% 奖励'}
             </p>
 
-            {/* 错误提示 */}
             {errorMessage && (
-              <div style={styles.errorMessage}>
+              <div className="error-message">
                 ❌ {errorMessage}
               </div>
             )}
@@ -244,395 +219,275 @@ const DailyPool = () => {
             <button 
               onClick={handleDeposit}
               disabled={isDepositing || stats.isPaused}
-              style={{
-                ...styles.depositButton,
-                opacity: isDepositing || stats.isPaused ? 0.6 : 1,
-                cursor: isDepositing || stats.isPaused ? 'not-allowed' : 'pointer',
-              }}
+              className="btn btn-primary btn-lg"
+              style={{ width: '100%', marginTop: 'var(--space-4)' }}
             >
-              {getButtonText()}
+              {isDepositing ? (language === 'en' ? 'Processing...' : '处理中...') : (stats.isPaused ? (language === 'en' ? 'Paused' : '已暂停') : `🎰 ${language === 'en' ? 'Join Now' : '参与抽奖'}`)}
             </button>
           </div>
         </div>
-      </div>
 
-      {/* 储备配比说明 */}
-      <div style={styles.card}>
-        <h2 style={styles.cardTitle}>⚡ {language === 'en' ? 'Reserve Matching' : '储备配比机制'}</h2>
-        <div style={styles.reserveInfo}>
-          <div style={styles.reserveVisual}>
-            <div style={styles.reserveBox}>
-              <span style={styles.reserveLabel}>{language === 'en' ? 'Your Deposit' : '您的投入'}</span>
-              <span style={styles.reserveArrow}>→</span>
-              <span style={styles.reserveValue}>100 TPOT</span>
+        {/* Reserve Matching */}
+        <div className="card card-glass">
+          <h2 className="card-title-modern">⚡ {language === 'en' ? 'Reserve Matching' : '储备配比机制'}</h2>
+          <div className="reserve-visual">
+            <div className="reserve-box">
+              <span className="reserve-label">{language === 'en' ? 'Your Deposit' : '您的投入'}</span>
+              <span className="reserve-arrow">→</span>
+              <span className="reserve-value">100 TPOT</span>
             </div>
-            <span style={styles.plus}>+</span>
-            <div style={styles.reserveBox}>
-              <span style={styles.reserveLabel}>{language === 'en' ? 'Reserve Match' : '储备配比'}</span>
-              <span style={styles.reserveArrow}>→</span>
-              <span style={styles.reserveValue}>100 TPOT</span>
+            <span className="reserve-plus">+</span>
+            <div className="reserve-box">
+              <span className="reserve-label">{language === 'en' ? 'Reserve Match' : '储备配比'}</span>
+              <span className="reserve-arrow">→</span>
+              <span className="reserve-value">100 TPOT</span>
             </div>
-            <span style={styles.equals}>=</span>
-            <div style={styles.reserveBoxTotal}>
-              <span style={styles.reserveLabel}>{language === 'en' ? 'Total in Pool' : '实际入池'}</span>
-              <span style={styles.reserveValueTotal}>200 TPOT</span>
+            <span className="reserve-equals">=</span>
+            <div className="reserve-box-total">
+              <span className="reserve-label">{language === 'en' ? 'Total in Pool' : '实际入池'}</span>
+              <span className="reserve-value-total">200 TPOT</span>
             </div>
           </div>
-          <p style={styles.reserveDesc}>
+          <p className="reserve-desc">
             {language === 'en' 
               ? 'Every deposit gets 1:1 matched from reserve pool, doubling your winning chance!' 
               : '您的每笔投入都将获得储备池 1:1 配比，翻倍您的中奖机会！'}
-            <br />
-            <span style={styles.reserveNote}>
-              {language === 'en' 
-                ? 'Matching stops when reserve is depleted. First come first served.' 
-                : '储备耗尽后停止配比，先到先得。'}
-            </span>
           </p>
+        </div>
+
+        {/* Prize Distribution */}
+        <div className="card card-glass" style={{ marginTop: 'var(--space-6)' }}>
+          <h2 className="card-title-modern">💰 {t('prizeDistribution')}</h2>
+          <div className="prize-grid">
+            {[
+              { name: language === 'en' ? '🥇 1st Prize' : '🥇 头奖', percent: '30%', color: '#FFD700' },
+              { name: language === 'en' ? '🥈 2nd Prize' : '🥈 二奖', percent: '20%', color: '#C0C0C0' },
+              { name: language === 'en' ? '🥉 3rd Prize' : '🥉 三奖', percent: '15%', color: '#CD7F32' },
+              { name: language === 'en' ? '🎁 Lucky Prize' : '🎁 幸运奖', percent: '10%', color: '#8B5CF6' },
+              { name: language === 'en' ? '🌟 Universal Prize' : '🌟 普惠奖', percent: '20%', color: '#10B981' },
+              { name: language === 'en' ? '🔄 Roll Over' : '🔄 回流', percent: '5%', color: '#6B7280' },
+            ].map((prize, idx) => (
+              <div key={idx} className="prize-item-modern">
+                <span className="prize-name-modern">{prize.name}</span>
+                <div className="prize-bar">
+                  <div style={{ width: prize.percent, background: prize.color }}></div>
+                </div>
+                <span className="prize-percent-modern">{prize.percent}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Fund Allocation */}
+        <div className="card card-glass" style={{ marginTop: 'var(--space-6)' }}>
+          <h2 className="card-title-modern">📊 {t('fundAllocation')}</h2>
+          <div className="fund-grid">
+            {[
+              { label: language === 'en' ? 'Burn' : '销毁', percent: '3%', color: '#EF4444' },
+              { label: language === 'en' ? 'Platform' : '平台', percent: '2%', color: '#3B82F6' },
+              { label: language === 'en' ? 'Pool' : '奖池', percent: '95%', color: '#FFD700' },
+            ].map((fund, idx) => (
+              <div key={idx} className="fund-item-modern">
+                <span className="fund-label-modern">{fund.label}</span>
+                <div className="fund-bar">
+                  <div style={{ width: fund.percent, background: fund.color }}></div>
+                </div>
+                <span className="fund-percent-modern">{fund.percent}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* 奖金分配 */}
-      <div style={styles.card}>
-        <h2 style={styles.cardTitle}>💰 {language === 'en' ? 'Prize Distribution' : '奖金分配'}</h2>
-        <div style={styles.prizeDistribution}>
-          <div style={styles.prizeRow}>
-            <span style={styles.prizeName}>🥇 {language === 'en' ? 'First Prize' : '头奖'}</span>
-            <span style={styles.prizePercent}>30%</span>
-            <span style={styles.prizeDetail}>{language === 'en' ? '1 winner / 20 days vesting' : '1人 / 20天释放'}</span>
-          </div>
-          <div style={styles.prizeRow}>
-            <span style={styles.prizeName}>🥈 {language === 'en' ? 'Second Prize' : '二等奖'}</span>
-            <span style={styles.prizePercent}>20%</span>
-            <span style={styles.prizeDetail}>{language === 'en' ? '2 winners / 20 days' : '2人 / 20天释放'}</span>
-          </div>
-          <div style={styles.prizeRow}>
-            <span style={styles.prizeName}>🥉 {language === 'en' ? 'Third Prize' : '三等奖'}</span>
-            <span style={styles.prizePercent}>15%</span>
-            <span style={styles.prizeDetail}>{language === 'en' ? '3 winners / 20 days' : '3人 / 20天释放'}</span>
-          </div>
-          <div style={styles.prizeRow}>
-            <span style={styles.prizeName}>🎁 {language === 'en' ? 'Lucky Prize' : '幸运奖'}</span>
-            <span style={styles.prizePercent}>10%</span>
-            <span style={styles.prizeDetail}>{language === 'en' ? '5 winners / 20 days' : '5人 / 20天释放'}</span>
-          </div>
-          <div style={styles.prizeRowHighlight}>
-            <span style={styles.prizeName}>🌟 {language === 'en' ? 'Universal Prize' : '普惠奖'}</span>
-            <span style={styles.prizePercent}>20%</span>
-            <span style={styles.prizeDetail}>{language === 'en' ? 'All non-winners / Instant' : '所有未中大奖者 / 立即到账'}</span>
-          </div>
-          <div style={styles.prizeRow}>
-            <span style={styles.prizeName}>🔄 {language === 'en' ? 'Rollover' : '回流'}</span>
-            <span style={styles.prizePercent}>5%</span>
-            <span style={styles.prizeDetail}>{language === 'en' ? 'To next round' : '滚入下期奖池'}</span>
-          </div>
-        </div>
-      </div>
+      <style>{`
+        .feature-tag {
+          background: oklch(55% 0.15 45 / 0.2);
+          color: var(--color-gold);
+          padding: 8px 16px;
+          border-radius: 20px;
+          font-size: var(--text-sm);
+          border: 1px solid oklch(55% 0.15 45 / 0.3);
+        }
+        
+        .countdown-timer {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          font-family: var(--font-mono);
+        }
+        
+        .countdown-unit {
+          background: oklch(20% 0.02 280);
+          padding: var(--space-2) var(--space-3);
+          border-radius: var(--radius-md);
+          font-size: var(--text-2xl);
+          font-weight: 700;
+          color: var(--color-gold);
+          min-width: 50px;
+          text-align: center;
+        }
+        
+        .countdown-sep {
+          font-size: var(--text-2xl);
+          color: var(--text-tertiary);
+        }
+        
+        .reserve-visual {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: var(--space-4);
+          flex-wrap: wrap;
+          margin-bottom: var(--space-4);
+        }
+        
+        .reserve-box, .reserve-box-total {
+          background: oklch(15% 0.02 280);
+          padding: var(--space-4);
+          border-radius: var(--radius-lg);
+          text-align: center;
+          min-width: 120px;
+        }
+        
+        .reserve-box-total {
+          background: oklch(55% 0.15 45 / 0.2);
+          border: 1px solid oklch(55% 0.15 45 / 0.3);
+        }
+        
+        .reserve-label {
+          display: block;
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          margin-bottom: var(--space-2);
+        }
+        
+        .reserve-value, .reserve-value-total {
+          display: block;
+          font-size: var(--text-lg);
+          font-weight: 700;
+          color: var(--color-gold);
+        }
+        
+        .reserve-plus, .reserve-equals {
+          font-size: var(--text-2xl);
+          font-weight: 700;
+          color: var(--color-gold);
+        }
+        
+        .reserve-desc {
+          text-align: center;
+          color: var(--text-secondary);
+          font-size: var(--text-sm);
+          line-height: 1.6;
+        }
+        
+        .referral-note {
+          font-size: var(--text-sm);
+          color: var(--text-tertiary);
+          margin-top: var(--space-2);
+        }
+        
+        .error-message {
+          background: oklch(60% 0.18 25 / 0.15);
+          border: 1px solid oklch(60% 0.18 25 / 0.3);
+          border-radius: var(--radius-md);
+          padding: var(--space-3);
+          margin-top: var(--space-3);
+          color: var(--color-error);
+          font-size: var(--text-sm);
+        }
+        
+        .prize-grid {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-3);
+        }
+        
+        .prize-item-modern {
+          display: grid;
+          grid-template-columns: 120px 1fr 50px;
+          align-items: center;
+          gap: var(--space-3);
+        }
+        
+        .prize-name-modern {
+          font-size: var(--text-sm);
+          color: var(--text-primary);
+        }
+        
+        .prize-bar {
+          height: 8px;
+          background: oklch(20% 0.02 280);
+          border-radius: var(--radius-full);
+          overflow: hidden;
+        }
+        
+        .prize-bar div {
+          height: 100%;
+          border-radius: var(--radius-full);
+          transition: width 0.3s ease;
+        }
+        
+        .prize-percent-modern {
+          font-weight: 600;
+          color: var(--color-gold);
+          text-align: right;
+        }
+        
+        .fund-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: var(--space-4);
+        }
+        
+        .fund-item-modern {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: var(--space-2);
+        }
+        
+        .fund-label-modern {
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+        }
+        
+        .fund-bar {
+          width: 100%;
+          height: 8px;
+          background: oklch(20% 0.02 280);
+          border-radius: var(--radius-full);
+          overflow: hidden;
+        }
+        
+        .fund-bar div {
+          height: 100%;
+          border-radius: var(--radius-full);
+        }
+        
+        .fund-percent-modern {
+          font-size: var(--text-lg);
+          font-weight: 700;
+        }
+        
+        @media (max-width: 768px) {
+          .reserve-visual {
+            flex-direction: column;
+          }
+          .reserve-plus, .reserve-equals {
+            transform: rotate(90deg);
+          }
+          .fund-grid {
+            grid-template-columns: 1fr;
+          }
+          .prize-item-modern {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
     </div>
   );
 };
 
-// Modern UI enhancements applied via global styles.css
-
-
-const styles = {
-  container: {
-    padding: '40px 24px',
-    maxWidth: '1200px',
-    margin: '0 auto',
-  },
-  header: {
-    textAlign: 'center',
-    marginBottom: '16px',
-  },
-  title: {
-    fontSize: '36px',
-    color: '#FFD700',
-    marginBottom: '8px',
-  },
-  subtitle: {
-    fontSize: '16px',
-    color: '#A0A0A0',
-  },
-  warningBanner: {
-    background: 'rgba(255, 0, 0, 0.2)',
-    border: '1px solid rgba(255, 0, 0, 0.5)',
-    borderRadius: '8px',
-    padding: '12px 16px',
-    marginBottom: '16px',
-    color: '#FF6B6B',
-    textAlign: 'center',
-  },
-  balanceCard: {
-    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
-    borderRadius: '12px',
-    padding: '16px 24px',
-    marginBottom: '16px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    border: '1px solid rgba(255, 215, 0, 0.3)',
-  },
-  balanceLabel: {
-    fontSize: '14px',
-    color: '#A0A0A0',
-  },
-  balanceValue: {
-    fontSize: '20px',
-    fontWeight: 'bold',
-    color: '#FFD700',
-  },
-  features: {
-    display: 'flex',
-    justifyContent: 'center',
-    gap: '12px',
-    marginBottom: '32px',
-    flexWrap: 'wrap',
-  },
-  featureTag: {
-    background: 'rgba(255, 215, 0, 0.15)',
-    color: '#FFD700',
-    padding: '8px 16px',
-    borderRadius: '20px',
-    fontSize: '14px',
-    border: '1px solid rgba(255, 215, 0, 0.3)',
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))',
-    gap: '24px',
-    marginBottom: '24px',
-  },
-  card: {
-    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
-    borderRadius: '16px',
-    padding: '24px',
-    border: '1px solid rgba(255, 215, 0, 0.2)',
-  },
-  cardTitle: {
-    fontSize: '20px',
-    color: '#FFD700',
-    marginBottom: '20px',
-  },
-  poolDisplay: {
-    textAlign: 'center',
-    padding: '20px',
-    background: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: '12px',
-    marginBottom: '16px',
-  },
-  poolLabel: {
-    display: 'block',
-    fontSize: '14px',
-    color: '#A0A0A0',
-    marginBottom: '8px',
-  },
-  poolValue: {
-    fontSize: '32px',
-    fontWeight: 'bold',
-    color: '#FFD700',
-  },
-  countdownBox: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    background: 'rgba(255, 215, 0, 0.1)',
-    padding: '16px',
-    borderRadius: '8px',
-    marginBottom: '16px',
-  },
-  countdownLabel: {
-    fontSize: '14px',
-    color: '#A0A0A0',
-  },
-  countdownValue: {
-    fontSize: '24px',
-    fontWeight: 'bold',
-    color: '#FFD700',
-    fontFamily: 'monospace',
-  },
-  infoList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  infoItem: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    fontSize: '14px',
-    color: '#A0A0A0',
-  },
-  infoValue: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
-  depositSection: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  label: {
-    fontSize: '14px',
-    color: '#A0A0A0',
-  },
-  input: {
-    background: 'rgba(0, 0, 0, 0.3)',
-    border: '1px solid rgba(255, 215, 0, 0.3)',
-    borderRadius: '8px',
-    padding: '12px 16px',
-    fontSize: '16px',
-    color: '#FFFFFF',
-    outline: 'none',
-  },
-  quickButtons: {
-    display: 'flex',
-    gap: '8px',
-    flexWrap: 'wrap',
-  },
-  quickBtn: {
-    background: 'rgba(255, 215, 0, 0.1)',
-    border: '1px solid rgba(255, 215, 0, 0.3)',
-    borderRadius: '6px',
-    padding: '8px 16px',
-    color: '#FFD700',
-    cursor: 'pointer',
-    fontSize: '14px',
-  },
-  referralNote: {
-    fontSize: '12px',
-    color: '#FFD700',
-    margin: 0,
-  },
-  errorMessage: {
-    background: 'rgba(255, 0, 0, 0.2)',
-    border: '1px solid rgba(255, 0, 0, 0.5)',
-    borderRadius: '6px',
-    padding: '8px 12px',
-    color: '#FF6B6B',
-    fontSize: '14px',
-  },
-  depositButton: {
-    background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 100%)',
-    color: '#000000',
-    border: 'none',
-    borderRadius: '8px',
-    padding: '16px',
-    fontSize: '18px',
-    fontWeight: 'bold',
-    marginTop: '8px',
-    transition: 'opacity 0.2s',
-  },
-  reserveInfo: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '20px',
-  },
-  reserveVisual: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-  },
-  reserveBox: {
-    background: 'rgba(0, 0, 0, 0.3)',
-    padding: '16px 24px',
-    borderRadius: '12px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  reserveBoxTotal: {
-    background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 165, 0, 0.2))',
-    padding: '16px 24px',
-    borderRadius: '12px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '8px',
-    border: '1px solid rgba(255, 215, 0, 0.5)',
-  },
-  reserveLabel: {
-    fontSize: '12px',
-    color: '#A0A0A0',
-  },
-  reserveValue: {
-    fontSize: '20px',
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  reserveValueTotal: {
-    fontSize: '24px',
-    fontWeight: 'bold',
-    color: '#FFD700',
-  },
-  reserveArrow: {
-    fontSize: '20px',
-    color: '#A0A0A0',
-  },
-  plus: {
-    fontSize: '24px',
-    color: '#FFD700',
-    fontWeight: 'bold',
-  },
-  equals: {
-    fontSize: '24px',
-    color: '#FFD700',
-    fontWeight: 'bold',
-  },
-  reserveDesc: {
-    textAlign: 'center',
-    color: '#A0A0A0',
-    fontSize: '14px',
-    lineHeight: 1.6,
-  },
-  reserveNote: {
-    color: '#FFD700',
-  },
-  prizeDistribution: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-  },
-  prizeRow: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '12px',
-    background: 'rgba(0, 0, 0, 0.2)',
-    borderRadius: '8px',
-  },
-  prizeRowHighlight: {
-    display: 'flex',
-    alignItems: 'center',
-    padding: '12px',
-    background: 'rgba(255, 215, 0, 0.1)',
-    borderRadius: '8px',
-    border: '1px solid rgba(255, 215, 0, 0.3)',
-  },
-  prizeName: {
-    flex: 1,
-    fontSize: '16px',
-    color: '#FFFFFF',
-  },
-  prizePercent: {
-    width: '60px',
-    fontSize: '18px',
-    fontWeight: 'bold',
-    color: '#FFD700',
-    textAlign: 'center',
-  },
-  prizeDetail: {
-    flex: 1,
-    fontSize: '14px',
-    color: '#A0A0A0',
-    textAlign: 'right',
-  },
-};
-
-// Modern UI enhancements applied via global styles.css
-
-
 export default DailyPool;
-// Modern styles
