@@ -80,8 +80,10 @@ const PageWrapper = ({ children }) => (
 function AppContent() {
   // ✅ 使用 useMemo 创建钱包适配器，避免重复创建
   const wallets = useMemo(() => [
-    // ✅ 使用官方 Phantom 适配器，自动处理移动端（iOS/Android）
-    new PhantomWalletAdapter(),
+    // ✅ 使用官方 Phantom 适配器，添加 appUrl 帮助移动端识别
+    new PhantomWalletAdapter({
+      appUrl: window.location.origin,
+    }),
     
     // Solflare 适配器
     new SolflareWalletAdapter({
