@@ -17,5 +17,5 @@ default = ["init-if-needed"]
 init-if-needed = ["anchor-lang/init-if-needed"]
 
 [dependencies]
-anchor-lang = "0.29.0"
-anchor-spl = "0.29.0"
+anchor-lang = "0.30.0"
+anchor-spl = "0.30.0"
