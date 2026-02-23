@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
 
 const HourlyPool = () => {
-  const { stats, wallet } = useApp();
+  const { stats, wallet, userTokenBalance, sdk, refreshStats } = useApp();
   const { t, language } = useTranslation();
   const [depositAmount, setDepositAmount] = useState('200');
   const [isDepositing, setIsDepositing] = useState(false);
@@ -13,11 +13,32 @@ const HourlyPool = () => {
       alert(t('walletNotConnected'));
       return;
     }
+    
+    const amount = parseInt(depositAmount);
+    if (isNaN(amount) || amount < 200) {
+      alert(language === 'en' ? 'Minimum deposit is 200 TPOT' : '最低投入200 TPOT');
+      return;
+    }
+    
+    // 检查用户余额
+    if (!userTokenBalance || userTokenBalance < amount) {
+      alert(language === 'en' ? 'Insufficient balance' : '余额不足');
+      return;
+    }
+    
     setIsDepositing(true);
-    setTimeout(() => {
-      setIsDepositing(false);
-      alert(t('depositSuccess'));
-    }, 2000);
+    try {
+      const result = await sdk.depositHourly(amount);
+      if (result.success) {
+        alert(language === 'en' ? 'Deposit successful!' : '存款成功！');
+        refreshStats();
+      } else {
+        alert(language === 'en' ? `Deposit failed: ${result.error}` : `存款失败: ${result.error}`);
+      }
+    } catch (error) {
+      alert(language === 'en' ? `Error: ${error.message}` : `错误: ${error.message}`);
+    }
+    setIsDepositing(false);
   };
 
   const formatTime = (timestamp) => {
@@ -35,10 +56,10 @@ const HourlyPool = () => {
         <div className="page-header-modern">
           <div className="page-badge">⏰ Hourly Pool</div>
           <h1 className="page-title-modern">{t('hourlyPool')}</h1>
-          <p className="page-subtitle-modern">
+          <p className="page-subtitle-modern" style={{ color: '#FF6B6B' }}>
             {language === 'en' 
-              ? 'Fast-paced gaming with hourly draws'
-              : '每小时开奖，快节奏游戏体验'
+              ? '⚠️ Airdrop tokens can ONLY be used in Daily Pool'
+              : '⚠️ 空投代币只能用于每日奖池'
             }
           </p>
         </div>

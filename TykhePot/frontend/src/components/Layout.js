@@ -62,7 +62,7 @@ const Layout = ({ children }) => {
               {language === 'en' ? '🇺🇸 EN' : '🇨🇳 中文'}
             </button>
             
-            {/* Wallet Button - Show all wallets */}
+            {/* Wallet Button - Show on all devices */}
             <div className="wallet-btn-wrapper">
               {/* 已连接: 显示地址 */}
               {connected && publicKey ? (
@@ -71,7 +71,7 @@ const Layout = ({ children }) => {
                   <span className="wallet-address">{shortenAddress(publicKey.toString())}</span>
                 </div>
               ) : (
-                /* 未连接: 显示连接按钮（点击弹出钱包选择） */
+                /* 未连接: 显示连接按钮 */
                 <WalletMultiButton className="wallet-connect-btn" />
               )}
             </div>

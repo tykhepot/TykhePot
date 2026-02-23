@@ -98,6 +98,15 @@ const IDL = {
       ],
     },
     {
+      name: "depositDailyWithAirdrop",
+      accounts: [
+        { name: "state", isMut: true, isSigner: false },
+        { name: "user", isMut: true, isSigner: false },
+        { name: "signer", isMut: false, isSigner: true },
+      ],
+      args: [{ name: "amount", type: "u64" }],
+    },
+    {
       name: "claimVested",
       accounts: [
         { name: "user", isMut: true, isSigner: true },
@@ -473,6 +482,40 @@ class TykhePotSDK {
       return { success: true, tx };
     } catch (error) {
       console.error("Deposit daily failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // 使用锁定空投存款到天池
+  async depositDailyWithAirdrop(amount) {
+    try {
+      const user = this.wallet.publicKey;
+      const amountBN = this.parseAmount(amount);
+
+      const [statePDA] = web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("state")],
+        this.program.programId
+      );
+
+      const [userStatePDA] = web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("user"), user.toBuffer()],
+        this.program.programId
+      );
+
+      const accounts = {
+        state: statePDA,
+        user: userStatePDA,
+        signer: user,
+      };
+
+      const tx = await this.program.methods
+        .depositDailyWithAirdrop(amountBN)
+        .accounts(accounts)
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("Deposit with airdrop failed:", error);
       return { success: false, error: error.message };
     }
   }

@@ -47,20 +47,21 @@ const Airdrop = () => {
     setError('');
 
     try {
-      // TODO: 调用合约的 claim_airdrop
-      // const result = await sdk.claimAirdrop();
+      const result = await sdk.claimAirdrop();
       
-      // 模拟成功
-      setTimeout(() => {
+      if (result.success) {
         setHasClaimed(true);
-        setIsClaiming(false);
-        alert('🎉 Successfully claimed 100 TPOT!');
-      }, 2000);
+        alert(language === 'en' 
+          ? '🎉 Successfully claimed 100 TPOT! Use it in Daily Pool.' 
+          : '🎉 成功领取100 TPOT！请去每日奖池使用。');
+      } else {
+        setError(result.error || (language === 'en' ? 'Failed to claim' : '领取失败'));
+      }
     } catch (err) {
       console.error('Error claiming airdrop:', err);
-      setError(err.message || 'Failed to claim airdrop');
-      setIsClaiming(false);
+      setError(err.message || (language === 'en' ? 'Failed to claim airdrop' : '领取空投失败'));
     }
+    setIsClaiming(false);
   };
 
   return (
@@ -84,8 +85,9 @@ const Airdrop = () => {
         <ul style={styles.rulesList}>
           <li style={styles.ruleItem}>✅ Every wallet can claim <strong>100 TPOT</strong> for FREE</li>
           <li style={styles.ruleItem}>✅ One-time claim only - cannot claim twice</li>
-          <li style={styles.ruleItem}>✅ No participation requirements</li>
-          <li style={styles.ruleItem}>✅ Use for pool deposits or stake for rewards</li>
+          <li style={styles.ruleItem}>✅ Tokens are LOCKED - can only be used in <strong>Daily Pool</strong></li>
+          <li style={styles.ruleItem}>❌ Cannot be used in Hourly Pool</li>
+          <li style={styles.ruleItem}>💡 After claiming, go to Daily Pool to use your airdrop tokens</li>
         </ul>
       </div>
 
@@ -103,7 +105,7 @@ const Airdrop = () => {
             <span style={styles.claimedIcon}>✅</span>
             <div style={styles.claimedText}>
               <strong>You have claimed your 100 TPOT!</strong>
-              <p>Use it to join pools or stake for rewards</p>
+              <p style={{ color: '#FF6B6B' }}>⚠️ Go to <strong>Daily Pool</strong> to use these tokens!</p>
             </div>
           </div>
         ) : (

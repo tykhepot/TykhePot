@@ -755,7 +755,33 @@ footer a:hover {
   width: 100% !important;
 }
 
-/* Hide default wallet adapter styles */
-.wallet-adapter-button {
-  display: none !important;
+/* ================================
+   Mobile Wallet Button Fix
+   ================================ */
+
+/* Show wallet on all devices */
+.wallet-btn-wrapper {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Make button smaller on mobile */
+@media (max-width: 768px) {
+  .wallet-connect-btn {
+    padding: 8px 16px !important;
+    font-size: 12px !important;
+  }
+  
+  .wallet-btn-wrapper {
+    gap: 4px;
+  }
+  
+  .wallet-connected {
+    padding: 6px 10px !important;
+  }
+  
+  .wallet-address {
+    font-size: 11px !important;
+  }
 }

@@ -6,6 +6,8 @@ const DailyPool = () => {
   const { stats, wallet, sdk, refreshStats, userTokenBalance } = useApp();
   const { t, language } = useTranslation();
   const [depositAmount, setDepositAmount] = useState('100');
+  const [useAirdrop, setUseAirdrop] = useState(false); // 是否使用空投余额
+  const [airdropBalance, setAirdropBalance] = useState(100); // 模拟空投余额
   const [referrer, setReferrer] = useState('');
   const [isDepositing, setIsDepositing] = useState(false);
   const [txStatus, setTxStatus] = useState(null);
@@ -57,6 +59,42 @@ const DailyPool = () => {
       return;
     }
 
+    // 如果选择使用空投余额
+    if (useAirdrop) {
+      if (airdropBalance < amount) {
+        alert(language === 'en' 
+          ? `Insufficient airdrop balance. You have ${airdropBalance} TPOT in airdrop` 
+          : `空投余额不足。您有 ${airdropBalance} TPOT 空投`);
+        return;
+      }
+      
+      setIsDepositing(true);
+      setTxStatus('pending');
+      setErrorMessage('');
+
+      try {
+        const result = await sdk.depositDailyWithAirdrop(amount);
+        
+        if (result.success) {
+          setTxStatus('success');
+          setAirdropBalance(prev => prev - amount);
+          alert(language === 'en' 
+            ? `Success! Deposited ${amount} TPOT from airdrop!` 
+            : `成功！使用空投存款 ${amount} TPOT！`);
+          refreshStats();
+        } else {
+          setTxStatus('error');
+          setErrorMessage(result.error || (language === 'en' ? 'Deposit failed' : '存款失败'));
+        }
+      } catch (error) {
+        setTxStatus('error');
+        setErrorMessage(error.message || (language === 'en' ? 'Error' : '错误'));
+      }
+      setIsDepositing(false);
+      return;
+    }
+
+    // 普通存款
     if (userTokenBalance < amount) {
       alert(language === 'en' 
         ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT` 
@@ -170,6 +208,23 @@ const DailyPool = () => {
           {/* Deposit Card */}
           <div className="card card-glass">
             <h2 className="card-title-modern">🎰 {t('joinNowBtn')}</h2>
+            
+            {/* Airdrop Balance Option */}
+            <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(255, 215, 0, 0.1)', borderRadius: '8px', border: '1px solid rgba(255, 215, 0, 0.3)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={useAirdrop} 
+                  onChange={(e) => setUseAirdrop(e.target.checked)}
+                  style={{ width: '18px', height: '18px' }}
+                />
+                <span style={{ color: '#FFD700', fontWeight: '600' }}>
+                  {language === 'en' 
+                    ? `Use Airdrop Balance (${airdropBalance} TPOT available)` 
+                    : `使用空投余额 (剩余 ${airdropBalance} TPOT)`}
+                </span>
+              </label>
+            </div>
             
             <div className="form-group-modern">
               <label className="form-label-modern">{language === 'en' ? 'Amount (TPOT)' : '投入数量 (TPOT)'}</label>
