@@ -88,7 +88,19 @@
 - **Frontend**: `https://www.tykhepot.io`
 - **GitHub**: `github.com/tykhepot/TykhePot`
 
-## 📝 合约函数
+## 🔐 Switchboard VRF 集成
+
+### 工作原理
+1. 创建 Switchboard VRF 账户
+2. 调用 `set_vrf_result(result)` 设置随机数
+3. 开奖时优先使用 VRF 结果
+4. 如果 VRF 未设置，回退到时间戳
+
+### 费用
+- 测试网: 免费
+- 主网: ~0.002-0.01 SOL/次
+
+### 合约函数
 
 | 函数 | 说明 |
 |------|------|
