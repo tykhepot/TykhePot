@@ -68,3 +68,4 @@ deposit_daily_with_airdrop(amount):
 - Token: `FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY`
 - 前端: `https://www.tykhepot.io`
 - GitHub: `github.com/tykhepot/TykhePot`
+- 规则文档: `TykhePot/RULES.md`

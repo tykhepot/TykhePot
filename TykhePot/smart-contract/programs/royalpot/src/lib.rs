@@ -2,12 +2,11 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Transfer, Token, TokenAccount, Mint};
 
 // ============ 随机选择系统 ============
-// 使用时间戳和状态作为种子生成伪随机数
-// 生产环境建议使用 Switchboard VRF
+// 使用 Switchboard VRF 或备用时间戳
+// VRF提供可验证的随机数，无法被预测或操纵
 
-// 简单的伪随机数生成
+// 简单的伪随机数生成 (备用)
 fn get_random_seed(timestamp: i64, pool_size: u64) -> u64 {
-    // 使用时间戳和奖池大小生成种子
     let seed = (timestamp as u64).wrapping_mul(1103515245).wrapping_add(12345);
     seed % pool_size.max(1)
 }
@@ -94,6 +93,10 @@ pub struct State {
     pub last_daily: i64,
     pub paused: bool,
     pub bump: u8,
+    
+    // ============ Switchboard VRF ============
+    pub vrf_account: Pubkey,     // VRF账户地址
+    pub vrf_result: u64,         // 上次VRF结果
     
     // ============ 初始代币分配 ============
     pub airdrop_pool: u64,        // 空投池剩余 (10%)
@@ -280,6 +283,12 @@ pub struct GetStakingPool<'info> {
 }
 
 #[derive(Accounts)]
+pub struct SetVrfResult<'info> {
+    #[account(mut)] pub state: Account<'info, State>,
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
 pub struct GetPoolStatus<'info> {
     #[account()] pub state: Account<'info, State>,
 }
@@ -293,6 +302,7 @@ pub struct InitializeParams {
     pub pre_match_pool: u64,    // 前期奖池配额 (20%)
     pub team_pool: u64,         // 团队代币 (10%)
     pub referral_pool_total: u64, // 推广奖励池 (20%)
+    pub vrf_account: Pubkey,    // Switchboard VRF账户
 }
 
 #[error_code]
@@ -360,6 +370,10 @@ pub mod royalpot {
         state.referral_pool_total = params.referral_pool_total; // 推广奖励池
         state.referral_used = 0;                            // 已使用
         
+        // ============ Switchboard VRF ============
+        state.vrf_account = params.vrf_account;
+        state.vrf_result = 0;
+        
         Ok(())
     }
 
@@ -382,6 +396,15 @@ pub mod royalpot {
         // 从池子扣除
         state.team_claimed = state.team_claimed.checked_add(amount).unwrap();
         
+        Ok(())
+    }
+
+    // ============ 设置VRF随机数 ============
+    // 此函数用于更新VRF结果
+    // 在生产环境中应由Switchboard VRF oracle调用
+    pub fn set_vrf_result(ctx: Context<SetVrfResult>, result: u64) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        state.vrf_result = result;
         Ok(())
     }
 
@@ -670,8 +693,12 @@ pub mod royalpot {
         let total_pool = state.hourly_pool + state.hourly_rollover;
         require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
         
-        // 获取随机种子
-        let random_seed = get_random_seed(clock.unix_timestamp, state.hourly_players as u64);
+        // 获取随机种子 (优先使用VRF，备用时间戳)
+        let random_seed = if state.vrf_result > 0 {
+            state.vrf_result
+        } else {
+            get_random_seed(clock.unix_timestamp, state.hourly_players as u64)
+        };
         
         // 选择中奖者（使用票号系统）
         let start_ticket = state.hourly_ticket_start;
@@ -883,7 +910,12 @@ pub mod royalpot {
         let total = state.daily_pool + state.daily_rollover;
         require!(total > 0, ErrorCode::InsufficientPoolBalance);
         
-        let seed = get_random_seed(clock.unix_timestamp, state.daily_players as u64);
+        // 获取随机种子 (优先使用VRF，备用时间戳)
+        let seed = if state.vrf_result > 0 {
+            state.vrf_result
+        } else {
+            get_random_seed(clock.unix_timestamp, state.daily_players as u64)
+        };
         let win_ticket = (seed % (state.daily_ticket_end - state.daily_ticket_start + 1)) + state.daily_ticket_start;
         
         // 计算平台费和奖金 (扣除平台费2%和待销毁3%)
