@@ -95,7 +95,6 @@ pub struct UserData {
     pub referrer: Option<Pubkey>,
     pub has_ref_bonus: bool,
     pub airdrop_claimed: bool,
-    pub airdrop_balance: u64,       // 锁定空投余额，只能投入天池
     pub total_deposit: u64,
 }
 
@@ -171,13 +170,6 @@ pub struct ClaimAirdrop<'info> {
 }
 
 #[derive(Accounts)]
-pub struct DepositDailyWithAirdrop<'info> {
-    #[account(mut)] pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
-    pub signer: Signer<'info>,
-}
-
-#[derive(Accounts)]
 pub struct DrawHourly<'info> {
     #[account(mut)] pub state: Account<'info, State>,
     #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
@@ -250,8 +242,6 @@ pub enum ErrorCode {
     #[msg("Universal prize already received")] UniversalPrizeAlreadyReceived,
     #[msg("Draw not completed")] DrawNotCompleted,
     #[msg("Distribution not started")] DistributionNotStarted,
-    #[msg("Airdrop not claimed")] AirdropNotClaimed,
-    #[msg("Insufficient airdrop balance")] InsufficientAirdropBalance,
 }
 
 #[program]
@@ -519,58 +509,24 @@ pub mod royalpot {
         Ok(())
     }
 
-    // ============ 使用锁定空投存款到天池 ============
-    // 规则：
-    // 1. 只能使用锁定的空投余额，不能使用普通代币
-    // 2. 锁定余额只能投入天池，不能转走
-    // 3. 投入后参与正常开奖分配
-    pub fn deposit_daily_with_airdrop(ctx: Context<DepositDailyWithAirdrop>, amount: u64) -> Result<()> {
-        let state = &mut ctx.accounts.state;
-        let user = &mut ctx.accounts.user;
-        let clock = Clock::get()?;
-
-        require!(!state.paused, ErrorCode::ContractPaused);
-        require!(user.airdrop_claimed, ErrorCode::AirdropNotClaimed);
-        require!(user.airdrop_balance >= amount, ErrorCode::InsufficientAirdropBalance);
-        require!(amount >= DAY_MIN, ErrorCode::BelowMinDeposit);
-        require!(amount <= MAX_DEPOSIT, ErrorCode::ExceedMaxDeposit);
-
-        // 新的一期：重置票号
-        if state.daily_ticket_start == 0 || state.daily_ticket_end == 0 {
-            state.daily_ticket_start = 1;
-            state.daily_ticket_end = 0;
-        }
-
-        // 分配票号
-        user.daily_ticket_start = state.daily_ticket_end + 1;
-        user.daily_ticket_end = user.daily_ticket_start;
-        state.daily_ticket_end = user.daily_ticket_end;
-
-        // 扣除锁定余额
-        user.airdrop_balance = user.airdrop_balance.saturating_sub(amount);
-
-        // 进入奖池（无费用，因为空投已经是"免费"的）
-        state.daily_pool += amount;
-        state.daily_players += 1;
-        user.daily_tickets += 1;
-        user.total_deposit += amount;
-        user.last_time = clock.unix_timestamp;
-
-        Ok(())
-    }
-
-    // ============ 领取空投（锁定版）============
-    // 规则：
-    // 1. 每个钱包只能领取一次
-    // 2. 领取的代币锁定在合约中，只能投入天池
-    // 3. 不能直接转账，只能通过 deposit_daily_with_airdrop 投入游戏
     pub fn claim_airdrop(ctx: Context<ClaimAirdrop>) -> Result<()> {
         let user = &mut ctx.accounts.user;
         require!(!user.airdrop_claimed, ErrorCode::AlreadyClaimed);
 
-        // 记录锁定空投余额（不转移代币，代币保留在vault中作为储备）
+        let airdrop_auth_bump = 0u8;
+        let seeds: &[&[&[u8]]] = &[&[b"airdrop", &[airdrop_auth_bump]]];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.airdrop_vault.to_account_info(),
+                to: ctx.accounts.dest_token.to_account_info(),
+                authority: ctx.accounts.airdrop_auth.to_account_info(),
+            },
+            seeds,
+        );
+        token::transfer(cpi_ctx, FREE_AIRDROP)?;
+
         user.airdrop_claimed = true;
-        user.airdrop_balance = FREE_AIRDROP;
 
         Ok(())
     }
