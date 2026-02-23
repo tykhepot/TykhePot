@@ -260,11 +260,11 @@ const DailyPool = () => {
           <h2 className="card-title-modern">💰 {t('prizeDistribution')}</h2>
           <div className="prize-grid">
             {[
-              { name: language === 'en' ? '🥇 1st Prize' : '🥇 头奖', percent: '30%', color: '#FFD700' },
-              { name: language === 'en' ? '🥈 2nd Prize' : '🥈 二奖', percent: '20%', color: '#C0C0C0' },
-              { name: language === 'en' ? '🥉 3rd Prize' : '🥉 三奖', percent: '15%', color: '#CD7F32' },
-              { name: language === 'en' ? '🎁 Lucky Prize' : '🎁 幸运奖', percent: '10%', color: '#8B5CF6' },
-              { name: language === 'en' ? '🌟 Universal Prize' : '🌟 普惠奖', percent: '20%', color: '#10B981' },
+              { name: language === 'en' ? '🥇 1st Prize' : '🥇 头奖', percent: '30% - 1人', color: '#FFD700' },
+              { name: language === 'en' ? '🥈 2nd Prize' : '🥈 二奖', percent: '20% - 2人(各10%)', color: '#C0C0C0' },
+              { name: language === 'en' ? '🥉 3rd Prize' : '🥉 三奖', percent: '15% - 3人(各5%)', color: '#CD7F32' },
+              { name: language === 'en' ? '🎁 Lucky Prize' : '🎁 幸运奖', percent: '10% - 5人(各2%)', color: '#8B5CF6' },
+              { name: language === 'en' ? '🌟 Universal Prize' : '🌟 普惠奖', percent: '20% - 全员', color: '#10B981' },
               { name: language === 'en' ? '🔄 Roll Over' : '🔄 回流', percent: '5%', color: '#6B7280' },
             ].map((prize, idx) => (
               <div key={idx} className="prize-item-modern">

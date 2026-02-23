@@ -119,11 +119,11 @@ const HourlyPool = () => {
           <h2 className="card-title-modern">💰 {t('prizeDistribution')}</h2>
           <div className="prize-grid">
             {[
-              { name: '🥇 1st Prize', percent: '30%', color: '#FFD700' },
-              { name: '🥈 2nd Prize', percent: '20%', color: '#C0C0C0' },
-              { name: '🥉 3rd Prize', percent: '15%', color: '#CD7F32' },
-              { name: '🎁 Lucky Prize', percent: '10%', color: '#8B5CF6' },
-              { name: '🌟 Universal Prize', percent: '20%', color: '#10B981' },
+              { name: '🥇 1st Prize', percent: '30% - 1人', color: '#FFD700' },
+              { name: '🥈 2nd Prize', percent: '20% - 2人(各10%)', color: '#C0C0C0' },
+              { name: '🥉 3rd Prize', percent: '15% - 3人(各5%)', color: '#CD7F32' },
+              { name: '🎁 Lucky Prize', percent: '10% - 5人(各2%)', color: '#8B5CF6' },
+              { name: '🌟 Universal Prize', percent: '20% - 全员', color: '#10B981' },
               { name: '🔄 Roll Over', percent: '5%', color: '#6B7280' },
             ].map((prize, idx) => (
               <div key={idx} className="prize-item-modern">
