@@ -62,35 +62,18 @@ const Layout = ({ children }) => {
               {language === 'en' ? '🇺🇸 EN' : '🇨🇳 中文'}
             </button>
             
-            {/* Wallet Button - Improved */}
+            {/* Wallet Button - Show all wallets */}
             <div className="wallet-btn-wrapper">
               {/* 已连接: 显示地址 */}
               {connected && publicKey ? (
-                <div className="wallet-connected">
+                <div className="wallet-connected" onClick={() => window.location.reload()}>
                   <div className="wallet-status-dot"></div>
                   <span className="wallet-address">{shortenAddress(publicKey.toString())}</span>
                 </div>
-              ) : null}
-              
-              {/* 连接按钮 */}
-              <WalletMultiButton className="wallet-connect-btn" />
-              
-              {/* 移动端快捷按钮 */}
-              <button 
-                className="mobile-wallet-btn"
-                onClick={() => {
-                  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                  if (isMobile) {
-                    // 移动端使用 Solflare (更稳定)
-                    window.location.href = 'https://solflare.com/ul';
-                  } else {
-                    window.open('https://solflare.com', '_blank');
-                  }
-                }}
-                title={language === 'en' ? 'Get Wallet' : '获取钱包'}
-              >
-                💳
-              </button>
+              ) : (
+                /* 未连接: 显示连接按钮（点击弹出钱包选择） */
+                <WalletMultiButton className="wallet-connect-btn" />
+              )}
             </div>
 
             {/* Mobile Menu Button */}
@@ -137,13 +120,10 @@ const Layout = ({ children }) => {
                     <div className="wallet-status-dot"></div>
                     <span>{shortenAddress(publicKey.toString())}</span>
                   </div>
-                ) : null}
-                <WalletMultiButton className="wallet-connect-btn-mobile" />
-                <p style={{ fontSize: '12px', color: '#888', textAlign: 'center', marginTop: '8px' }}>
-                  {language === 'en' 
-                    ? 'Recommended: Solflare Wallet' 
-                    : '推荐使用 Solflare 钱包'}
-                </p>
+                ) : (
+                  /* 未连接: 显示连接按钮 */
+                  <WalletMultiButton className="wallet-connect-btn-mobile" />
+                )}
               </div>
             </div>
           </div>
