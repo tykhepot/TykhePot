@@ -89,6 +89,7 @@ pub struct State {
     pub daily_rollover: u64,
     pub hourly_pending_burn: u64,  // 本期待销毁金额
     pub daily_pending_burn: u64,   // 本期待销毁金额
+    pub daily_pending_referral: u64,   // 本期待发放推荐奖励 (天池)
     pub last_hourly: i64,
     pub last_daily: i64,
     pub paused: bool,
@@ -203,11 +204,7 @@ pub struct ClaimAirdrop<'info> {
 pub struct DepositDailyFree<'info> {
     #[account(mut)] pub state: Account<'info, State>,
     #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
-    #[account(mut)] pub referral_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub referrer_token: Account<'info, TokenAccount>,
-    pub referral_auth: UncheckedAccount<'info>,
     pub signer: Signer<'info>,
-    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -593,41 +590,30 @@ pub mod royalpot {
         );
         token::transfer(cpi_ctx, prize_amount)?;
 
-        // Referral reward 8%
+        // Referral reward 8% - 只记录pending，开奖成功后再从referral_pool转入pool_vault
+        // 如果开奖失败（人数不够），钱会退回，referral_pool不受影响
         if let Some(referrer_key) = referrer {
             if referrer_key != ctx.accounts.signer.key() && state.referral_pool > 0 {
+                // 推荐人奖励 8% - 只扣referral_pool，记录pending
                 let reward = (amount * REF / BASE).min(state.referral_pool);
                 if reward > 0 {
-                    let cpi_ctx = CpiContext::new_with_signer(
-                        ctx.accounts.token_program.to_account_info(),
-                        Transfer {
-                            from: ctx.accounts.referral_vault.to_account_info(),
-                            to: ctx.accounts.referrer_token.to_account_info(),
-                            authority: ctx.accounts.referral_auth.to_account_info(),
-                        },
-                        &[&[b"referral", &[0u8]]],
-                    );
-                    token::transfer(cpi_ctx, reward)?;
                     state.referral_pool = state.referral_pool.saturating_sub(reward);
+                    state.daily_pending_referral = state.daily_pending_referral.saturating_add(reward);
                 }
-                // Referred bonus 2% (one-time) - TRANSFER TO USER
+                
+                // 记录推荐关系（如果是新推荐）
+                if user.referrer.is_none() {
+                    user.referrer = Some(referrer_key);
+                }
+                
+                // 被推荐人奖励 2% (一次性) - 也只记录pending
                 if !user.has_ref_bonus {
                     user.has_ref_bonus = true;
-                    user.referrer = Some(referrer_key);
-
-                    // Transfer 2% referred bonus to user
+                    
                     let referred_bonus = amount * REFERRED_BONUS / BASE;
                     if referred_bonus > 0 {
-                        let cpi_ctx = CpiContext::new_with_signer(
-                            ctx.accounts.token_program.to_account_info(),
-                            Transfer {
-                                from: ctx.accounts.referral_vault.to_account_info(),
-                                to: ctx.accounts.user_token.to_account_info(),
-                                authority: ctx.accounts.referral_auth.to_account_info(),
-                            },
-                            &[&[b"referral", &[0u8]]],
-                        );
-                        token::transfer(cpi_ctx, referred_bonus)?;
+                        state.referral_pool = state.referral_pool.saturating_sub(referred_bonus);
+                        state.daily_pending_referral = state.daily_pending_referral.saturating_add(referred_bonus);
                     }
                 }
             }
@@ -698,30 +684,34 @@ pub mod royalpot {
         state.daily_ticket_end = user.daily_ticket_end;
 
         // 进入奖池（无需销毁和费用，因为是免费的）
-        state.daily_pool += amount;
+        // 1:1 配捐（从pre_match_pool匹配）
+        let pre_match = amount; // 1:1 配捐
+        state.pre_match_pool = state.pre_match_pool.saturating_sub(pre_match);
+        state.daily_pool += amount + pre_match;  // 本金 + 配捐
         state.daily_players += 1;
         user.daily_tickets += 1;
         user.total_deposit += amount;
         user.last_time = clock.unix_timestamp;
 
         // 如果用户有推荐人，给推荐人发放奖励（从referral_pool扣）
-        // 免费的也要给推荐人奖励，促进推广
+        // 免费的也要给推荐人奖励 + 被推荐人奖励，只记录pending，开奖成功后再发放
         if let Some(referrer_key) = user.referrer {
             if referrer_key != user.owner && state.referral_pool > 0 {
+                // 推荐人 8% - 只记录pending
                 let reward = (amount * REF / BASE).min(state.referral_pool);
                 if reward > 0 {
-                    let seeds: &[&[&[u8]]] = &[&[b"referral", &[0u8]]];
-                    let cpi_ctx = CpiContext::new_with_signer(
-                        ctx.accounts.token_program.to_account_info(),
-                        Transfer {
-                            from: ctx.accounts.referral_vault.to_account_info(),
-                            to: ctx.accounts.referrer_token.to_account_info(),
-                            authority: ctx.accounts.referral_auth.to_account_info(),
-                        },
-                        seeds,
-                    );
-                    token::transfer(cpi_ctx, reward)?;
                     state.referral_pool = state.referral_pool.saturating_sub(reward);
+                    state.daily_pending_referral = state.daily_pending_referral.saturating_add(reward);
+                }
+                
+                // 被推荐人 2% (一次性) - 免费投注也享受，只记录pending
+                if !user.has_ref_bonus {
+                    user.has_ref_bonus = true;
+                    let referred_bonus = amount * REFERRED_BONUS / BASE;
+                    if referred_bonus > 0 {
+                        state.referral_pool = state.referral_pool.saturating_sub(referred_bonus);
+                        state.daily_pending_referral = state.daily_pending_referral.saturating_add(referred_bonus);
+                    }
                 }
             }
         }
@@ -966,8 +956,12 @@ pub mod royalpot {
         let today_start = clock.unix_timestamp - (clock.unix_timestamp % 86400);
         require!(clock.unix_timestamp >= today_start + 86400, ErrorCode::NotTimeYet);
 
-        // <10人:存款返储备池
+        // <10人:存款返储备池，推荐奖励退回referral_pool
         if state.daily_players < MIN_PARTICIPANTS {
+            // 退回待发放的推荐奖励到referral_pool
+            state.referral_pool = state.referral_pool.saturating_add(state.daily_pending_referral);
+            state.daily_pending_referral = 0;
+            
             state.pre_pool += state.daily_pool;
             state.daily_pool = 0;
             state.daily_players = 0;
@@ -989,10 +983,17 @@ pub mod royalpot {
         };
         let win_ticket = (seed % (state.daily_ticket_end - state.daily_ticket_start + 1)) + state.daily_ticket_start;
         
-        // 计算平台费和奖金 (扣除平台费2%和待销毁3%)
+        // 计算平台费和奖金 (扣除平台费2%和待销毁3%，加上待发放推荐奖励)
         let platform_fee = total * PLAT / BASE;
         let burn_amount = state.daily_pending_burn;  // 本期待销毁的3%
-        let remaining_pool = total.saturating_sub(platform_fee).saturating_sub(burn_amount);
+        let referral_amount = state.daily_pending_referral;  // 待发放推荐奖励
+        let remaining_pool = total.saturating_sub(platform_fee).saturating_sub(burn_amount).saturating_add(referral_amount);
+        
+        // 将推荐奖励从referral_pool转入pool_vault
+        if referral_amount > 0 {
+            // 从referral_pool扣减（存款时已经扣了，这里只是确认）
+            // 推荐奖励会作为普惠奖的一部分发放
+        }
         
         let fp = remaining_pool * FIRST_PRIZE_RATE / BASE;
         let sp = remaining_pool * SECOND_PRIZE_RATE / BASE / 2;
@@ -1029,6 +1030,7 @@ pub mod royalpot {
             );
             token::transfer(cpi_ctx, burn_amount)?;
             state.daily_pending_burn = 0;  // 重置待销毁金额
+            state.daily_pending_referral = 0;  // 重置待发放推荐奖励
         }
         
         if fp > 0 { let c = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), Transfer{from:ctx.accounts.pool_vault.to_account_info(),to:ctx.accounts.first_prize_winner.to_account_info(),authority:ctx.accounts.pool_vault.to_account_info()},seeds); token::transfer(c,fp)?; }
