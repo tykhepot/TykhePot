@@ -33,6 +33,21 @@ pub const LUCKY_PRIZE_RATE: u64 = 1000;  // 10%
 pub const UNIVERSAL_PRIZE_RATE: u64 = 2000; // 20%
 pub const ROLLOVER_RATE: u64 = 500;      // 5%
 
+// ============ 初始代币分配常量 ============
+// 总供应量: 1,000,000,000 TPOT (10亿)
+pub const TOTAL_SUPPLY: u64 = 1_000_000_000_000_000_000; // 10亿 TPOT (小数点后9位)
+pub const AIRDROP_RATE: u64 = 1000;   // 10% 空投
+pub const STAKING_RATE: u64 = 3500;   // 35% 质押奖励
+pub const PRE_POOL_RATE: u64 = 2000;  // 20% 前期奖池配额
+pub const TEAM_RATE: u64 = 1000;      // 10% 团队
+pub const REFERRAL_RATE: u64 = 2000;  // 20% 推广奖励
+// 流动性 5% 在合约外处理 (mint to deployer)
+
+// 团队释放: 4年线性释放 (48个月)
+pub const TEAM_LOCK_PERIOD: i64 = 126144000; // 4年 (秒)
+// 每月释放量 = TEAM_RATE / 48 = ~0.2083%
+pub const TEAM_MONTHS: u64 = 48;
+
 declare_id!("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
 
 // ============ 中奖记录结构 ============
@@ -77,6 +92,18 @@ pub struct State {
     pub last_daily: i64,
     pub paused: bool,
     pub bump: u8,
+    
+    // ============ 初始代币分配 ============
+    pub airdrop_pool: u64,        // 空投池剩余 (10%)
+    pub airdrop_claimed_total: u64, // 已领取空投人数
+    pub staking_pool: u64,        // 质押奖励池 (35%)
+    pub pre_match_pool: u64,      // 前期奖池配额 (20%) - 1:1配捐
+    pub team_pool: u64,           // 团队代币池 (10%)
+    pub team_lock_end: i64,       // 团队代币解锁时间
+    pub team_claimed: u64,        // 团队已释放代币
+    pub referral_pool_total: u64, // 推广奖励池总量 (20%)
+    pub referral_used: u64,       // 已使用推广奖励
+    
     // 当前期开奖记录
     pub hourly_draw_record: DrawRecord,
     pub daily_draw_record: DrawRecord,
@@ -222,10 +249,46 @@ pub struct ClaimDailyUniversal<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+// ============ 返回结构体 ============
+#[derive(AnchorSerialize, AnchorDeserialize)]
+pub struct PoolStatusResponse {
+    pub airdrop_pool: u64,
+    pub airdrop_claimed_total: u64,
+    pub staking_pool: u64,
+    pub pre_match_pool: u64,
+    pub team_pool: u64,
+    pub team_lock_end: i64,
+    pub team_claimed: u64,
+    pub referral_pool_total: u64,
+    pub referral_used: u64,
+}
+
+// ============ 新增账户结构体 ============
+#[derive(Accounts)]
+pub struct ClaimTeamTokens<'info> {
+    #[account(mut)] pub state: Account<'info, State>,
+    pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct GetStakingPool<'info> {
+    #[account()] pub state: Account<'info, State>,
+}
+
+#[derive(Accounts)]
+pub struct GetPoolStatus<'info> {
+    #[account()] pub state: Account<'info, State>,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct InitializeParams {
     pub pre_pool: u64,
     pub referral_pool: u64,
+    pub airdrop_pool: u64,      // 空投池 (10%)
+    pub staking_pool: u64,      // 质押奖励池 (35%)
+    pub pre_match_pool: u64,    // 前期奖池配额 (20%)
+    pub team_pool: u64,         // 团队代币 (10%)
+    pub referral_pool_total: u64, // 推广奖励池 (20%)
 }
 
 #[error_code]
@@ -244,6 +307,13 @@ pub enum ErrorCode {
     #[msg("Universal prize already received")] UniversalPrizeAlreadyReceived,
     #[msg("Draw not completed")] DrawNotCompleted,
     #[msg("Distribution not started")] DistributionNotStarted,
+    #[msg("Airdrop not claimed")] AirdropNotClaimed,
+    #[msg("Insufficient airdrop balance")] InsufficientAirdropBalance,
+    #[msg("Airdrop exhausted")] AirdropExhausted,
+    #[msg("Staking pool exhausted")] StakingPoolExhausted,
+    #[msg("Pre-match pool exhausted")] PreMatchPoolExhausted,
+    #[msg("Team tokens locked")] TeamTokensLocked,
+    #[msg("Referral pool exhausted")] ReferralPoolExhausted,
 }
 
 #[program]
@@ -274,7 +344,57 @@ pub mod royalpot {
         state.hourly_ticket_end = 0;
         state.daily_ticket_start = 0;
         state.daily_ticket_end = 0;
+        
+        // ============ 初始代币分配 ============
+        state.airdrop_pool = params.airdrop_pool;           // 空投池
+        state.airdrop_claimed_total = 0;                    // 已领取人数
+        state.staking_pool = params.staking_pool;           // 质押奖励池
+        state.pre_match_pool = params.pre_match_pool;       // 前期奖池配额
+        state.team_pool = params.team_pool;                 // 团队代币
+        state.team_lock_end = clock.unix_timestamp + TEAM_LOCK_PERIOD; // 4年后解锁
+        state.team_claimed = 0;                             // 已释放
+        state.referral_pool_total = params.referral_pool_total; // 推广奖励池
+        state.referral_used = 0;                            // 已使用
+        
         Ok(())
+    }
+
+    // ============ 团队代币领取 (4年线性释放) ============
+    pub fn claim_team_tokens(ctx: Context<ClaimTeamTokens>, amount: u64) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        let clock = Clock::get()?;
+        
+        require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
+        require!(clock.unix_timestamp >= state.team_lock_end, ErrorCode::TeamTokensLocked);
+        
+        // 计算可释放的代币数量 (线性释放)
+        let total_team = state.team_pool;
+        let months_passed = ((clock.unix_timestamp - (state.team_lock_end - TEAM_LOCK_PERIOD)) / 2629746).max(1).min(TEAM_MONTHS as i64) as u64;
+        let mut available = total_team * months_passed / TEAM_MONTHS;
+        available = available.saturating_sub(state.team_claimed);
+        
+        require!(amount <= available, ErrorCode::InsufficientPoolBalance);
+        
+        // 从池子扣除
+        state.team_claimed = state.team_claimed.checked_add(amount).unwrap();
+        
+        Ok(())
+    }
+
+    // ============ 查询各池子状态 (前端用) ============
+    pub fn get_pool_status(ctx: Context<GetPoolStatus>) -> Result<PoolStatusResponse> {
+        let state = &ctx.accounts.state;
+        Ok(PoolStatusResponse {
+            airdrop_pool: state.airdrop_pool,
+            airdrop_claimed_total: state.airdrop_claimed_total,
+            staking_pool: state.staking_pool,
+            pre_match_pool: state.pre_match_pool,
+            team_pool: state.team_pool,
+            team_lock_end: state.team_lock_end,
+            team_claimed: state.team_claimed,
+            referral_pool_total: state.referral_pool_total,
+            referral_used: state.referral_used,
+        })
     }
 
     pub fn pause(ctx: Context<Pause>) -> Result<()> {
@@ -339,9 +459,9 @@ pub mod royalpot {
         user.hourly_ticket_end = user.hourly_ticket_start;
         state.hourly_ticket_end = user.hourly_ticket_end;
 
-        // Pre-launch pool 1:1 match
-        let pre_match = state.pre_pool.min(amount);
-        state.pre_pool = state.pre_pool.saturating_sub(pre_match);
+        // 前期奖池配额 1:1 配捐 (用完即止)
+        let pre_match = state.pre_match_pool.min(amount);
+        state.pre_match_pool = state.pre_match_pool.saturating_sub(pre_match);
 
         // Calculate distribution (平台费在开奖时提取)
         let burn_amount = amount * BURN / BASE;
@@ -406,9 +526,9 @@ pub mod royalpot {
         user.daily_ticket_end = user.daily_ticket_start;
         state.daily_ticket_end = user.daily_ticket_end;
 
-        // Pre-launch pool match
-        let pre_match = state.pre_pool.min(amount);
-        state.pre_pool = state.pre_pool.saturating_sub(pre_match);
+        // 前期奖池配额 1:1 配捐 (用完即止)
+        let pre_match = state.pre_match_pool.min(amount);
+        state.pre_match_pool = state.pre_match_pool.saturating_sub(pre_match);
 
         // Calculate distribution (平台费在开奖时提取)
         let burn_amount = amount * BURN / BASE;
