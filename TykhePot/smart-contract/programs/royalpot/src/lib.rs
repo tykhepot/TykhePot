@@ -88,6 +88,8 @@ pub struct State {
     pub burned: u64,
     pub hourly_rollover: u64,
     pub daily_rollover: u64,
+    pub hourly_pending_burn: u64,  // 本期待销毁金额
+    pub daily_pending_burn: u64,   // 本期待销毁金额
     pub last_hourly: i64,
     pub last_daily: i64,
     pub paused: bool,
@@ -201,6 +203,7 @@ pub struct DrawHourly<'info> {
     #[account(mut)] pub state: Account<'info, State>,
     #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub first_prize_winner: Account<'info, TokenAccount>,
     #[account(mut)] pub second_prize_winner: Account<'info, TokenAccount>,
     #[account(mut)] pub third_prize_winner: Account<'info, TokenAccount>,
@@ -215,6 +218,7 @@ pub struct DrawDaily<'info> {
     #[account(mut)] pub state: Account<'info, State>,
     #[account(mut)] pub pool_vault: UncheckedAccount<'info>,
     #[account(mut)] pub platform_vault: UncheckedAccount<'info>,
+    #[account(mut)] pub burn_vault: UncheckedAccount<'info>,
     #[account(mut)] pub first_prize_winner: UncheckedAccount<'info>,
     #[account(mut)] pub second_prize_winner_a: UncheckedAccount<'info>,
     #[account(mut)] pub second_prize_winner_b: UncheckedAccount<'info>,
@@ -493,6 +497,7 @@ pub mod royalpot {
         state.hourly_pool += prize_amount;
         state.hourly_players += 1;
         state.burned += burn_amount;
+        state.hourly_pending_burn += burn_amount;  // 记录待销毁金额
         user.total_deposit += amount;
         user.hourly_tickets += 1;  // 1票
 
@@ -600,6 +605,7 @@ pub mod royalpot {
         state.daily_pool += prize_amount;
         state.daily_players += 1;
         state.burned += burn_amount;
+        state.daily_pending_burn += burn_amount;  // 记录待销毁金额
         user.total_deposit += amount;
         user.daily_tickets += 1;  // 1票
         user.last_time = clock.unix_timestamp;
@@ -678,9 +684,10 @@ pub mod royalpot {
         // 初始化开奖记录
         let mut winners: Vec<WinnerRecord> = Vec::new();
         
-        // 计算奖金 (奖池的98%，2%作为平台费)
+        // 计算奖金 (奖池扣除平台费2%和待销毁3%)
         let platform_fee = total_pool * PLAT / BASE;
-        let remaining_pool = total_pool - platform_fee;
+        let burn_amount = state.hourly_pending_burn;  // 本期待销毁的3%
+        let remaining_pool = total_pool.saturating_sub(platform_fee).saturating_sub(burn_amount);
         
         let first_prize_amount = remaining_pool * FIRST_PRIZE_RATE / BASE;      // 30%
         let second_prize_amount = remaining_pool * SECOND_PRIZE_RATE / BASE;   // 20%
@@ -711,6 +718,21 @@ pub mod royalpot {
                 seeds,
             );
             token::transfer(cpi_ctx, platform_fee)?;
+        }
+        
+        // 销毁3% (从存款时记录的本金中扣)
+        if burn_amount > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: ctx.accounts.burn_vault.to_account_info(),
+                    authority: ctx.accounts.pool_vault.to_account_info(),
+                },
+                seeds,
+            );
+            token::transfer(cpi_ctx, burn_amount)?;
+            state.hourly_pending_burn = 0;  // 重置待销毁金额
         }
         
         // 分发头奖 (1人) - 30%
@@ -864,9 +886,10 @@ pub mod royalpot {
         let seed = get_random_seed(clock.unix_timestamp, state.daily_players as u64);
         let win_ticket = (seed % (state.daily_ticket_end - state.daily_ticket_start + 1)) + state.daily_ticket_start;
         
-        // 计算平台费和奖金
+        // 计算平台费和奖金 (扣除平台费2%和待销毁3%)
         let platform_fee = total * PLAT / BASE;
-        let remaining_pool = total - platform_fee;
+        let burn_amount = state.daily_pending_burn;  // 本期待销毁的3%
+        let remaining_pool = total.saturating_sub(platform_fee).saturating_sub(burn_amount);
         
         let fp = remaining_pool * FIRST_PRIZE_RATE / BASE;
         let sp = remaining_pool * SECOND_PRIZE_RATE / BASE / 2;
@@ -888,6 +911,21 @@ pub mod royalpot {
                 seeds,
             );
             token::transfer(cpi_ctx, platform_fee)?;
+        }
+        
+        // 销毁3% (从存款时记录的本金中扣)
+        if burn_amount > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: ctx.accounts.burn_vault.to_account_info(),
+                    authority: ctx.accounts.pool_vault.to_account_info(),
+                },
+                seeds,
+            );
+            token::transfer(cpi_ctx, burn_amount)?;
+            state.daily_pending_burn = 0;  // 重置待销毁金额
         }
         
         if fp > 0 { let c = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), Transfer{from:ctx.accounts.pool_vault.to_account_info(),to:ctx.accounts.first_prize_winner.to_account_info(),authority:ctx.accounts.pool_vault.to_account_info()},seeds); token::transfer(c,fp)?; }
