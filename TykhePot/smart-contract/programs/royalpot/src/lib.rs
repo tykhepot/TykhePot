@@ -700,6 +700,18 @@ pub mod royalpot {
         user.total_deposit += amount;
         user.last_time = clock.unix_timestamp;
 
+        // 如果用户有推荐人，给推荐人发放奖励（从referral_pool扣）
+        // 免费的也要给推荐人奖励，促进推广
+        if let Some(referrer_key) = user.referrer {
+            if referrer_key != user.owner && state.referral_pool > 0 {
+                let reward = (amount * REF / BASE).min(state.referral_pool);
+                if reward > 0 {
+                    // 注意：这里只是记录，实际转账需要前端或单独的交易
+                    state.referral_pool = state.referral_pool.saturating_sub(reward);
+                }
+            }
+        }
+
         Ok(())
     }
 
