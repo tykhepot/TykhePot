@@ -17,6 +17,7 @@ pub const PLAT: u64 = 200;
 pub const REF: u64 = 800;
 pub const REFERRED_BONUS: u64 = 200; // 2% for referred user
 pub const HOUR_MIN: u64 = 200_000_000_000;
+pub const MIN30_MIN: u64 = 200_000_000_000;  // 30分钟池最低
 pub const DAY_MIN: u64 = 100_000_000_000;
 pub const FREE_AIRDROP: u64 = 100_000_000_000; // 100 TPOT
 pub const MAX_DEPOSIT: u64 = 1_000_000_000_000_000; // 1 million TPOT
@@ -80,17 +81,24 @@ pub struct State {
     pub hourly_players: u32,
     pub hourly_ticket_start: u64,  // 当前期票号起始
     pub hourly_ticket_end: u64,    // 当前期票号结束
+    pub min30_pool: u64,           // 30分钟奖池
+    pub min30_players: u32,        // 30分钟参与人数
+    pub min30_ticket_start: u64,   // 当前期票号起始
+    pub min30_ticket_end: u64,     // 当前期票号结束
     pub daily_pool: u64,
     pub daily_players: u32,
     pub daily_ticket_start: u64,
     pub daily_ticket_end: u64,
     pub burned: u64,
     pub hourly_rollover: u64,
+    pub min30_rollover: u64,      // 30分钟池滚存
     pub daily_rollover: u64,
     pub hourly_pending_burn: u64,  // 本期待销毁金额
+    pub min30_pending_burn: u64,  // 30分钟待销毁金额
     pub daily_pending_burn: u64,   // 本期待销毁金额
     pub daily_pending_referral: u64,   // 本期待发放推荐奖励 (天池)
     pub last_hourly: i64,
+    pub last_min30: i64,          // 30分钟池上次开奖时间
     pub last_daily: i64,
     pub paused: bool,
     pub bump: u8,
@@ -119,9 +127,12 @@ pub struct State {
 pub struct UserData {
     pub owner: Pubkey,
     pub hourly_tickets: u64,       // 累计小时池票数
+    pub min30_tickets: u64,        // 累计30分池票数
     pub daily_tickets: u64,         // 累计天池票数
     pub hourly_ticket_start: u64,   // 当前期起始票号
     pub hourly_ticket_end: u64,     // 当前期结束票号
+    pub min30_ticket_start: u64,    // 30分池当前期起始票号
+    pub min30_ticket_end: u64,      // 30分池当前期结束票号
     pub daily_ticket_start: u64,
     pub daily_ticket_end: u64,
     pub last_time: i64,
@@ -178,6 +189,18 @@ pub struct DepositHourly<'info> {
 }
 
 #[derive(Accounts)]
+pub struct DepositMin30<'info> {
+    #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
+    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
+    #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+    pub signer: Signer<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
 pub struct DepositDaily<'info> {
     #[account(mut)] pub state: Account<'info, State>,
     #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
@@ -209,6 +232,21 @@ pub struct DepositDailyFree<'info> {
 
 #[derive(Accounts)]
 pub struct DrawHourly<'info> {
+    #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub first_prize_winner: Account<'info, TokenAccount>,
+    #[account(mut)] pub second_prize_winner: Account<'info, TokenAccount>,
+    #[account(mut)] pub third_prize_winner: Account<'info, TokenAccount>,
+    #[account(mut)] pub lucky_prize_winner: Account<'info, TokenAccount>,
+    #[account(mut)] pub universal_prize_recipients: Account<'info, TokenAccount>,
+    pub authority: Signer<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct DrawMin30<'info> {
     #[account(mut)] pub state: Account<'info, State>,
     #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
@@ -350,18 +388,24 @@ pub mod royalpot {
         state.referral_pool = params.referral_pool;
         state.hourly_pool = 0;
         state.hourly_players = 0;
+        state.min30_pool = 0;
+        state.min30_players = 0;
         state.daily_pool = 0;
         state.daily_players = 0;
         state.burned = 0;
         state.hourly_rollover = 0;
+        state.min30_rollover = 0;
         state.daily_rollover = 0;
         state.last_hourly = clock.unix_timestamp;
+        state.last_min30 = clock.unix_timestamp;
         state.last_daily = clock.unix_timestamp;
         state.paused = false;
         state.bump = ctx.bumps.state;
         // Initialize ticket tracking
         state.hourly_ticket_start = 0;
         state.hourly_ticket_end = 0;
+        state.min30_ticket_start = 0;
+        state.min30_ticket_end = 0;
         state.daily_ticket_start = 0;
         state.daily_ticket_end = 0;
         
@@ -529,6 +573,74 @@ pub mod royalpot {
         state.hourly_pending_burn += burn_amount;  // 记录待销毁金额
         user.total_deposit += amount;
         user.hourly_tickets += 1;  // 1票
+
+        Ok(())
+    }
+
+    // ============ 30分钟池存款 ============
+    pub fn deposit_min30(ctx: Context<DepositMin30>, amount: u64) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        let user = &mut ctx.accounts.user;
+        let clock = Clock::get()?;
+
+        require!(!state.paused, ErrorCode::ContractPaused);
+        require!(amount >= MIN30_MIN, ErrorCode::BelowMinDeposit);
+        require!(amount <= MAX_DEPOSIT, ErrorCode::ExceedMaxDeposit);
+
+        // Check lock period before draw (30 minutes = 1800 seconds)
+        let time_since_last = clock.unix_timestamp - state.last_min30;
+        if time_since_last < 1800 {
+            require!(time_since_last < 1800 - LOCK_PERIOD, ErrorCode::PoolLocked);
+        }
+
+        // 新的一期：重置票号
+        if state.min30_ticket_start == 0 || state.min30_ticket_end == 0 {
+            state.min30_ticket_start = 1;
+            state.min30_ticket_end = 0;
+        }
+
+        // 分配票号：每个存款获得1张票，票号连续
+        user.min30_ticket_start = state.min30_ticket_end + 1;
+        user.min30_ticket_end = user.min30_ticket_start;
+        state.min30_ticket_end = user.min30_ticket_end;
+
+        // 前期奖池配额 1:1 配捐 (用完即止)
+        let pre_match = state.pre_match_pool.min(amount);
+        state.pre_match_pool = state.pre_match_pool.saturating_sub(pre_match);
+
+        // Calculate distribution
+        let burn_amount = amount * BURN / BASE;
+        let prize_amount = amount - burn_amount + pre_match;
+
+        // Transfer - burn
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_token.to_account_info(),
+                to: ctx.accounts.burn_vault.to_account_info(),
+                authority: ctx.accounts.signer.to_account_info(),
+            },
+        );
+        token::transfer(cpi_ctx, burn_amount)?;
+
+        // Prize pool
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.user_token.to_account_info(),
+                to: ctx.accounts.pool_vault.to_account_info(),
+                authority: ctx.accounts.signer.to_account_info(),
+            },
+        );
+        token::transfer(cpi_ctx, prize_amount)?;
+
+        // Update state
+        state.min30_pool += prize_amount;
+        state.min30_players += 1;
+        state.burned += burn_amount;
+        state.min30_pending_burn += burn_amount;
+        user.total_deposit += amount;
+        user.min30_tickets += 1;
 
         Ok(())
     }
@@ -946,6 +1058,155 @@ pub mod royalpot {
         state.hourly_ticket_start = 0;
         state.hourly_ticket_end = 0;
         state.last_hourly = clock.unix_timestamp;
+        
+        Ok(())
+    }
+
+    // ============ 30分钟池开奖 ============
+    pub fn draw_min30(ctx: Context<DrawMin30>) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        let clock = Clock::get()?;
+        
+        // 检查是否到了开奖时间（30分钟 = 1800秒）
+        let time_since_last = clock.unix_timestamp - state.last_min30;
+        require!(time_since_last >= 1800, ErrorCode::NotTimeYet);
+        
+        let total_tickets = state.min30_ticket_end;
+        
+        // ============ 情况1：参与人数 < 10 ============
+        if state.min30_players < MIN_PARTICIPANTS {
+            let remaining = state.min30_pool;
+            state.pre_pool += remaining;
+            state.min30_pool = 0;
+            state.min30_players = 0;
+            state.min30_ticket_start = 0;
+            state.min30_ticket_end = 0;
+            state.last_min30 = clock.unix_timestamp;
+            return Ok(());
+        }
+        
+        // ============ 情况2：参与人数 >= 10 ============
+        let total_pool = state.min30_pool + state.min30_rollover;
+        require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
+        
+        // 获取随机种子
+        let random_seed = if state.vrf_result > 0 {
+            state.vrf_result
+        } else {
+            get_random_seed(clock.unix_timestamp, state.min30_players as u64)
+        };
+        
+        let start_ticket = state.min30_ticket_start;
+        let end_ticket = state.min30_ticket_end;
+        let first_winner_ticket = (random_seed % (end_ticket - start_ticket + 1)) + start_ticket;
+        
+        let mut winners: Vec<WinnerRecord> = Vec::new();
+        
+        // 计算奖金
+        let platform_fee = total_pool * PLAT / BASE;
+        let burn_amount = state.min30_pending_burn;
+        let remaining_pool = total_pool.saturating_sub(platform_fee).saturating_sub(burn_amount);
+        
+        let first_prize_amount = remaining_pool * FIRST_PRIZE_RATE / BASE;
+        let second_prize_amount = remaining_pool * SECOND_PRIZE_RATE / BASE;
+        let third_prize_amount = remaining_pool * THIRD_PRIZE_RATE / BASE;
+        let lucky_prize_amount = remaining_pool * LUCKY_PRIZE_RATE / BASE;
+        let universal_prize_amount = remaining_pool * UNIVERSAL_PRIZE_RATE / BASE;
+        
+        let second_prize_each = second_prize_amount / 2;
+        let third_prize_each = third_prize_amount / 3;
+        let lucky_prize_each = lucky_prize_amount / 5;
+        let universal_per_user = universal_prize_amount / (state.min30_players as u64);
+        
+        let bump = state.bump;
+        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+        
+        // 分发平台费
+        if platform_fee > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: ctx.accounts.platform_vault.to_account_info(),
+                    authority: ctx.accounts.pool_vault.to_account_info(),
+                },
+                seeds,
+            );
+            token::transfer(cpi_ctx, platform_fee)?;
+        }
+        
+        // 销毁
+        if burn_amount > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: ctx.accounts.burn_vault.to_account_info(),
+                    authority: ctx.accounts.pool_vault.to_account_info(),
+                },
+                seeds,
+            );
+            token::transfer(cpi_ctx, burn_amount)?;
+            state.min30_pending_burn = 0;
+        }
+        
+        // 头奖
+        if first_prize_amount > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: ctx.accounts.first_prize_winner.to_account_info(),
+                    authority: ctx.accounts.pool_vault.to_account_info(),
+                },
+                seeds,
+            );
+            token::transfer(cpi_ctx, first_prize_amount)?;
+            winners.push(WinnerRecord { winner: ctx.accounts.first_prize_winner.key(), prize_type: 1, amount: first_prize_amount, ticket_number: first_winner_ticket });
+        }
+        
+        // 二等奖
+        if second_prize_each > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer { from: ctx.accounts.pool_vault.to_account_info(), to: ctx.accounts.second_prize_winner.to_account_info(), authority: ctx.accounts.pool_vault.to_account_info() }, seeds);
+            token::transfer(cpi_ctx, second_prize_each)?;
+            winners.push(WinnerRecord { winner: ctx.accounts.second_prize_winner.key(), prize_type: 2, amount: second_prize_each, ticket_number: (first_winner_ticket + 1) % (end_ticket - start_ticket + 1) + start_ticket });
+        }
+        
+        // 三等奖
+        if third_prize_each > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer { from: ctx.accounts.pool_vault.to_account_info(), to: ctx.accounts.third_prize_winner.to_account_info(), authority: ctx.accounts.pool_vault.to_account_info() }, seeds);
+            token::transfer(cpi_ctx, third_prize_each)?;
+            winners.push(WinnerRecord { winner: ctx.accounts.third_prize_winner.key(), prize_type: 3, amount: third_prize_each, ticket_number: (first_winner_ticket + 2) % (end_ticket - start_ticket + 1) + start_ticket });
+        }
+        
+        // 幸运奖
+        if lucky_prize_each > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer { from: ctx.accounts.pool_vault.to_account_info(), to: ctx.accounts.lucky_prize_winner.to_account_info(), authority: ctx.accounts.pool_vault.to_account_info() }, seeds);
+            token::transfer(cpi_ctx, lucky_prize_each)?;
+            winners.push(WinnerRecord { winner: ctx.accounts.lucky_prize_winner.key(), prize_type: 4, amount: lucky_prize_each, ticket_number: (first_winner_ticket + 3) % (end_ticket - start_ticket + 1) + start_ticket });
+        }
+        
+        // 普惠奖
+        if universal_per_user > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer { from: ctx.accounts.pool_vault.to_account_info(), to: ctx.accounts.universal_prize_recipients.to_account_info(), authority: ctx.accounts.pool_vault.to_account_info() }, seeds);
+            token::transfer(cpi_ctx, universal_prize_amount)?;
+            winners.push(WinnerRecord { winner: ctx.accounts.universal_prize_recipients.key(), prize_type: 5, amount: universal_per_user * (state.min30_players as u64), ticket_number: 0 });
+        }
+        
+        // 重置
+        state.min30_pool = 0;
+        state.min30_players = 0;
+        state.min30_ticket_start = 0;
+        state.min30_ticket_end = 0;
+        state.last_min30 = clock.unix_timestamp;
         
         Ok(())
     }
