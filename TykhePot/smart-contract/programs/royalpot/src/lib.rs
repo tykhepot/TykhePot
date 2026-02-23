@@ -1,6 +1,10 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Transfer, Token, TokenAccount, Mint};
 
+// ============ 安全注释 ============
+// 注意：当前合约的开奖功能由运营方调用，获奖者账户由调用者提供。
+// 生产环境建议使用 Switchboard VRF 或类似去中心化随机预言机来实现真正的随机抽签。
+
 pub const BASE: u64 = 10000;
 pub const BURN: u64 = 300;
 pub const PLAT: u64 = 200;
