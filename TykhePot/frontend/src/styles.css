@@ -649,3 +649,113 @@ footer a {
 footer a:hover {
   color: var(--color-gold);
 }
+
+/* ================================
+   Wallet Button Styles - Improved
+   ================================ */
+
+/* Wallet Button Wrapper */
+.wallet-btn-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Connected Wallet Display */
+.wallet-connected {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: oklch(15% 0.02 280);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-gold);
+}
+
+.wallet-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10B981;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.wallet-address {
+  font-family: monospace;
+  font-size: var(--text-sm);
+  color: var(--color-gold);
+}
+
+/* Connect Button - Custom Style */
+.wallet-connect-btn {
+  background: linear-gradient(135deg, #FFD700, #FFA500) !important;
+  color: #000 !important;
+  font-weight: 700 !important;
+  padding: 10px 24px !important;
+  border-radius: var(--radius-md) !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3) !important;
+}
+
+.wallet-connect-btn:hover {
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 25px rgba(255, 215, 0, 0.5) !important;
+}
+
+.wallet-connect-btn:active {
+  transform: translateY(0) !important;
+}
+
+/* Mobile Wallet Button */
+.mobile-wallet-btn {
+  padding: 8px 12px;
+  background: oklch(15% 0.02 280);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 1.2rem;
+  transition: all 0.2s;
+}
+
+.mobile-wallet-btn:hover {
+  background: oklch(20% 0.02 280);
+  border-color: var(--color-gold);
+}
+
+/* Mobile Wallet Connected */
+.wallet-connected-mobile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: oklch(15% 0.02 280);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-gold);
+  margin-bottom: var(--space-3);
+  color: var(--color-gold);
+  font-family: monospace;
+}
+
+/* Mobile Connect Button */
+.wallet-connect-btn-mobile {
+  background: linear-gradient(135deg, #FFD700, #FFA500) !important;
+  color: #000 !important;
+  font-weight: 700 !important;
+  padding: 14px 24px !important;
+  border-radius: var(--radius-md) !important;
+  border: none !important;
+  width: 100% !important;
+}
+
+/* Hide default wallet adapter styles */
+.wallet-adapter-button {
+  display: none !important;
+}

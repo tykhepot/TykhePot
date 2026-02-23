@@ -4,8 +4,14 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useTranslation } from '../i18n/LanguageContext';
 
+// 短地址显示
+const shortenAddress = (address, chars = 4) => {
+  if (!address) return '';
+  return `${address.slice(0, chars)}...${address.slice(-chars)}`;
+};
+
 const Layout = ({ children }) => {
-  const { publicKey } = useWallet();
+  const { publicKey, connected, connecting } = useWallet();
   const location = useLocation();
   const { t, language, toggleLanguage } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,41 +62,34 @@ const Layout = ({ children }) => {
               {language === 'en' ? '🇺🇸 EN' : '🇨🇳 中文'}
             </button>
             
-            {/* Wallet Button */}
-            <div className="wallet-btn-container hide-mobile">
-              <WalletMultiButton className="btn btn-primary btn-wallet" />
-              {/* 移动端深度链接按钮 - 根据 bug.json 修复建议 */}
+            {/* Wallet Button - Improved */}
+            <div className="wallet-btn-wrapper">
+              {/* 已连接: 显示地址 */}
+              {connected && publicKey ? (
+                <div className="wallet-connected">
+                  <div className="wallet-status-dot"></div>
+                  <span className="wallet-address">{shortenAddress(publicKey.toString())}</span>
+                </div>
+              ) : null}
+              
+              {/* 连接按钮 */}
+              <WalletMultiButton className="wallet-connect-btn" />
+              
+              {/* 移动端快捷按钮 */}
               <button 
-                className="btn btn-ghost"
+                className="mobile-wallet-btn"
                 onClick={() => {
-                  const dappUrl = window.location.origin;
-                  const refUrl = window.location.origin;
-                  
-                  // 检测是否为移动设备
                   const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                  
                   if (isMobile) {
-                    // 移动端：使用 Deep Link 打开 Phantom APP
-                    // 格式: phantom://browse/<URL>?ref=<REFERRER>
-                    const phantomDeepLink = `phantom://browse/${encodeURIComponent(dappUrl)}?ref=${encodeURIComponent(refUrl)}`;
-                    
-                    // 优先尝试 Deep Link
-                    window.location.href = phantomDeepLink;
-                    
-                    // 如果 Deep Link 失败，尝试 universal link
-                    setTimeout(() => {
-                      const universalLink = `https://phantom.app/ul/browse/${encodeURIComponent(dappUrl)}?ref=${encodeURIComponent(refUrl)}`;
-                      window.location.href = universalLink;
-                    }, 1500);
+                    // 移动端使用 Solflare (更稳定)
+                    window.location.href = 'https://solflare.com/ul';
                   } else {
-                    // 桌面端：尝试直接打开
-                    window.location.href = 'phantom://';
+                    window.open('https://solflare.com', '_blank');
                   }
                 }}
-                title={language === 'en' ? 'Open Phantom App' : '打开钱包 APP'}
-                style={{ marginLeft: '8px', padding: '8px 12px', fontSize: '1.2rem' }}
+                title={language === 'en' ? 'Get Wallet' : '获取钱包'}
               >
-                👻
+                💳
               </button>
             </div>
 
@@ -131,8 +130,20 @@ const Layout = ({ children }) => {
               >
                 {language === 'en' ? '🇺🇸 English' : '🇨🇳 中文'}
               </button>
+              {/* Mobile Wallet - Improved */}
               <div className="wallet-mobile">
-                <WalletMultiButton className="btn btn-primary" style={{ width: '100%' }} />
+                {connected && publicKey ? (
+                  <div className="wallet-connected-mobile">
+                    <div className="wallet-status-dot"></div>
+                    <span>{shortenAddress(publicKey.toString())}</span>
+                  </div>
+                ) : null}
+                <WalletMultiButton className="wallet-connect-btn-mobile" />
+                <p style={{ fontSize: '12px', color: '#888', textAlign: 'center', marginTop: '8px' }}>
+                  {language === 'en' 
+                    ? 'Recommended: Solflare Wallet' 
+                    : '推荐使用 Solflare 钱包'}
+                </p>
               </div>
             </div>
           </div>
