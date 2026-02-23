@@ -95,7 +95,6 @@ pub struct UserData {
     pub referrer: Option<Pubkey>,
     pub has_ref_bonus: bool,
     pub airdrop_claimed: bool,
-    pub airdrop_balance: u64,       // 锁定空投余额，只能投入天池
     pub total_deposit: u64,
 }
 
@@ -171,16 +170,10 @@ pub struct ClaimAirdrop<'info> {
 }
 
 #[derive(Accounts)]
-pub struct DepositDailyWithAirdrop<'info> {
-    #[account(mut)] pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
-    pub signer: Signer<'info>,
-}
-
-#[derive(Accounts)]
 pub struct DrawHourly<'info> {
     #[account(mut)] pub state: Account<'info, State>,
     #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub first_prize_winner: Account<'info, TokenAccount>,
     #[account(mut)] pub second_prize_winner: Account<'info, TokenAccount>,
     #[account(mut)] pub third_prize_winner: Account<'info, TokenAccount>,
@@ -194,6 +187,7 @@ pub struct DrawHourly<'info> {
 pub struct DrawDaily<'info> {
     #[account(mut)] pub state: Account<'info, State>,
     #[account(mut)] pub pool_vault: UncheckedAccount<'info>,
+    #[account(mut)] pub platform_vault: UncheckedAccount<'info>,
     #[account(mut)] pub first_prize_winner: UncheckedAccount<'info>,
     #[account(mut)] pub second_prize_winner_a: UncheckedAccount<'info>,
     #[account(mut)] pub second_prize_winner_b: UncheckedAccount<'info>,
@@ -250,8 +244,6 @@ pub enum ErrorCode {
     #[msg("Universal prize already received")] UniversalPrizeAlreadyReceived,
     #[msg("Draw not completed")] DrawNotCompleted,
     #[msg("Distribution not started")] DistributionNotStarted,
-    #[msg("Airdrop not claimed")] AirdropNotClaimed,
-    #[msg("Insufficient airdrop balance")] InsufficientAirdropBalance,
 }
 
 #[program]
@@ -351,10 +343,9 @@ pub mod royalpot {
         let pre_match = state.pre_pool.min(amount);
         state.pre_pool = state.pre_pool.saturating_sub(pre_match);
 
-        // Calculate distribution
+        // Calculate distribution (平台费在开奖时提取)
         let burn_amount = amount * BURN / BASE;
-        let platform_amount = amount * PLAT / BASE;
-        let prize_amount = amount - burn_amount - platform_amount + pre_match;
+        let prize_amount = amount - burn_amount + pre_match;
 
         // Transfer - burn
         let cpi_ctx = CpiContext::new(
@@ -367,18 +358,7 @@ pub mod royalpot {
         );
         token::transfer(cpi_ctx, burn_amount)?;
 
-        // Platform (2%)
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.user_token.to_account_info(),
-                to: ctx.accounts.platform_vault.to_account_info(),
-                authority: ctx.accounts.signer.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, platform_amount)?;
-
-        // Prize pool
+        // Prize pool (存款全部进入奖池，平台费2%在开奖时提取)
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -430,10 +410,9 @@ pub mod royalpot {
         let pre_match = state.pre_pool.min(amount);
         state.pre_pool = state.pre_pool.saturating_sub(pre_match);
 
-        // Calculate distribution
+        // Calculate distribution (平台费在开奖时提取)
         let burn_amount = amount * BURN / BASE;
-        let platform_amount = amount * PLAT / BASE;
-        let prize_amount = amount - burn_amount - platform_amount + pre_match;
+        let prize_amount = amount - burn_amount + pre_match;
 
         // Transfer - burn
         let cpi_ctx = CpiContext::new(
@@ -446,18 +425,7 @@ pub mod royalpot {
         );
         token::transfer(cpi_ctx, burn_amount)?;
 
-        // Platform (2%)
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.user_token.to_account_info(),
-                to: ctx.accounts.platform_vault.to_account_info(),
-                authority: ctx.accounts.signer.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, platform_amount)?;
-
-        // Prize pool
+        // Prize pool (存款全部进入奖池，平台费2%在开奖时提取)
         let cpi_ctx = CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
@@ -519,58 +487,24 @@ pub mod royalpot {
         Ok(())
     }
 
-    // ============ 使用锁定空投存款到天池 ============
-    // 规则：
-    // 1. 只能使用锁定的空投余额，不能使用普通代币
-    // 2. 锁定余额只能投入天池，不能转走
-    // 3. 投入后参与正常开奖分配
-    pub fn deposit_daily_with_airdrop(ctx: Context<DepositDailyWithAirdrop>, amount: u64) -> Result<()> {
-        let state = &mut ctx.accounts.state;
-        let user = &mut ctx.accounts.user;
-        let clock = Clock::get()?;
-
-        require!(!state.paused, ErrorCode::ContractPaused);
-        require!(user.airdrop_claimed, ErrorCode::AirdropNotClaimed);
-        require!(user.airdrop_balance >= amount, ErrorCode::InsufficientAirdropBalance);
-        require!(amount >= DAY_MIN, ErrorCode::BelowMinDeposit);
-        require!(amount <= MAX_DEPOSIT, ErrorCode::ExceedMaxDeposit);
-
-        // 新的一期：重置票号
-        if state.daily_ticket_start == 0 || state.daily_ticket_end == 0 {
-            state.daily_ticket_start = 1;
-            state.daily_ticket_end = 0;
-        }
-
-        // 分配票号
-        user.daily_ticket_start = state.daily_ticket_end + 1;
-        user.daily_ticket_end = user.daily_ticket_start;
-        state.daily_ticket_end = user.daily_ticket_end;
-
-        // 扣除锁定余额
-        user.airdrop_balance = user.airdrop_balance.saturating_sub(amount);
-
-        // 进入奖池（无费用，因为空投已经是"免费"的）
-        state.daily_pool += amount;
-        state.daily_players += 1;
-        user.daily_tickets += 1;
-        user.total_deposit += amount;
-        user.last_time = clock.unix_timestamp;
-
-        Ok(())
-    }
-
-    // ============ 领取空投（锁定版）============
-    // 规则：
-    // 1. 每个钱包只能领取一次
-    // 2. 领取的代币锁定在合约中，只能投入天池
-    // 3. 不能直接转账，只能通过 deposit_daily_with_airdrop 投入游戏
     pub fn claim_airdrop(ctx: Context<ClaimAirdrop>) -> Result<()> {
         let user = &mut ctx.accounts.user;
         require!(!user.airdrop_claimed, ErrorCode::AlreadyClaimed);
 
-        // 记录锁定空投余额（不转移代币，代币保留在vault中作为储备）
+        let airdrop_auth_bump = 0u8;
+        let seeds: &[&[&[u8]]] = &[&[b"airdrop", &[airdrop_auth_bump]]];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.airdrop_vault.to_account_info(),
+                to: ctx.accounts.dest_token.to_account_info(),
+                authority: ctx.accounts.airdrop_auth.to_account_info(),
+            },
+            seeds,
+        );
+        token::transfer(cpi_ctx, FREE_AIRDROP)?;
+
         user.airdrop_claimed = true;
-        user.airdrop_balance = FREE_AIRDROP;
 
         Ok(())
     }
@@ -624,12 +558,15 @@ pub mod royalpot {
         // 初始化开奖记录
         let mut winners: Vec<WinnerRecord> = Vec::new();
         
-        // 计算奖金
-        let first_prize_amount = total_pool * FIRST_PRIZE_RATE / BASE;      // 30%
-        let second_prize_amount = total_pool * SECOND_PRIZE_RATE / BASE;   // 20%
-        let third_prize_amount = total_pool * THIRD_PRIZE_RATE / BASE;     // 15%
-        let lucky_prize_amount = total_pool * LUCKY_PRIZE_RATE / BASE;    // 10%
-        let universal_prize_amount = total_pool * UNIVERSAL_PRIZE_RATE / BASE; // 20%
+        // 计算奖金 (奖池的98%，2%作为平台费)
+        let platform_fee = total_pool * PLAT / BASE;
+        let remaining_pool = total_pool - platform_fee;
+        
+        let first_prize_amount = remaining_pool * FIRST_PRIZE_RATE / BASE;      // 30%
+        let second_prize_amount = remaining_pool * SECOND_PRIZE_RATE / BASE;   // 20%
+        let third_prize_amount = remaining_pool * THIRD_PRIZE_RATE / BASE;     // 15%
+        let lucky_prize_amount = remaining_pool * LUCKY_PRIZE_RATE / BASE;    // 10%
+        let universal_prize_amount = remaining_pool * UNIVERSAL_PRIZE_RATE / BASE; // 20%
         
         let second_prize_each = second_prize_amount / 2;   // 每人10%
         let third_prize_each = third_prize_amount / 3;    // 每人5%
@@ -641,6 +578,20 @@ pub mod royalpot {
         // 使用PDA签名分发奖金
         let bump = state.bump;
         let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+        
+        // 分发平台费 (2%)
+        if platform_fee > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: ctx.accounts.platform_vault.to_account_info(),
+                    authority: ctx.accounts.pool_vault.to_account_info(),
+                },
+                seeds,
+            );
+            token::transfer(cpi_ctx, platform_fee)?;
+        }
         
         // 分发头奖 (1人) - 30%
         if first_prize_amount > 0 {
@@ -793,13 +744,31 @@ pub mod royalpot {
         let seed = get_random_seed(clock.unix_timestamp, state.daily_players as u64);
         let win_ticket = (seed % (state.daily_ticket_end - state.daily_ticket_start + 1)) + state.daily_ticket_start;
         
-        let fp = total * FIRST_PRIZE_RATE / BASE;
-        let sp = total * SECOND_PRIZE_RATE / BASE / 2;
-        let tp = total * THIRD_PRIZE_RATE / BASE / 3;
-        let lp = total * LUCKY_PRIZE_RATE / BASE / 5;
-        let up = total * UNIVERSAL_PRIZE_RATE / BASE;
+        // 计算平台费和奖金
+        let platform_fee = total * PLAT / BASE;
+        let remaining_pool = total - platform_fee;
+        
+        let fp = remaining_pool * FIRST_PRIZE_RATE / BASE;
+        let sp = remaining_pool * SECOND_PRIZE_RATE / BASE / 2;
+        let tp = remaining_pool * THIRD_PRIZE_RATE / BASE / 3;
+        let lp = remaining_pool * LUCKY_PRIZE_RATE / BASE / 5;
+        let up = remaining_pool * UNIVERSAL_PRIZE_RATE / BASE;
         
         let seeds: &[&[&[u8]]] = &[&[b"state", &[state.bump]]];
+        
+        // 平台费2%
+        if platform_fee > 0 {
+            let cpi_ctx = CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: ctx.accounts.platform_vault.to_account_info(),
+                    authority: ctx.accounts.pool_vault.to_account_info(),
+                },
+                seeds,
+            );
+            token::transfer(cpi_ctx, platform_fee)?;
+        }
         
         if fp > 0 { let c = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), Transfer{from:ctx.accounts.pool_vault.to_account_info(),to:ctx.accounts.first_prize_winner.to_account_info(),authority:ctx.accounts.pool_vault.to_account_info()},seeds); token::transfer(c,fp)?; }
         if sp > 0 { let c = CpiContext::new_with_signer(ctx.accounts.token_program.to_account_info(), Transfer{from:ctx.accounts.pool_vault.to_account_info(),to:ctx.accounts.second_prize_winner_a.to_account_info(),authority:ctx.accounts.pool_vault.to_account_info()},seeds); token::transfer(c,sp)?; }
