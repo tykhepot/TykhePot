@@ -102,7 +102,11 @@ const IDL = {
       accounts: [
         { name: "state", isMut: true, isSigner: false },
         { name: "user", isMut: true, isSigner: false },
+        { name: "referralVault", isMut: true, isSigner: false },
+        { name: "referrerToken", isMut: true, isSigner: false },
+        { name: "referralAuth", isMut: false, isSigner: false },
         { name: "signer", isMut: false, isSigner: true },
+        { name: "tokenProgram", isMut: false, isSigner: false },
       ],
       args: [],
     },
@@ -501,10 +505,38 @@ class TykhePotSDK {
         this.program.programId
       );
 
+      const [referralAuthority] = web3.PublicKey.findProgramAddressSync(
+        [Buffer.from("referral")],
+        this.program.programId
+      );
+
+      const state = await this.getProtocolState();
+      if (!state) throw new Error("Protocol not initialized");
+
+      // 获取用户数据以获取推荐人
+      const userData = await this.program.account.userData.fetch(userStatePDA);
+      
+      // 如果用户有推荐人，获取推荐人的token账户
+      let referrerToken = state.platformWallet;
+      if (userData.referrer) {
+        const referrerKey = userData.referrer;
+        if (referrerKey && referrerKey.toString() !== web3.PublicKey.default.toString()) {
+          try {
+            referrerToken = await this.getTokenAccount(referrerKey);
+          } catch (e) {
+            referrerToken = state.platformWallet;
+          }
+        }
+      }
+
       const accounts = {
         state: statePDA,
         user: userStatePDA,
+        referralVault: state.tokenMint,
+        referrerToken,
+        referralAuth: referralAuthority,
         signer: user,
+        tokenProgram: TOKEN_PROGRAM_ID,
       };
 
       const tx = await this.program.methods

@@ -203,7 +203,11 @@ pub struct ClaimAirdrop<'info> {
 pub struct DepositDailyFree<'info> {
     #[account(mut)] pub state: Account<'info, State>,
     #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
+    #[account(mut)] pub referral_vault: Account<'info, TokenAccount>,
+    #[account(mut)] pub referrer_token: Account<'info, TokenAccount>,
+    pub referral_auth: UncheckedAccount<'info>,
     pub signer: Signer<'info>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
@@ -706,7 +710,17 @@ pub mod royalpot {
             if referrer_key != user.owner && state.referral_pool > 0 {
                 let reward = (amount * REF / BASE).min(state.referral_pool);
                 if reward > 0 {
-                    // 注意：这里只是记录，实际转账需要前端或单独的交易
+                    let seeds: &[&[&[u8]]] = &[&[b"referral", &[0u8]]];
+                    let cpi_ctx = CpiContext::new_with_signer(
+                        ctx.accounts.token_program.to_account_info(),
+                        Transfer {
+                            from: ctx.accounts.referral_vault.to_account_info(),
+                            to: ctx.accounts.referrer_token.to_account_info(),
+                            authority: ctx.accounts.referral_auth.to_account_info(),
+                        },
+                        seeds,
+                    );
+                    token::transfer(cpi_ctx, reward)?;
                     state.referral_pool = state.referral_pool.saturating_sub(reward);
                 }
             }
