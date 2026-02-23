@@ -66,33 +66,30 @@ const IDL = {
     {
       name: "depositHourly",
       accounts: [
-        { name: "user", isMut: true, isSigner: true },
         { name: "state", isMut: true, isSigner: false },
-        { name: "userState", isMut: true, isSigner: false },
+        { name: "user", isMut: true, isSigner: false },
         { name: "userToken", isMut: true, isSigner: false },
-        { name: "burnAccount", isMut: true, isSigner: false },
-        { name: "platformToken", isMut: true, isSigner: false },
-        { name: "hourlyPrizeVault", isMut: true, isSigner: false },
+        { name: "burnVault", isMut: true, isSigner: false },
+        { name: "platformVault", isMut: true, isSigner: false },
+        { name: "poolVault", isMut: true, isSigner: false },
+        { name: "signer", isMut: false, isSigner: true },
         { name: "tokenProgram", isMut: false, isSigner: false },
-        { name: "systemProgram", isMut: false, isSigner: false },
       ],
       args: [{ name: "amount", type: "u64" }],
     },
     {
       name: "depositDaily",
       accounts: [
-        { name: "user", isMut: true, isSigner: true },
         { name: "state", isMut: true, isSigner: false },
-        { name: "userState", isMut: true, isSigner: false },
+        { name: "user", isMut: true, isSigner: false },
         { name: "userToken", isMut: true, isSigner: false },
-        { name: "burnAccount", isMut: true, isSigner: false },
-        { name: "platformToken", isMut: true, isSigner: false },
-        { name: "dailyPrizeVault", isMut: true, isSigner: false },
-        { name: "reserveVault", isMut: true, isSigner: false },
-        { name: "reserveAuthority", isMut: false, isSigner: false },
+        { name: "burnVault", isMut: true, isSigner: false },
+        { name: "platformVault", isMut: true, isSigner: false },
+        { name: "poolVault", isMut: true, isSigner: false },
         { name: "referralVault", isMut: true, isSigner: false },
-        { name: "referralAuthority", isMut: false, isSigner: false },
         { name: "referrerToken", isMut: true, isSigner: false },
+        { name: "referralAuth", isMut: false, isSigner: false },
+        { name: "signer", isMut: false, isSigner: true },
         { name: "tokenProgram", isMut: false, isSigner: false },
       ],
       args: [
@@ -154,30 +151,6 @@ const IDL = {
         { name: "thirdPrizeWinnerC", isMut: true, isSigner: false },
         { name: "luckyPrizeWinner", isMut: true, isSigner: false },
         { name: "universalPrizeRecipients", isMut: true, isSigner: false },
-        { name: "authority", isMut: false, isSigner: true },
-        { name: "tokenProgram", isMut: false, isSigner: false },
-      ],
-      args: [],
-    },
-    {
-      name: "claimHourlyUniversal",
-      accounts: [
-        { name: "state", isMut: true, isSigner: false },
-        { name: "user", isMut: true, isSigner: false },
-        { name: "poolVault", isMut: true, isSigner: false },
-        { name: "userToken", isMut: true, isSigner: false },
-        { name: "authority", isMut: false, isSigner: true },
-        { name: "tokenProgram", isMut: false, isSigner: false },
-      ],
-      args: [],
-    },
-    {
-      name: "claimDailyUniversal",
-      accounts: [
-        { name: "state", isMut: true, isSigner: false },
-        { name: "user", isMut: true, isSigner: false },
-        { name: "poolVault", isMut: true, isSigner: false },
-        { name: "userToken", isMut: true, isSigner: false },
         { name: "authority", isMut: false, isSigner: true },
         { name: "tokenProgram", isMut: false, isSigner: false },
       ],
@@ -619,58 +592,6 @@ class TykhePotSDK {
       return { success: true, tx };
     } catch (error) {
       console.error("Error drawing daily:", error);
-      throw error;
-    }
-  }
-
-  // 领取小时池普惠奖
-  async claimHourlyUniversal(userTokenAccount) {
-    if (!this.wallet.publicKey) {
-      throw new Error("Wallet not connected");
-    }
-
-    try {
-      const userPDA = await this.getUserPDA(this.wallet.publicKey);
-      const tx = await this.program.methods
-        .claimHourlyUniversal()
-        .accounts({
-          authority: this.wallet.publicKey,
-          user: userPDA,
-          poolVault: this.poolVault,
-          userToken: userTokenAccount,
-          tokenProgram: this.tokenProgram,
-        })
-        .rpc();
-
-      return { success: true, tx };
-    } catch (error) {
-      console.error("Error claiming hourly universal:", error);
-      throw error;
-    }
-  }
-
-  // 领取每日池普惠奖
-  async claimDailyUniversal(userTokenAccount) {
-    if (!this.wallet.publicKey) {
-      throw new Error("Wallet not connected");
-    }
-
-    try {
-      const userPDA = await this.getUserPDA(this.wallet.publicKey);
-      const tx = await this.program.methods
-        .claimDailyUniversal()
-        .accounts({
-          authority: this.wallet.publicKey,
-          user: userPDA,
-          poolVault: this.dailyPoolVault,
-          userToken: userTokenAccount,
-          tokenProgram: this.tokenProgram,
-        })
-        .rpc();
-
-      return { success: true, tx };
-    } catch (error) {
-      console.error("Error claiming daily universal:", error);
       throw error;
     }
   }
