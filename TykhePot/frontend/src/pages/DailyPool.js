@@ -6,8 +6,7 @@ const DailyPool = () => {
   const { stats, wallet, sdk, refreshStats, userTokenBalance } = useApp();
   const { t, language } = useTranslation();
   const [depositAmount, setDepositAmount] = useState('100');
-  const [useAirdrop, setUseAirdrop] = useState(false); // 是否使用空投余额
-  const [airdropBalance, setAirdropBalance] = useState(100); // 模拟空投余额
+  const [useAirdrop, setUseAirdrop] = useState(false); // 是否使用免费投注
   const [referrer, setReferrer] = useState('');
   const [isDepositing, setIsDepositing] = useState(false);
   const [txStatus, setTxStatus] = useState(null);
@@ -59,32 +58,25 @@ const DailyPool = () => {
       return;
     }
 
-    // 如果选择使用空投余额
+    // 如果选择免费投注
     if (useAirdrop) {
-      if (airdropBalance < amount) {
-        alert(language === 'en' 
-          ? `Insufficient airdrop balance. You have ${airdropBalance} TPOT in airdrop` 
-          : `空投余额不足。您有 ${airdropBalance} TPOT 空投`);
-        return;
-      }
-      
       setIsDepositing(true);
       setTxStatus('pending');
       setErrorMessage('');
 
       try {
-        const result = await sdk.depositDailyWithAirdrop(amount);
+        const result = await sdk.depositDailyFree();
         
         if (result.success) {
           setTxStatus('success');
-          setAirdropBalance(prev => prev - amount);
+          setUseAirdrop(false);
           alert(language === 'en' 
-            ? `Success! Deposited ${amount} TPOT from airdrop!` 
-            : `成功！使用空投存款 ${amount} TPOT！`);
+            ? '🎉 FREE BET placed! Good luck!' 
+            : '🎉 免费投注已下注！祝你好运！');
           refreshStats();
         } else {
           setTxStatus('error');
-          setErrorMessage(result.error || (language === 'en' ? 'Deposit failed' : '存款失败'));
+          setErrorMessage(result.error || (language === 'en' ? 'Failed' : '失败'));
         }
       } catch (error) {
         setTxStatus('error');
@@ -218,10 +210,10 @@ const DailyPool = () => {
                   onChange={(e) => setUseAirdrop(e.target.checked)}
                   style={{ width: '18px', height: '18px' }}
                 />
-                <span style={{ color: '#FFD700', fontWeight: '600' }}>
+                <span style={{ color: '#FFD700', fontWeight: '600', fontSize: '14px' }}>
                   {language === 'en' 
-                    ? `Use Airdrop Balance (${airdropBalance} TPOT available)` 
-                    : `使用空投余额 (剩余 ${airdropBalance} TPOT)`}
+                    ? '🎁 FREE BET (100 TPOT) - Register at Airdrop page first!' 
+                    : '🎁 免费投注 (100 TPOT) - 需要先去空投页面注册！'}
                 </span>
               </label>
             </div>

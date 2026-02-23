@@ -126,7 +126,8 @@ pub struct UserData {
     pub last_time: i64,
     pub referrer: Option<Pubkey>,
     pub has_ref_bonus: bool,
-    pub airdrop_claimed: bool,
+    pub airdrop_registered: bool,    // 是否已注册获取空投资格
+    pub airdrop_played: bool,       // 是否已使用免费投注
     pub total_deposit: u64,
 }
 
@@ -194,11 +195,15 @@ pub struct DepositDaily<'info> {
 pub struct ClaimAirdrop<'info> {
     #[account(mut, seeds = [b"user", user.key().as_ref()], bump)]
     pub user: Account<'info, UserData>,
-    #[account(mut)] pub airdrop_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub dest_token: Account<'info, TokenAccount>,
-    pub airdrop_auth: UncheckedAccount<'info>,
+    #[account(mut)] pub state: Account<'info, State>,
     pub user_signer: Signer<'info>,
-    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct DepositDailyFree<'info> {
+    #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
+    pub signer: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -636,24 +641,64 @@ pub mod royalpot {
         Ok(())
     }
 
+    // ============ 领取空投（注册资格）============
+    // 点击按钮只是注册获取游戏资格
+    // 用户需要到天池使用"免费投注"参与游戏
     pub fn claim_airdrop(ctx: Context<ClaimAirdrop>) -> Result<()> {
         let user = &mut ctx.accounts.user;
-        require!(!user.airdrop_claimed, ErrorCode::AlreadyClaimed);
+        require!(!user.airdrop_registered, ErrorCode::AlreadyClaimed);
 
-        let airdrop_auth_bump = 0u8;
-        let seeds: &[&[&[u8]]] = &[&[b"airdrop", &[airdrop_auth_bump]]];
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.airdrop_vault.to_account_info(),
-                to: ctx.accounts.dest_token.to_account_info(),
-                authority: ctx.accounts.airdrop_auth.to_account_info(),
-            },
-            seeds,
-        );
-        token::transfer(cpi_ctx, FREE_AIRDROP)?;
+        // 记录用户已注册获取空投资格
+        user.airdrop_registered = true;
+        
+        // State 中增加已注册人数
+        let state = &mut ctx.accounts.state;
+        state.airdrop_claimed_total = state.airdrop_claimed_total.checked_add(1).unwrap();
 
-        user.airdrop_claimed = true;
+        Ok(())
+    }
+
+    // ============ 免费投注（使用空投资格）============
+    // 用户注册后可以使用一次免费100代币投注
+    // 从 pre_match_pool 扣取（相当于系统赠送）
+    pub fn deposit_daily_free(ctx: Context<DepositDailyFree>) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        let user = &mut ctx.accounts.user;
+        let clock = Clock::get()?;
+
+        // 检查用户是否已注册
+        require!(user.airdrop_registered, ErrorCode::AirdropNotClaimed);
+        // 检查用户是否已使用过免费投注
+        require!(!user.airdrop_played, ErrorCode::AlreadyClaimed);
+        
+        let amount = FREE_AIRDROP; // 100 TPOT
+        
+        // 检查前期奖池配额是否足够
+        require!(state.pre_match_pool >= amount, ErrorCode::PreMatchPoolExhausted);
+
+        // 扣除配额
+        state.pre_match_pool = state.pre_match_pool.saturating_sub(amount);
+        
+        // 标记用户已使用免费投注
+        user.airdrop_played = true;
+        
+        // 重置票号（新一期）
+        if state.daily_ticket_start == 0 || state.daily_ticket_end == 0 {
+            state.daily_ticket_start = 1;
+            state.daily_ticket_end = 0;
+        }
+
+        // 分配票号
+        user.daily_ticket_start = state.daily_ticket_end + 1;
+        user.daily_ticket_end = user.daily_ticket_start;
+        state.daily_ticket_end = user.daily_ticket_end;
+
+        // 进入奖池（无需销毁和费用，因为是免费的）
+        state.daily_pool += amount;
+        state.daily_players += 1;
+        user.daily_tickets += 1;
+        user.total_deposit += amount;
+        user.last_time = clock.unix_timestamp;
 
         Ok(())
     }

@@ -39,7 +39,9 @@ const Airdrop = () => {
     }
     
     if (hasClaimed) {
-      alert('You have already claimed your airdrop!');
+      alert(language === 'en' 
+        ? 'You have already registered! Go to Daily Pool for free bet.' 
+        : '您已注册！请去每日奖池使用免费投注。');
       return;
     }
 
@@ -52,10 +54,10 @@ const Airdrop = () => {
       if (result.success) {
         setHasClaimed(true);
         alert(language === 'en' 
-          ? '🎉 Successfully claimed 100 TPOT! Use it in Daily Pool.' 
-          : '🎉 成功领取100 TPOT！请去每日奖池使用。');
+          ? '🎉 Registered! Now go to Daily Pool and use FREE BET to join the game!' 
+          : '🎉 注册成功！现在去每日奖池使用"免费投注"参与游戏！');
       } else {
-        setError(result.error || (language === 'en' ? 'Failed to claim' : '领取失败'));
+        setError(result.error || (language === 'en' ? 'Failed to register' : '注册失败'));
       }
     } catch (err) {
       console.error('Error claiming airdrop:', err);
@@ -83,11 +85,11 @@ const Airdrop = () => {
       <div style={styles.card}>
         <h2 style={styles.cardTitle}>📜 {t('airdropRules')}</h2>
         <ul style={styles.rulesList}>
-          <li style={styles.ruleItem}>✅ Every wallet can claim <strong>100 TPOT</strong> for FREE</li>
-          <li style={styles.ruleItem}>✅ One-time claim only - cannot claim twice</li>
-          <li style={styles.ruleItem}>✅ Tokens are LOCKED - can only be used in <strong>Daily Pool</strong></li>
-          <li style={styles.ruleItem}>❌ Cannot be used in Hourly Pool</li>
-          <li style={styles.ruleItem}>💡 After claiming, go to Daily Pool to use your airdrop tokens</li>
+          <li style={styles.ruleItem}>✅ Register once to get <strong>FREE BET</strong> (100 TPOT value)</li>
+          <li style={styles.ruleItem}>✅ One-time registration only</li>
+          <li style={styles.ruleItem}>✅ Go to <strong>Daily Pool</strong> and click "FREE BET" to play</li>
+          <li style={styles.ruleItem}>❌ Each wallet can only use FREE BET once</li>
+          <li style={styles.ruleItem}>💡 Win up to 30% of the pool in prizes!</li>
         </ul>
       </div>
 
@@ -104,8 +106,8 @@ const Airdrop = () => {
           <div style={styles.claimedBox}>
             <span style={styles.claimedIcon}>✅</span>
             <div style={styles.claimedText}>
-              <strong>You have claimed your 100 TPOT!</strong>
-              <p style={{ color: '#FF6B6B' }}>⚠️ Go to <strong>Daily Pool</strong> to use these tokens!</p>
+              <strong>✅ You are registered! Ready for FREE BET!</strong>
+              <p style={{ color: '#10B981', marginTop: '8px' }}>🎰 Go to <strong>Daily Pool</strong> → Click "FREE BET" to play!</p>
             </div>
           </div>
         ) : (

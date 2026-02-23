@@ -98,13 +98,13 @@ const IDL = {
       ],
     },
     {
-      name: "depositDailyWithAirdrop",
+      name: "depositDailyFree",
       accounts: [
         { name: "state", isMut: true, isSigner: false },
         { name: "user", isMut: true, isSigner: false },
         { name: "signer", isMut: false, isSigner: true },
       ],
-      args: [{ name: "amount", type: "u64" }],
+      args: [],
     },
     {
       name: "claimVested",
@@ -486,11 +486,10 @@ class TykhePotSDK {
     }
   }
 
-  // 使用锁定空投存款到天池
-  async depositDailyWithAirdrop(amount) {
+  // 免费投注（使用空投资格）
+  async depositDailyFree() {
     try {
       const user = this.wallet.publicKey;
-      const amountBN = this.parseAmount(amount);
 
       const [statePDA] = web3.PublicKey.findProgramAddressSync(
         [Buffer.from("state")],
@@ -509,7 +508,7 @@ class TykhePotSDK {
       };
 
       const tx = await this.program.methods
-        .depositDailyWithAirdrop(amountBN)
+        .depositDailyFree()
         .accounts(accounts)
         .rpc();
 
