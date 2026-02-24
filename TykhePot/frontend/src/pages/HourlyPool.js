@@ -1,24 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
 
+const MIN_DEPOSIT = 200;      // TPOT
+const MAX_DEPOSIT = 1_000_000; // TPOT
+
 const HourlyPool = () => {
-  const { stats, wallet } = useApp();
+  const { stats, wallet, sdk, refreshStats, userTokenBalance } = useApp();
   const { t, language } = useTranslation();
   const [depositAmount, setDepositAmount] = useState('200');
   const [isDepositing, setIsDepositing] = useState(false);
+  const [txStatus, setTxStatus] = useState(null); // null | 'pending' | 'success' | 'error'
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleDeposit = async () => {
+  const handleDeposit = useCallback(async () => {
     if (!wallet.publicKey) {
       alert(t('walletNotConnected'));
       return;
     }
+    if (stats.isPaused) {
+      alert(t('contractPaused'));
+      return;
+    }
+
+    const amount = parseFloat(depositAmount);
+    if (isNaN(amount) || amount < MIN_DEPOSIT) {
+      setErrorMessage(language === 'en'
+        ? `Minimum deposit is ${MIN_DEPOSIT} TPOT`
+        : `最低投入 ${MIN_DEPOSIT} TPOT`);
+      return;
+    }
+    if (amount > MAX_DEPOSIT) {
+      setErrorMessage(language === 'en'
+        ? `Maximum deposit is ${MAX_DEPOSIT.toLocaleString()} TPOT`
+        : `最高投入 ${MAX_DEPOSIT.toLocaleString()} TPOT`);
+      return;
+    }
+    if (userTokenBalance < amount) {
+      setErrorMessage(language === 'en'
+        ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT`
+        : `余额不足。您有 ${userTokenBalance.toFixed(2)} TPOT`);
+      return;
+    }
+
     setIsDepositing(true);
-    setTimeout(() => {
+    setTxStatus('pending');
+    setErrorMessage('');
+
+    try {
+      const result = await sdk.depositHourly(amount);
+      if (result.success) {
+        setTxStatus('success');
+        alert(language === 'en'
+          ? `Success! Transaction: ${result.tx.slice(0, 8)}...`
+          : `成功！交易: ${result.tx.slice(0, 8)}...`);
+        refreshStats();
+        setDepositAmount('200');
+      } else {
+        setTxStatus('error');
+        setErrorMessage(result.error || 'Transaction failed');
+      }
+    } catch (err) {
+      setTxStatus('error');
+      setErrorMessage(err.message || 'Unknown error');
+    } finally {
       setIsDepositing(false);
-      alert(t('depositSuccess'));
-    }, 2000);
-  };
+    }
+  }, [wallet, depositAmount, stats.isPaused, userTokenBalance, language, sdk, refreshStats, t]);
 
   const formatTime = (timestamp) => {
     const diff = Math.max(0, timestamp - Date.now());
@@ -103,13 +151,43 @@ const HourlyPool = () => {
               ))}
             </div>
             
-            <button 
+            {errorMessage && (
+              <div style={{
+                color: '#ff4444',
+                background: 'rgba(255,68,68,0.1)',
+                border: '1px solid rgba(255,68,68,0.3)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-3)',
+                fontSize: 'var(--text-sm)',
+                marginBottom: 'var(--space-3)',
+              }}>
+                ⚠️ {errorMessage}
+              </div>
+            )}
+            {txStatus === 'success' && (
+              <div style={{
+                color: '#4CAF50',
+                background: 'rgba(76,175,80,0.1)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-3)',
+                fontSize: 'var(--text-sm)',
+                marginBottom: 'var(--space-3)',
+              }}>
+                ✅ {language === 'en' ? 'Deposit successful!' : '存款成功！'}
+              </div>
+            )}
+            <button
               onClick={handleDeposit}
-              disabled={isDepositing}
+              disabled={isDepositing || stats.isPaused}
               className="btn btn-primary btn-lg"
               style={{ width: '100%', marginTop: 'var(--space-4)' }}
             >
-              {isDepositing ? (language === 'en' ? 'Processing...' : '处理中...') : `🎰 ${language === 'en' ? 'Join Now' : '参与抽奖'}`}
+              {isDepositing
+                ? (language === 'en' ? '⏳ Processing...' : '⏳ 处理中...')
+                : stats.isPaused
+                  ? (language === 'en' ? '⏸ Paused' : '⏸ 已暂停')
+                  : `🎰 ${language === 'en' ? 'Join Now' : '参与抽奖'}`
+              }
             </button>
           </div>
         </div>

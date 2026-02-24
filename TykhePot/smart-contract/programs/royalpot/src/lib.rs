@@ -603,7 +603,7 @@ pub mod royalpot {
 
         require!(!ctx.accounts.state.paused, ErrorCode::ContractPaused);
         require!(ctx.accounts.authority.key() == ctx.accounts.state.authority, ErrorCode::Unauthorized);
-        require!(ctx.accounts.state.hourly_players >= 2, ErrorCode::NotEnoughParticipants);
+        require!(ctx.accounts.state.hourly_players >= 3, ErrorCode::NotEnoughParticipants);
 
         let time_since_last_draw = clock.unix_timestamp - ctx.accounts.state.last_hourly_draw;
         require!(time_since_last_draw >= 3600 - TIME_TOLERANCE, ErrorCode::DrawTooEarly);
@@ -685,7 +685,7 @@ pub mod royalpot {
 
         require!(!ctx.accounts.state.paused, ErrorCode::ContractPaused);
         require!(ctx.accounts.authority.key() == ctx.accounts.state.authority, ErrorCode::Unauthorized);
-        require!(ctx.accounts.state.daily_players >= 3, ErrorCode::NotEnoughParticipants);
+        require!(ctx.accounts.state.daily_players >= 5, ErrorCode::NotEnoughParticipants);
 
         let time_since_last_draw = clock.unix_timestamp - ctx.accounts.state.last_daily_draw;
         require!(time_since_last_draw >= 86400 - TIME_TOLERANCE, ErrorCode::DrawTooEarly);
