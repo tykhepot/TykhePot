@@ -386,6 +386,7 @@ const IDL = {
     { code: 6009, name: "NotEnoughParticipants", msg: "Not enough participants" },
     { code: 6010, name: "InsufficientPoolBalance", msg: "Insufficient pool balance" },
     { code: 6011, name: "InvalidReferrer", msg: "Invalid referrer" },
+    { code: 6012, name: "ReferrerNotParticipated", msg: "Referrer has not participated in the game" },
   ],
 };
 
@@ -652,13 +653,24 @@ class TykhePotSDK {
       const userToken = await this.getTokenAccount(user);
 
       const referrerKey = referrer ? new web3.PublicKey(referrer) : null;
-      // referrerToken and userReferrerBonus must be valid writable token accounts.
-      // When no referrer, use a dummy account (the tx still succeeds because
-      // the contract only reads these when referrer arg is Some).
+      // When no referrer, use user's own token account as dummy (contract ignores these
+      // when referrer arg is null).
       const referrerToken = referrerKey
         ? await this.getTokenAccount(referrerKey)
         : userToken;
       const userReferrerBonus = userToken; // user's own ATA as fallback
+
+      // MED-2: When referrer provided, pass referrer's UserData PDA as remaining_accounts[0]
+      // so the contract can verify the referrer has actually participated.
+      const remainingAccounts = referrerKey
+        ? (() => {
+            const [referrerUserDataPDA] = findUserDataPDA(
+              referrerKey,
+              this.program.programId
+            );
+            return [{ pubkey: referrerUserDataPDA, isWritable: false, isSigner: false }];
+          })()
+        : [];
 
       const tx = await this.program.methods
         .depositDaily(amountBN, referrerKey)
@@ -675,6 +687,7 @@ class TykhePotSDK {
           signer: user,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
+        .remainingAccounts(remainingAccounts)
         .rpc();
 
       return { success: true, tx };

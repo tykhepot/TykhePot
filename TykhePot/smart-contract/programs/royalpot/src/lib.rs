@@ -304,6 +304,7 @@ pub enum ErrorCode {
     #[msg("Not enough participants")] NotEnoughParticipants,
     #[msg("Insufficient pool balance")] InsufficientPoolBalance,
     #[msg("Invalid referrer")] InvalidReferrer,
+    #[msg("Referrer has not participated in the game")] ReferrerNotParticipated,
 }
 
 #[program]
@@ -440,6 +441,31 @@ pub mod royalpot {
         
         if let Some(referrer_key) = referrer {
             require!(referrer_key != ctx.accounts.signer.key(), ErrorCode::InvalidReferrer);
+
+            // MED-2: Verify referrer has a valid UserData account (has participated).
+            // Client must supply the referrer's UserData PDA as remaining_accounts[0].
+            require!(!ctx.remaining_accounts.is_empty(), ErrorCode::ReferrerNotParticipated);
+            let referrer_data_info = &ctx.remaining_accounts[0];
+
+            // Must be owned by this program
+            require!(
+                referrer_data_info.owner == &crate::ID,
+                ErrorCode::InvalidReferrer
+            );
+            // Must be initialised (non-empty data)
+            require!(
+                !referrer_data_info.data_is_empty(),
+                ErrorCode::ReferrerNotParticipated
+            );
+            // Must match the expected PDA seeds [b"user", referrer_key]
+            let (expected_pda, _) = Pubkey::find_program_address(
+                &[b"user", referrer_key.as_ref()],
+                &crate::ID,
+            );
+            require!(
+                *referrer_data_info.key == expected_pda,
+                ErrorCode::InvalidReferrer
+            );
         }
         
         let pre_match = state.pre_pool.min(amount);
