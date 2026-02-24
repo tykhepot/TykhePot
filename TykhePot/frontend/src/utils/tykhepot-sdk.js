@@ -3,31 +3,22 @@ import { Program, web3, BN } from "@coral-xyz/anchor";
 import {
   TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
-  getOrCreateAssociatedTokenAccount,
-  createAssociatedTokenAccountInstruction,
 } from "@solana/spl-token";
-import { 
-  PROGRAM_ID, 
-  TOKEN_MINT, 
-  NETWORK, 
-  RPC_ENDPOINT 
+import {
+  PROGRAM_ID,
+  TOKEN_MINT,
+  RPC_ENDPOINT,
+  BURN_VAULT,
+  PLATFORM_VAULT,
+  HOURLY_POOL_VAULT,
+  DAILY_POOL_VAULT,
+  REFERRAL_VAULT,
+  AIRDROP_VAULT,
+  STAKING_VAULT,
 } from "../config/contract";
 
-// 从 contract.js 导入真实配置
-const CONFIG = {
-  DEVNET: {
-    programId: PROGRAM_ID,
-    tokenMint: TOKEN_MINT,
-    endpoint: RPC_ENDPOINT,
-  },
-  MAINNET: {
-    programId: "", // 主网部署后填写
-    tokenMint: "",
-    endpoint: "https://api.mainnet-beta.solana.com",
-  },
-};
-
-// IDL - 需要从 target/idl/royalpot.json 复制更新
+// ─── IDL ────────────────────────────────────────────────────────────────────
+// Matches smart-contract/programs/royalpot/src/lib.rs (Anchor 0.30)
 const IDL = {
   version: "0.1.0",
   name: "royalpot",
@@ -35,64 +26,69 @@ const IDL = {
     {
       name: "initialize",
       accounts: [
-        { name: "authority", isMut: true, isSigner: true },
         { name: "state", isMut: true, isSigner: false },
+        { name: "authority", isMut: true, isSigner: true },
         { name: "tokenMint", isMut: false, isSigner: false },
+        { name: "platformWallet", isMut: false, isSigner: false },
         { name: "systemProgram", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
       ],
-      args: [
-        {
-          name: "params",
-          type: { defined: "InitializeParams" },
-        },
-      ],
+      args: [{ name: "params", type: { defined: "InitializeParams" } }],
     },
     {
-      name: "emergencyPause",
+      name: "pause",
       accounts: [
-        { name: "authority", isMut: true, isSigner: true },
         { name: "state", isMut: true, isSigner: false },
+        { name: "authority", isMut: false, isSigner: true },
       ],
       args: [],
     },
     {
-      name: "emergencyResume",
+      name: "resume",
       accounts: [
-        { name: "authority", isMut: true, isSigner: true },
         { name: "state", isMut: true, isSigner: false },
+        { name: "authority", isMut: false, isSigner: true },
+      ],
+      args: [],
+    },
+    {
+      name: "withdrawPlatformFee",
+      accounts: [
+        { name: "state", isMut: true, isSigner: false },
+        { name: "vault", isMut: true, isSigner: false },
+        { name: "dest", isMut: true, isSigner: false },
+        { name: "authority", isMut: false, isSigner: true },
+        { name: "tokenProgram", isMut: false, isSigner: false },
       ],
       args: [],
     },
     {
       name: "depositHourly",
       accounts: [
-        { name: "user", isMut: true, isSigner: true },
         { name: "state", isMut: true, isSigner: false },
-        { name: "userState", isMut: true, isSigner: false },
+        { name: "user", isMut: true, isSigner: false },
         { name: "userToken", isMut: true, isSigner: false },
-        { name: "burnAccount", isMut: true, isSigner: false },
-        { name: "platformToken", isMut: true, isSigner: false },
-        { name: "hourlyPrizeVault", isMut: true, isSigner: false },
+        { name: "burnVault", isMut: true, isSigner: false },
+        { name: "platformVault", isMut: true, isSigner: false },
+        { name: "poolVault", isMut: true, isSigner: false },
+        { name: "signer", isMut: false, isSigner: true },
         { name: "tokenProgram", isMut: false, isSigner: false },
-        { name: "systemProgram", isMut: false, isSigner: false },
       ],
       args: [{ name: "amount", type: "u64" }],
     },
     {
       name: "depositDaily",
       accounts: [
-        { name: "user", isMut: true, isSigner: true },
         { name: "state", isMut: true, isSigner: false },
-        { name: "userState", isMut: true, isSigner: false },
+        { name: "user", isMut: true, isSigner: false },
         { name: "userToken", isMut: true, isSigner: false },
-        { name: "burnAccount", isMut: true, isSigner: false },
-        { name: "platformToken", isMut: true, isSigner: false },
-        { name: "dailyPrizeVault", isMut: true, isSigner: false },
-        { name: "reserveVault", isMut: true, isSigner: false },
-        { name: "reserveAuthority", isMut: false, isSigner: false },
+        { name: "burnVault", isMut: true, isSigner: false },
+        { name: "platformVault", isMut: true, isSigner: false },
+        { name: "poolVault", isMut: true, isSigner: false },
         { name: "referralVault", isMut: true, isSigner: false },
-        { name: "referralAuthority", isMut: false, isSigner: false },
         { name: "referrerToken", isMut: true, isSigner: false },
+        { name: "userReferrerBonus", isMut: true, isSigner: false },
+        { name: "signer", isMut: false, isSigner: true },
         { name: "tokenProgram", isMut: false, isSigner: false },
       ],
       args: [
@@ -101,160 +97,392 @@ const IDL = {
       ],
     },
     {
-      name: "claimVested",
-      accounts: [
-        { name: "user", isMut: true, isSigner: true },
-        { name: "state", isMut: true, isSigner: false },
-        { name: "userState", isMut: true, isSigner: false },
-        { name: "userToken", isMut: true, isSigner: false },
-        { name: "prizeVault", isMut: true, isSigner: false },
-        { name: "prizeAuthority", isMut: false, isSigner: false },
-        { name: "tokenProgram", isMut: false, isSigner: false },
-      ],
-      args: [],
-    },
-    {
-      name: "claimAirdrop",
-      accounts: [
-        { name: "user", isMut: true, isSigner: true },
-        { name: "userData", isMut: true, isSigner: false, seeds: ["user", { kind: "account", type: "publicKey" }] },
-        { name: "airdropVault", isMut: true, isSigner: false },
-        { name: "destToken", isMut: true, isSigner: false },
-        { name: "airdropAuth", isMut: false, isSigner: false },
-        { name: "tokenProgram", isMut: false, isSigner: false },
-        { name: "systemProgram", isMut: false, isSigner: false },
-      ],
-      args: [],
-    },
-    {
       name: "drawHourly",
       accounts: [
         { name: "state", isMut: true, isSigner: false },
         { name: "authority", isMut: false, isSigner: true },
+        { name: "poolVault", isMut: true, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
       ],
-      args: [],
+      args: [
+        {
+          name: "payouts",
+          type: { vec: { defined: "WinnerPayout" } },
+        },
+      ],
     },
     {
       name: "drawDaily",
       accounts: [
         { name: "state", isMut: true, isSigner: false },
         { name: "authority", isMut: false, isSigner: true },
+        { name: "poolVault", isMut: true, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [
+        {
+          name: "payouts",
+          type: { vec: { defined: "WinnerPayout" } },
+        },
+      ],
+    },
+    {
+      name: "claimFreeAirdrop",
+      accounts: [
+        { name: "user", isMut: true, isSigner: false },
+        { name: "airdropVault", isMut: true, isSigner: false },
+        { name: "destToken", isMut: true, isSigner: false },
+        { name: "airdropAuth", isMut: false, isSigner: false },
+        { name: "userSigner", isMut: false, isSigner: true },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [],
+    },
+    // ─── Staking ────────────────────────────────────────────────────────────
+    {
+      name: "initializeStaking",
+      accounts: [
+        { name: "authority", isMut: true, isSigner: true },
+        { name: "stakingState", isMut: true, isSigner: false },
+        { name: "tokenMint", isMut: false, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
+      ],
+      args: [
+        { name: "shortTermPool", type: "u64" },
+        { name: "longTermPool", type: "u64" },
+      ],
+    },
+    {
+      name: "stake",
+      accounts: [
+        { name: "user", isMut: true, isSigner: true },
+        { name: "stakingState", isMut: true, isSigner: false },
+        { name: "userStake", isMut: true, isSigner: false },
+        { name: "userToken", isMut: true, isSigner: false },
+        { name: "stakingVault", isMut: true, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
+      ],
+      args: [
+        { name: "stakeIndex", type: "u64" },
+        { name: "amount", type: "u64" },
+        { name: "stakeType", type: { defined: "StakeType" } },
+      ],
+    },
+    {
+      name: "releaseStake",
+      accounts: [
+        { name: "user", isMut: true, isSigner: true },
+        { name: "stakingState", isMut: true, isSigner: false },
+        { name: "userStake", isMut: true, isSigner: false },
+        { name: "userToken", isMut: true, isSigner: false },
+        { name: "stakingVault", isMut: true, isSigner: false },
+        { name: "stakingAuthority", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "stakeIndex", type: "u64" }],
+    },
+    {
+      name: "earlyWithdraw",
+      accounts: [
+        { name: "user", isMut: true, isSigner: true },
+        { name: "stakingState", isMut: true, isSigner: false },
+        { name: "userStake", isMut: true, isSigner: false },
+        { name: "userToken", isMut: true, isSigner: false },
+        { name: "stakingVault", isMut: true, isSigner: false },
+        { name: "stakingAuthority", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "stakeIndex", type: "u64" }],
+    },
+    // ─── Profit Airdrop ─────────────────────────────────────────────────────
+    {
+      name: "initializeAirdrop",
+      accounts: [
+        { name: "authority", isMut: true, isSigner: true },
+        { name: "airdropState", isMut: true, isSigner: false },
+        { name: "tokenMint", isMut: false, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "totalAirdrop", type: "u64" }],
+    },
+    {
+      name: "recordProfit",
+      accounts: [
+        { name: "user", isMut: true, isSigner: true },
+        { name: "airdropState", isMut: true, isSigner: false },
+        { name: "userAirdrop", isMut: true, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "profitAmount", type: "u64" }],
+    },
+    {
+      name: "claimProfitAirdrop",
+      accounts: [
+        { name: "user", isMut: true, isSigner: true },
+        { name: "airdropState", isMut: true, isSigner: false },
+        { name: "userAirdrop", isMut: true, isSigner: false },
+        { name: "userToken", isMut: true, isSigner: false },
+        { name: "airdropVault", isMut: true, isSigner: false },
+        { name: "airdropAuthority", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
       ],
       args: [],
     },
   ],
   accounts: [
     {
-      name: "ProtocolState",
+      name: "State",
       type: {
         kind: "struct",
         fields: [
           { name: "authority", type: "publicKey" },
           { name: "tokenMint", type: "publicKey" },
-          { name: "reserveMint", type: "publicKey" },
           { name: "platformWallet", type: "publicKey" },
-          { name: "hourlyPool", type: { defined: "PrizePool" } },
-          { name: "dailyPool", type: { defined: "PrizePool" } },
-          { name: "reserveBalance", type: "u64" },
-          { name: "referralPoolBalance", type: "u64" },
-          { name: "totalBurned", type: "u64" },
+          { name: "prePool", type: "u64" },
+          { name: "referralPool", type: "u64" },
+          { name: "hourlyPool", type: "u64" },
+          { name: "hourlyPlayers", type: "u32" },
+          { name: "dailyPool", type: "u64" },
+          { name: "dailyPlayers", type: "u32" },
+          { name: "burned", type: "u64" },
+          { name: "paused", type: "bool" },
+          { name: "bump", type: "u8" },
           { name: "lastHourlyDraw", type: "i64" },
           { name: "lastDailyDraw", type: "i64" },
-          { name: "paused", type: "bool" },
-          { name: "emergencyWithdrawn", type: "bool" },
-          { name: "lastHourlyWinningNumbers", type: { defined: "WinningNumbersStored" } },
-          { name: "lastDailyWinningNumbers", type: { defined: "WinningNumbersStored" } },
+          { name: "hourlyRollover", type: "u64" },
+          { name: "dailyRollover", type: "u64" },
+        ],
+      },
+    },
+    {
+      name: "UserData",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "owner", type: "publicKey" },
+          { name: "hourlyTickets", type: "u64" },
+          { name: "dailyTickets", type: "u64" },
+          { name: "lastTime", type: "i64" },
+          { name: "referrer", type: { option: "publicKey" } },
+          { name: "hasRefBonus", type: "bool" },
+          { name: "airdropClaimed", type: "bool" },
+          { name: "totalDeposit", type: "u64" },
+        ],
+      },
+    },
+    {
+      name: "StakingState",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "authority", type: "publicKey" },
+          { name: "tokenMint", type: "publicKey" },
+          { name: "shortTermPool", type: "u64" },
+          { name: "longTermPool", type: "u64" },
+          { name: "totalStakedShort", type: "u64" },
+          { name: "totalStakedLong", type: "u64" },
+          { name: "shortTermReleased", type: "u64" },
+          { name: "longTermReleased", type: "u64" },
           { name: "bump", type: "u8" },
         ],
       },
     },
     {
-      name: "UserState",
+      name: "UserStake",
       type: {
         kind: "struct",
         fields: [
           { name: "owner", type: "publicKey" },
-          { name: "referrer", type: { option: "publicKey" } },
-          { name: "hourlyTickets", type: "u64" },
-          { name: "dailyTickets", type: "u64" },
-          { name: "lastDepositTime", type: "i64" },
+          { name: "amount", type: "u64" },
+          { name: "reward", type: "u64" },
+          { name: "startTime", type: "i64" },
+          { name: "endTime", type: "i64" },
+          { name: "stakeType", type: { defined: "StakeType" } },
+          { name: "claimed", type: "bool" },
+          { name: "stakeIndex", type: "u64" },
+        ],
+      },
+    },
+    {
+      name: "AirdropState",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "authority", type: "publicKey" },
+          { name: "tokenMint", type: "publicKey" },
+          { name: "totalAirdrop", type: "u64" },
+          { name: "claimedAmount", type: "u64" },
+          { name: "remainingAmount", type: "u64" },
+          { name: "participantCount", type: "u32" },
+          { name: "claimedCount", type: "u32" },
+          { name: "bump", type: "u8" },
+        ],
+      },
+    },
+    {
+      name: "UserAirdrop",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "owner", type: "publicKey" },
+          { name: "hasParticipated", type: "bool" },
+          { name: "firstParticipationTime", type: "i64" },
+          { name: "totalProfit", type: "u64" },
+          { name: "eligibleAirdrop", type: "u64" },
+          { name: "hasClaimed", type: "bool" },
+          { name: "claimedAmount", type: "u64" },
+          { name: "claimTime", type: "i64" },
         ],
       },
     },
   ],
   types: [
     {
-      name: "PrizePool",
-      type: {
-        kind: "struct",
-        fields: [
-          { name: "totalAmount", type: "u64" },
-          { name: "participants", type: "u32" },
-        ],
-      },
-    },
-    {
-      name: "WinningNumbersStored",
-      type: {
-        kind: "struct",
-        fields: [
-          { name: "firstPrize", type: "u64" },
-          { name: "secondPrizes", type: { vec: "u64" } },
-          { name: "thirdPrizes", type: { vec: "u64" } },
-          { name: "luckyPrizes", type: { vec: "u64" } },
-          { name: "drawTime", type: "i64" },
-        ],
-      },
-    },
-    {
       name: "InitializeParams",
       type: {
         kind: "struct",
         fields: [
-          { name: "initialReserve", type: "u64" },
-          { name: "initialReferralPool", type: "u64" },
+          { name: "prePool", type: "u64" },
+          { name: "referralPool", type: "u64" },
         ],
+      },
+    },
+    {
+      name: "WinnerPayout",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "winner", type: "publicKey" },
+          { name: "amount", type: "u64" },
+        ],
+      },
+    },
+    {
+      name: "PoolType",
+      type: {
+        kind: "enum",
+        variants: [{ name: "Hourly" }, { name: "Daily" }],
+      },
+    },
+    {
+      name: "StakeType",
+      type: {
+        kind: "enum",
+        variants: [{ name: "ShortTerm" }, { name: "LongTerm" }],
       },
     },
   ],
   errors: [
-    { code: 6000, name: "BelowMinDeposit", msg: "Deposit amount below minimum" },
-    { code: 6001, name: "PoolLocked", msg: "Pool is locked" },
-    { code: 6002, name: "DrawTooEarly", msg: "Draw too early" },
-    { code: 6003, name: "NotEnoughParticipants", msg: "Not enough participants" },
-    { code: 6004, name: "NoClaimableAmount", msg: "No claimable amount" },
-    { code: 6005, name: "ContractPaused", msg: "Contract is paused" },
-    { code: 6006, name: "ExceedMaxDeposit", msg: "Exceeds maximum deposit per user" },
-    { code: 6007, name: "DepositTooFrequent", msg: "Deposit too frequent, please wait" },
-    { code: 6008, name: "InvalidAmount", msg: "Invalid amount" },
-    { code: 6009, name: "InsufficientBalance", msg: "Insufficient balance" },
+    { code: 6000, name: "Unauthorized", msg: "Unauthorized" },
+    { code: 6001, name: "ContractPaused", msg: "Contract is paused" },
+    { code: 6002, name: "InvalidAmount", msg: "Invalid amount" },
+    { code: 6003, name: "BelowMinDeposit", msg: "Below minimum deposit" },
+    { code: 6004, name: "DepositTooFrequent", msg: "Deposit too frequent" },
+    { code: 6005, name: "AlreadyClaimed", msg: "Already claimed" },
+    { code: 6006, name: "ExceedMaxDeposit", msg: "Exceed maximum deposit" },
+    { code: 6007, name: "PoolLocked", msg: "Pool is locked, draw in progress" },
+    { code: 6008, name: "DrawTooEarly", msg: "Draw too early" },
+    { code: 6009, name: "NotEnoughParticipants", msg: "Not enough participants" },
+    { code: 6010, name: "InsufficientPoolBalance", msg: "Insufficient pool balance" },
+    { code: 6011, name: "InvalidReferrer", msg: "Invalid referrer" },
   ],
 };
+
+// ─── PDA Helpers ─────────────────────────────────────────────────────────────
+
+function findStatePDA(programId) {
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("state")],
+    programId
+  );
+}
+
+function findUserDataPDA(userPubkey, programId) {
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("user"), userPubkey.toBuffer()],
+    programId
+  );
+}
+
+function findStakingStatePDA(programId) {
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("staking_state")],
+    programId
+  );
+}
+
+function findUserStakePDA(userPubkey, stakeIndex, programId) {
+  const idx = Buffer.alloc(8);
+  idx.writeBigUInt64LE(BigInt(stakeIndex));
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("user_stake"), userPubkey.toBuffer(), idx],
+    programId
+  );
+}
+
+function findStakingAuthorityPDA(programId) {
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("staking")],
+    programId
+  );
+}
+
+function findAirdropStatePDA(programId) {
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("airdrop_state")],
+    programId
+  );
+}
+
+function findUserAirdropPDA(userPubkey, programId) {
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("user_airdrop"), userPubkey.toBuffer()],
+    programId
+  );
+}
+
+function findAirdropAuthPDA(programId) {
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("airdrop")],
+    programId
+  );
+}
+
+// ─── SDK Class ───────────────────────────────────────────────────────────────
 
 class TykhePotSDK {
   constructor(connection, wallet, network = "devnet") {
     this.connection = connection;
     this.wallet = wallet;
     this.network = network;
-    this.config = CONFIG[network.toUpperCase()];
-    
+
     const provider = new anchor.AnchorProvider(
       connection,
       wallet,
       anchor.AnchorProvider.defaultOptions()
     );
-    
+
     this.program = new Program(
       IDL,
-      new web3.PublicKey(this.config.programId),
+      new web3.PublicKey(PROGRAM_ID),
       provider
     );
-    
-    this.tokenMint = new web3.PublicKey(this.config.tokenMint);
+
+    this.tokenMint = new web3.PublicKey(TOKEN_MINT);
+
+    // Vault addresses (must be set up at deployment)
+    this.burnVault = BURN_VAULT ? new web3.PublicKey(BURN_VAULT) : null;
+    this.platformVault = PLATFORM_VAULT ? new web3.PublicKey(PLATFORM_VAULT) : null;
+    this.hourlyPoolVault = HOURLY_POOL_VAULT ? new web3.PublicKey(HOURLY_POOL_VAULT) : null;
+    this.dailyPoolVault = DAILY_POOL_VAULT ? new web3.PublicKey(DAILY_POOL_VAULT) : null;
+    this.referralVault = REFERRAL_VAULT ? new web3.PublicKey(REFERRAL_VAULT) : null;
+    this.airdropVault = AIRDROP_VAULT ? new web3.PublicKey(AIRDROP_VAULT) : null;
+    this.stakingVault = STAKING_VAULT ? new web3.PublicKey(STAKING_VAULT) : null;
   }
 
-  // ===== 辅助方法 =====
-  
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
   formatAmount(amount) {
     return (Number(amount) / 1e9).toFixed(2);
   }
@@ -270,49 +498,43 @@ class TykhePotSDK {
     );
   }
 
-  async getOrCreateTokenAccount(owner) {
-    const ownerPubkey = new web3.PublicKey(owner);
-    const ata = await getAssociatedTokenAddress(this.tokenMint, ownerPubkey);
-    
-    try {
-      await getOrCreateAssociatedTokenAccount(
-        this.connection,
-        this.wallet.payer,
-        this.tokenMint,
-        ownerPubkey
-      );
-    } catch (e) {
-      // 账户已存在或创建失败
+  _requireVaults(...names) {
+    for (const name of names) {
+      if (!this[name]) {
+        throw new Error(
+          `Vault address not configured: ${name}. Set the corresponding env variable in config/contract.js`
+        );
+      }
     }
-    
-    return ata;
   }
 
-  // ===== 状态查询 =====
+  // ─── State Queries ─────────────────────────────────────────────────────────
 
   async getProtocolState() {
     try {
-      const [statePDA] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("state")],
-        this.program.programId
-      );
-      return await this.program.account.protocolState.fetch(statePDA);
+      const [statePDA] = findStatePDA(this.program.programId);
+      return await this.program.account.state.fetch(statePDA);
     } catch (e) {
       console.error("Failed to fetch protocol state:", e);
       return null;
     }
   }
 
-  async getUserState(userPublicKey) {
+  async getUserData(userPublicKey) {
     try {
-      const [userStatePDA] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("user"), new web3.PublicKey(userPublicKey).toBuffer()],
+      const [userPDA] = findUserDataPDA(
+        new web3.PublicKey(userPublicKey),
         this.program.programId
       );
-      return await this.program.account.userState.fetch(userStatePDA);
+      return await this.program.account.userData.fetch(userPDA);
     } catch (e) {
       return null;
     }
+  }
+
+  // Legacy alias
+  async getUserState(userPublicKey) {
+    return this.getUserData(userPublicKey);
   }
 
   async getTokenBalance(userPublicKey) {
@@ -325,20 +547,23 @@ class TykhePotSDK {
     }
   }
 
-  // 获取奖池统计
   async getPoolStats() {
     try {
       const state = await this.getProtocolState();
       if (!state) return null;
-
       return {
-        hourlyPool: state.hourlyPool.totalAmount.toNumber(),
-        dailyPool: state.dailyPool.totalAmount.toNumber(),
-        hourlyParticipants: state.hourlyPool.participants,
-        dailyParticipants: state.dailyPool.participants,
-        totalBurned: state.totalBurned.toNumber(),
-        reserveBalance: state.reserveBalance.toNumber(),
-        referralPoolBalance: state.referralPoolBalance.toNumber(),
+        hourlyPool: state.hourlyPool.toNumber(),
+        dailyPool: state.dailyPool.toNumber(),
+        hourlyRollover: state.hourlyRollover.toNumber(),
+        dailyRollover: state.dailyRollover.toNumber(),
+        // Both names for compatibility
+        hourlyPlayers: state.hourlyPlayers,
+        dailyPlayers: state.dailyPlayers,
+        hourlyParticipants: state.hourlyPlayers,
+        dailyParticipants: state.dailyPlayers,
+        totalBurned: state.burned.toNumber(),
+        referralPool: state.referralPool.toNumber(),
+        prePool: state.prePool.toNumber(),
         lastHourlyDraw: state.lastHourlyDraw.toNumber(),
         lastDailyDraw: state.lastDailyDraw.toNumber(),
         paused: state.paused,
@@ -349,259 +574,371 @@ class TykhePotSDK {
     }
   }
 
-  // ===== 核心交易 =====
+  async getStakingState() {
+    try {
+      const [stakingPDA] = findStakingStatePDA(this.program.programId);
+      return await this.program.account.stakingState.fetch(stakingPDA);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async getUserStake(userPublicKey, stakeIndex) {
+    try {
+      const [userStakePDA] = findUserStakePDA(
+        new web3.PublicKey(userPublicKey),
+        stakeIndex,
+        this.program.programId
+      );
+      return await this.program.account.userStake.fetch(userStakePDA);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async getUserAirdropData(userPublicKey) {
+    try {
+      const [userAirdropPDA] = findUserAirdropPDA(
+        new web3.PublicKey(userPublicKey),
+        this.program.programId
+      );
+      return await this.program.account.userAirdrop.fetch(userAirdropPDA);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // ─── Core Instructions ─────────────────────────────────────────────────────
 
   async depositHourly(amount) {
     try {
+      this._requireVaults("burnVault", "platformVault", "hourlyPoolVault");
       const user = this.wallet.publicKey;
       const amountBN = this.parseAmount(amount);
-
-      const [statePDA] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("state")],
-        this.program.programId
-      );
-
-      const [userStatePDA] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("user"), user.toBuffer()],
-        this.program.programId
-      );
-
-      const userToken = await this.getOrCreateTokenAccount(user);
-
-      // 获取状态以找到资金账户
-      const state = await this.getProtocolState();
-      if (!state) throw new Error("Protocol not initialized");
-
-      // 构建账户列表
-      const accounts = {
-        user,
-        state: statePDA,
-        userState: userStatePDA,
-        userToken,
-        burnAccount: state.tokenMint, // 需要替换为实际的burn账户
-        platformToken: state.platformWallet,
-        hourlyPrizeVault: state.tokenMint, // 需要替换为实际的prize vault
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: web3.SystemProgram.programId,
-      };
+      const [statePDA] = findStatePDA(this.program.programId);
+      const [userPDA] = findUserDataPDA(user, this.program.programId);
+      const userToken = await this.getTokenAccount(user);
 
       const tx = await this.program.methods
         .depositHourly(amountBN)
-        .accounts(accounts)
+        .accounts({
+          state: statePDA,
+          user: userPDA,
+          userToken,
+          burnVault: this.burnVault,
+          platformVault: this.platformVault,
+          poolVault: this.hourlyPoolVault,
+          signer: user,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
         .rpc();
 
       return { success: true, tx };
     } catch (error) {
-      console.error("Deposit hourly failed:", error);
+      console.error("depositHourly failed:", error);
       return { success: false, error: error.message };
     }
   }
 
   async depositDaily(amount, referrer = null) {
     try {
+      this._requireVaults(
+        "burnVault", "platformVault", "dailyPoolVault", "referralVault"
+      );
       const user = this.wallet.publicKey;
       const amountBN = this.parseAmount(amount);
-
-      const [statePDA] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("state")],
-        this.program.programId
-      );
-
-      const [userStatePDA] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("user"), user.toBuffer()],
-        this.program.programId
-      );
-
-      const [reserveAuthority] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("reserve")],
-        this.program.programId
-      );
-
-      const [referralAuthority] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("referral")],
-        this.program.programId
-      );
-
-      const userToken = await this.getOrCreateTokenAccount(user);
-
-      const state = await this.getProtocolState();
-      if (!state) throw new Error("Protocol not initialized");
+      const [statePDA] = findStatePDA(this.program.programId);
+      const [userPDA] = findUserDataPDA(user, this.program.programId);
+      const userToken = await this.getTokenAccount(user);
 
       const referrerKey = referrer ? new web3.PublicKey(referrer) : null;
-
-      // 需要获取referrer的token账户
-      let referrerToken = state.platformWallet; // 默认回退
-      if (referrerKey) {
-        referrerToken = await this.getTokenAccount(referrerKey);
-      }
-
-      const accounts = {
-        user,
-        state: statePDA,
-        userState: userStatePDA,
-        userToken,
-        burnAccount: state.tokenMint,
-        platformToken: state.platformWallet,
-        dailyPrizeVault: state.tokenMint,
-        reserveVault: state.reserveMint,
-        reserveAuthority,
-        referralVault: state.tokenMint,
-        referralAuthority,
-        referrerToken,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      };
+      // referrerToken and userReferrerBonus must be valid writable token accounts.
+      // When no referrer, use a dummy account (the tx still succeeds because
+      // the contract only reads these when referrer arg is Some).
+      const referrerToken = referrerKey
+        ? await this.getTokenAccount(referrerKey)
+        : userToken;
+      const userReferrerBonus = userToken; // user's own ATA as fallback
 
       const tx = await this.program.methods
         .depositDaily(amountBN, referrerKey)
-        .accounts(accounts)
+        .accounts({
+          state: statePDA,
+          user: userPDA,
+          userToken,
+          burnVault: this.burnVault,
+          platformVault: this.platformVault,
+          poolVault: this.dailyPoolVault,
+          referralVault: this.referralVault,
+          referrerToken,
+          userReferrerBonus,
+          signer: user,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
         .rpc();
 
       return { success: true, tx };
     } catch (error) {
-      console.error("Deposit daily failed:", error);
+      console.error("depositDaily failed:", error);
       return { success: false, error: error.message };
     }
   }
 
-  async claimVested() {
+  // Admin: draw hourly lottery with off-chain computed payouts
+  // payouts: [{ winner: PublicKey, amount: BN }, ...]
+  // winnerTokenAccounts: PublicKey[] (winner ATA list, same order as payouts)
+  async drawHourly(payouts, winnerTokenAccounts) {
     try {
+      this._requireVaults("hourlyPoolVault");
+      const [statePDA] = findStatePDA(this.program.programId);
+
+      const formattedPayouts = payouts.map((p) => ({
+        winner: new web3.PublicKey(p.winner),
+        amount: p.amount instanceof BN ? p.amount : new BN(p.amount),
+      }));
+
+      const remainingAccounts = winnerTokenAccounts.map((pk) => ({
+        pubkey: new web3.PublicKey(pk),
+        isWritable: true,
+        isSigner: false,
+      }));
+
+      const tx = await this.program.methods
+        .drawHourly(formattedPayouts)
+        .accounts({
+          state: statePDA,
+          authority: this.wallet.publicKey,
+          poolVault: this.hourlyPoolVault,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .remainingAccounts(remainingAccounts)
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("drawHourly failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Admin: draw daily lottery
+  async drawDaily(payouts, winnerTokenAccounts) {
+    try {
+      this._requireVaults("dailyPoolVault");
+      const [statePDA] = findStatePDA(this.program.programId);
+
+      const formattedPayouts = payouts.map((p) => ({
+        winner: new web3.PublicKey(p.winner),
+        amount: p.amount instanceof BN ? p.amount : new BN(p.amount),
+      }));
+
+      const remainingAccounts = winnerTokenAccounts.map((pk) => ({
+        pubkey: new web3.PublicKey(pk),
+        isWritable: true,
+        isSigner: false,
+      }));
+
+      const tx = await this.program.methods
+        .drawDaily(formattedPayouts)
+        .accounts({
+          state: statePDA,
+          authority: this.wallet.publicKey,
+          poolVault: this.dailyPoolVault,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .remainingAccounts(remainingAccounts)
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("drawDaily failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // ─── Free Airdrop (100 TPOT) ───────────────────────────────────────────────
+
+  async claimFreeAirdrop() {
+    try {
+      this._requireVaults("airdropVault");
       const user = this.wallet.publicKey;
-
-      const [statePDA] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("state")],
-        this.program.programId
-      );
-
-      const [userStatePDA] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("user"), user.toBuffer()],
-        this.program.programId
-      );
-
-      const [prizeAuthority] = web3.PublicKey.findProgramAddressSync(
-        [Buffer.from("prize")],
-        this.program.programId
-      );
-
-      const userToken = await this.getOrCreateTokenAccount(user);
-
-      const accounts = {
-        user,
-        state: statePDA,
-        userState: userStatePDA,
-        userToken,
-        prizeVault: this.tokenMint, // 需要替换为实际的prize vault
-        prizeAuthority,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      };
+      const [userPDA] = findUserDataPDA(user, this.program.programId);
+      const [airdropAuth] = findAirdropAuthPDA(this.program.programId);
+      const destToken = await this.getTokenAccount(user);
 
       const tx = await this.program.methods
-        .claimVested()
-        .accounts(accounts)
+        .claimFreeAirdrop()
+        .accounts({
+          user: userPDA,
+          airdropVault: this.airdropVault,
+          destToken,
+          airdropAuth,
+          userSigner: user,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
         .rpc();
 
       return { success: true, tx };
     } catch (error) {
-      console.error("Claim vested failed:", error);
+      console.error("claimFreeAirdrop failed:", error);
       return { success: false, error: error.message };
     }
   }
 
-  // ===== 质押相关 (Staking) =====
-
-  async stakeShortTerm(amount) {
-    console.log("Staking short term:", amount);
-    return { success: false, error: "Not implemented yet" };
-  }
-
-  async stakeLongTerm(amount) {
-    console.log("Staking long term:", amount);
-    return { success: false, error: "Not implemented yet" };
-  }
-
-  // ===== 空投相关 (Airdrop) =====
-
+  // Legacy alias kept for existing callers
   async claimAirdrop() {
-    if (!this.wallet.publicKey) {
-      throw new Error("Wallet not connected");
-    }
+    return this.claimFreeAirdrop();
+  }
 
+  // ─── Staking ───────────────────────────────────────────────────────────────
+
+  // stakeType: "ShortTerm" | "LongTerm"
+  async stake(amount, stakeType, stakeIndex) {
     try {
+      this._requireVaults("stakingVault");
+      const user = this.wallet.publicKey;
+      const amountBN = this.parseAmount(amount);
+      const stakeIndexBN = new BN(stakeIndex);
+      const [stakingStatePDA] = findStakingStatePDA(this.program.programId);
+      const [userStakePDA] = findUserStakePDA(user, stakeIndex, this.program.programId);
+      const userToken = await this.getTokenAccount(user);
+
+      const stakeTypeEnum =
+        stakeType === "LongTerm" ? { longTerm: {} } : { shortTerm: {} };
+
       const tx = await this.program.methods
-        .claimAirdrop()
+        .stake(stakeIndexBN, amountBN, stakeTypeEnum)
         .accounts({
-          user: this.wallet.publicKey,
-          userData: this.wallet.publicKey,
+          user,
+          stakingState: stakingStatePDA,
+          userStake: userStakePDA,
+          userToken,
+          stakingVault: this.stakingVault,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: web3.SystemProgram.programId,
         })
         .rpc();
 
       return { success: true, tx };
     } catch (error) {
-      console.error("Error claiming airdrop:", error);
-      throw error;
+      console.error("stake failed:", error);
+      return { success: false, error: error.message };
     }
   }
 
-  // 开奖：如果参与人数<10则退款，>=10则正常开奖
-  async drawHourly() {
-    if (!this.wallet.publicKey) {
-      throw new Error("Wallet not connected");
-    }
+  async stakeShortTerm(amount, stakeIndex = 0) {
+    return this.stake(amount, "ShortTerm", stakeIndex);
+  }
 
+  async stakeLongTerm(amount, stakeIndex = 0) {
+    return this.stake(amount, "LongTerm", stakeIndex);
+  }
+
+  async releaseStake(stakeIndex) {
     try {
+      this._requireVaults("stakingVault");
+      const user = this.wallet.publicKey;
+      const stakeIndexBN = new BN(stakeIndex);
+      const [stakingStatePDA] = findStakingStatePDA(this.program.programId);
+      const [userStakePDA] = findUserStakePDA(user, stakeIndex, this.program.programId);
+      const [stakingAuthority] = findStakingAuthorityPDA(this.program.programId);
+      const userToken = await this.getTokenAccount(user);
+
       const tx = await this.program.methods
-        .drawHourly()
+        .releaseStake(stakeIndexBN)
         .accounts({
-          authority: this.wallet.publicKey,
+          user,
+          stakingState: stakingStatePDA,
+          userStake: userStakePDA,
+          userToken,
+          stakingVault: this.stakingVault,
+          stakingAuthority,
+          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
 
       return { success: true, tx };
     } catch (error) {
-      console.error("Error drawing hourly:", error);
-      throw error;
+      console.error("releaseStake failed:", error);
+      return { success: false, error: error.message };
     }
   }
 
-  async drawDaily() {
-    if (!this.wallet.publicKey) {
-      throw new Error("Wallet not connected");
-    }
-
+  async earlyWithdraw(stakeIndex) {
     try {
+      this._requireVaults("stakingVault");
+      const user = this.wallet.publicKey;
+      const stakeIndexBN = new BN(stakeIndex);
+      const [stakingStatePDA] = findStakingStatePDA(this.program.programId);
+      const [userStakePDA] = findUserStakePDA(user, stakeIndex, this.program.programId);
+      const [stakingAuthority] = findStakingAuthorityPDA(this.program.programId);
+      const userToken = await this.getTokenAccount(user);
+
       const tx = await this.program.methods
-        .drawDaily()
+        .earlyWithdraw(stakeIndexBN)
         .accounts({
-          authority: this.wallet.publicKey,
+          user,
+          stakingState: stakingStatePDA,
+          userStake: userStakePDA,
+          userToken,
+          stakingVault: this.stakingVault,
+          stakingAuthority,
+          tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
 
       return { success: true, tx };
     } catch (error) {
-      console.error("Error drawing daily:", error);
-      throw error;
+      console.error("earlyWithdraw failed:", error);
+      return { success: false, error: error.message };
     }
   }
 
-  // ===== 监听事件 =====
+  // ─── Profit-Based Airdrop ─────────────────────────────────────────────────
 
-  onDeposit(callback) {
-    this.program.addEventListener("DepositEvent", (event) => {
-      callback(event);
-    });
+  async claimProfitAirdrop() {
+    try {
+      this._requireVaults("airdropVault");
+      const user = this.wallet.publicKey;
+      const [airdropStatePDA] = findAirdropStatePDA(this.program.programId);
+      const [userAirdropPDA] = findUserAirdropPDA(user, this.program.programId);
+      const [airdropAuthority] = findAirdropAuthPDA(this.program.programId);
+      const userToken = await this.getTokenAccount(user);
+
+      const tx = await this.program.methods
+        .claimProfitAirdrop()
+        .accounts({
+          user,
+          airdropState: airdropStatePDA,
+          userAirdrop: userAirdropPDA,
+          userToken,
+          airdropVault: this.airdropVault,
+          airdropAuthority,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("claimProfitAirdrop failed:", error);
+      return { success: false, error: error.message };
+    }
   }
 
-  onDraw(callback) {
-    this.program.addEventListener("DrawEvent", (event) => {
-      callback(event);
-    });
+  // ─── Event Listeners ──────────────────────────────────────────────────────
+
+  onDrawCompleted(callback) {
+    return this.program.addEventListener("DrawCompleted", callback);
   }
 
-  onClaim(callback) {
-    this.program.addEventListener("ClaimEvent", (event) => {
-      callback(event);
-    });
+  onReferralPoolExhausted(callback) {
+    return this.program.addEventListener("ReferralPoolExhausted", callback);
+  }
+
+  removeEventListener(listenerId) {
+    this.program.removeEventListener(listenerId);
   }
 }
 
 export default TykhePotSDK;
-export { CONFIG };
+export { IDL };

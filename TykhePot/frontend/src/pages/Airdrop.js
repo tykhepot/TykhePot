@@ -1,32 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
+import { useTykhePot } from '../hooks/useTykhePot';
 
 const Airdrop = () => {
-  const { wallet, sdk } = useApp();
+  const { wallet } = useApp();
   const { t } = useTranslation();
+  const { claimFreeAirdrop, getUserState } = useTykhePot();
   const [isClaiming, setIsClaiming] = useState(false);
   const [hasClaimed, setHasClaimed] = useState(false);
   const [error, setError] = useState('');
 
-  // 模拟数据 - 实际应该从合约读取
   const airdropData = {
-    totalAirdrop: '100,000,000', // 1亿TPOT空投池
-    airdropAmount: '100', // 每人100 TPOT
+    totalAirdrop: '100,000,000',
+    airdropAmount: '100',
   };
 
   useEffect(() => {
-    // 检查用户是否已领取 - 需要从合约读取
-    if (wallet.publicKey && sdk) {
+    if (wallet.publicKey) {
       checkClaimStatus();
     }
-  }, [wallet.publicKey, sdk]);
+  }, [wallet.publicKey]);
 
   const checkClaimStatus = async () => {
     try {
-      // TODO: 从合约读取用户是否已领取
-      // const status = await sdk.getUserAirdropStatus(wallet.publicKey);
-      // setHasClaimed(status.claimed);
+      const userData = await getUserState();
+      if (userData) {
+        setHasClaimed(userData.airdropClaimed);
+      }
     } catch (err) {
       console.error('Error checking airdrop status:', err);
     }
@@ -37,7 +38,6 @@ const Airdrop = () => {
       alert(t('walletNotConnected'));
       return;
     }
-    
     if (hasClaimed) {
       alert('You have already claimed your airdrop!');
       return;
@@ -46,20 +46,13 @@ const Airdrop = () => {
     setIsClaiming(true);
     setError('');
 
-    try {
-      // TODO: 调用合约的 claim_airdrop
-      // const result = await sdk.claimAirdrop();
-      
-      // 模拟成功
-      setTimeout(() => {
-        setHasClaimed(true);
-        setIsClaiming(false);
-        alert('🎉 Successfully claimed 100 TPOT!');
-      }, 2000);
-    } catch (err) {
-      console.error('Error claiming airdrop:', err);
-      setError(err.message || 'Failed to claim airdrop');
-      setIsClaiming(false);
+    const result = await claimFreeAirdrop();
+    setIsClaiming(false);
+    if (result.success) {
+      setHasClaimed(true);
+      alert('🎉 Successfully claimed 100 TPOT!');
+    } else {
+      setError(result.error || 'Failed to claim airdrop');
     }
   };
 

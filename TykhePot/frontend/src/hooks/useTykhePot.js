@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import TykhePotSDK, { CONFIG } from '../utils/tykhepot-sdk';
+import TykhePotSDK from '../utils/tykhepot-sdk';
 
 export const useTykhePot = () => {
   const { connection } = useConnection();
@@ -9,36 +9,31 @@ export const useTykhePot = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // 初始化 SDK
   useEffect(() => {
     if (wallet && connection) {
-      const tykhePotSdk = new TykhePotSDK(
+      setSdk(new TykhePotSDK(
         connection,
         wallet,
         process.env.REACT_APP_SOLANA_NETWORK || 'devnet'
-      );
-      setSdk(tykhePotSdk);
+      ));
     }
   }, [wallet, connection]);
 
-  // 获取用户余额
   const getBalance = useCallback(async () => {
     if (!sdk || !wallet.publicKey) return BigInt(0);
     try {
       return await sdk.getTokenBalance(wallet.publicKey);
     } catch (e) {
-      console.error("Get balance failed:", e);
+      console.error("getBalance failed:", e);
       return BigInt(0);
     }
   }, [sdk, wallet.publicKey]);
 
-  // 获取协议状态
   const getProtocolState = useCallback(async () => {
     if (!sdk) return null;
     setIsLoading(true);
     try {
-      const state = await sdk.getProtocolState();
-      return state;
+      return await sdk.getProtocolState();
     } catch (e) {
       setError(e.message);
       return null;
@@ -47,24 +42,21 @@ export const useTykhePot = () => {
     }
   }, [sdk]);
 
-  // 获取用户状态
   const getUserState = useCallback(async () => {
     if (!sdk || !wallet.publicKey) return null;
     try {
-      return await sdk.getUserState(wallet.publicKey);
+      return await sdk.getUserData(wallet.publicKey);
     } catch (e) {
       return null;
     }
   }, [sdk, wallet.publicKey]);
 
-  // 参与小时池
   const depositHourly = useCallback(async (amount) => {
     if (!sdk) return { success: false, error: "SDK not initialized" };
     setIsLoading(true);
     setError(null);
     try {
-      const result = await sdk.depositHourly(amount);
-      return result;
+      return await sdk.depositHourly(amount);
     } catch (e) {
       setError(e.message);
       return { success: false, error: e.message };
@@ -73,14 +65,12 @@ export const useTykhePot = () => {
     }
   }, [sdk]);
 
-  // 参与天池
   const depositDaily = useCallback(async (amount, referrer) => {
     if (!sdk) return { success: false, error: "SDK not initialized" };
     setIsLoading(true);
     setError(null);
     try {
-      const result = await sdk.depositDaily(amount, referrer);
-      return result;
+      return await sdk.depositDaily(amount, referrer);
     } catch (e) {
       setError(e.message);
       return { success: false, error: e.message };
@@ -89,14 +79,12 @@ export const useTykhePot = () => {
     }
   }, [sdk]);
 
-  // 领取奖金
-  const claimVested = useCallback(async () => {
+  const claimFreeAirdrop = useCallback(async () => {
     if (!sdk) return { success: false, error: "SDK not initialized" };
     setIsLoading(true);
     setError(null);
     try {
-      const result = await sdk.claimVested();
-      return result;
+      return await sdk.claimFreeAirdrop();
     } catch (e) {
       setError(e.message);
       return { success: false, error: e.message };
@@ -105,7 +93,90 @@ export const useTykhePot = () => {
     }
   }, [sdk]);
 
-  // 格式化金额
+  // stakeType: "ShortTerm" | "LongTerm"
+  const stake = useCallback(async (amount, stakeType, stakeIndex = 0) => {
+    if (!sdk) return { success: false, error: "SDK not initialized" };
+    setIsLoading(true);
+    setError(null);
+    try {
+      return await sdk.stake(amount, stakeType, stakeIndex);
+    } catch (e) {
+      setError(e.message);
+      return { success: false, error: e.message };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sdk]);
+
+  const releaseStake = useCallback(async (stakeIndex) => {
+    if (!sdk) return { success: false, error: "SDK not initialized" };
+    setIsLoading(true);
+    setError(null);
+    try {
+      return await sdk.releaseStake(stakeIndex);
+    } catch (e) {
+      setError(e.message);
+      return { success: false, error: e.message };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sdk]);
+
+  const earlyWithdraw = useCallback(async (stakeIndex) => {
+    if (!sdk) return { success: false, error: "SDK not initialized" };
+    setIsLoading(true);
+    setError(null);
+    try {
+      return await sdk.earlyWithdraw(stakeIndex);
+    } catch (e) {
+      setError(e.message);
+      return { success: false, error: e.message };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sdk]);
+
+  const claimProfitAirdrop = useCallback(async () => {
+    if (!sdk) return { success: false, error: "SDK not initialized" };
+    setIsLoading(true);
+    setError(null);
+    try {
+      return await sdk.claimProfitAirdrop();
+    } catch (e) {
+      setError(e.message);
+      return { success: false, error: e.message };
+    } finally {
+      setIsLoading(false);
+    }
+  }, [sdk]);
+
+  const getPoolStats = useCallback(async () => {
+    if (!sdk) return null;
+    try {
+      return await sdk.getPoolStats();
+    } catch (e) {
+      return null;
+    }
+  }, [sdk]);
+
+  const getUserStake = useCallback(async (stakeIndex) => {
+    if (!sdk || !wallet.publicKey) return null;
+    try {
+      return await sdk.getUserStake(wallet.publicKey, stakeIndex);
+    } catch (e) {
+      return null;
+    }
+  }, [sdk, wallet.publicKey]);
+
+  const getUserAirdropData = useCallback(async () => {
+    if (!sdk || !wallet.publicKey) return null;
+    try {
+      return await sdk.getUserAirdropData(wallet.publicKey);
+    } catch (e) {
+      return null;
+    }
+  }, [sdk, wallet.publicKey]);
+
   const formatAmount = useCallback((amount) => {
     if (!sdk) return "0";
     return sdk.formatAmount(amount);
@@ -120,9 +191,16 @@ export const useTykhePot = () => {
     getBalance,
     getProtocolState,
     getUserState,
+    getPoolStats,
     depositHourly,
     depositDaily,
-    claimVested,
+    claimFreeAirdrop,
+    stake,
+    releaseStake,
+    earlyWithdraw,
+    claimProfitAirdrop,
+    getUserStake,
+    getUserAirdropData,
     formatAmount,
   };
 };
