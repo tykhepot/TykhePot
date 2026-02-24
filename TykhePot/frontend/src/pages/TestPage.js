@@ -5,7 +5,7 @@ const TestPage = () => {
     <div style={{ padding: '50px', color: 'white', textAlign: 'center' }}>
       <h1>🎉 TykhePot 测试页面</h1>
       <p>如果您能看到这个页面，说明 React 工作正常！</p>
-      <p>合约地址: 5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b</p>
+      <p>合约地址: DmQCg32BsTmXeQHQYbMkRDFGxFx3eVx7X2Sq59TpfCT6</p>
     </div>
   );
 };

@@ -97,7 +97,57 @@ const Home = () => {
           </div>
           
           <div className="pools-grid">
-            {/* Hourly Pool */}
+            {/* Min30 Pool - First */}
+            <div className="pool-card pool-min30">
+              <div className="pool-badge-new">
+                <span>NEW</span>
+              </div>
+              
+              <div className="pool-header">
+                <h3>{t('min30Title') || '30分钟池'}</h3>
+              </div>
+              <p className="pool-desc">{t('min30Desc') || '更快节奏，30分钟开奖！'}</p>
+              
+              <div className="pool-stats">
+                <div className="pool-stat">
+                  <span className="pool-stat-value">
+                    {isLoading ? '...' : `${(stats.min30Pool / 1e6).toFixed(1)}M`}
+                  </span>
+                  <span className="pool-stat-label">{t('currentPool')}</span>
+                </div>
+                <div className="pool-stat">
+                  <span className="pool-stat-value">
+                    {stats.min30Participants || '--'}
+                  </span>
+                  <span className="pool-stat-label">{t('participants')}</span>
+                </div>
+              </div>
+              
+              <div className="pool-info">
+                <div className="pool-info-item">
+                  <span className="pool-info-label">{t('minDeposit')}</span>
+                  <span className="pool-info-value">500 TPOT</span>
+                </div>
+                <div className="pool-info-item">
+                  <span className="pool-info-label">{t('minParticipants')}</span>
+                  <span className="pool-info-value">12</span>
+                </div>
+                <div className="pool-info-item">
+                  <span className="pool-info-label">{t('drawRule')}</span>
+                  <span className="pool-info-value">&lt;12: refund</span>
+                </div>
+                <div className="pool-info-item">
+                  <span className="pool-info-label">{t('nextDraw')}</span>
+                  <span className="pool-info-value">{formatTime(stats.min30NextDraw)}</span>
+                </div>
+              </div>
+              
+              <Link to="/min30" className="btn btn-primary" style={{ width: '100%' }}>
+                {t('joinNowBtn')}
+              </Link>
+            </div>
+
+            {/* Hourly Pool - Second */}
             <div className="pool-card pool-hourly">
               <div className="pool-header">
                 <h3>{t('hourlyTitle')}</h3>
@@ -126,11 +176,11 @@ const Home = () => {
                 </div>
                 <div className="pool-info-item">
                   <span className="pool-info-label">{t('minParticipants')}</span>
-                  <span className="pool-info-value">10</span>
+                  <span className="pool-info-value">12</span>
                 </div>
                 <div className="pool-info-item">
                   <span className="pool-info-label">{t('drawRule')}</span>
-                  <span className="pool-info-value">&lt;10: refund</span>
+                  <span className="pool-info-value">&lt;12: refund</span>
                 </div>
                 <div className="pool-info-item">
                   <span className="pool-info-label">{t('nextDraw')}</span>
@@ -143,7 +193,7 @@ const Home = () => {
               </Link>
             </div>
 
-            {/* Daily Pool */}
+            {/* Daily Pool - Third */}
             <div className="pool-card pool-daily">
               <div className="pool-badge-featured">
                 <span>{language === 'en' ? 'Most Popular' : '最热门'}</span>
@@ -176,11 +226,11 @@ const Home = () => {
                 </div>
                 <div className="pool-info-item">
                   <span className="pool-info-label">{t('minParticipants')}</span>
-                  <span className="pool-info-value">10</span>
+                  <span className="pool-info-value">12</span>
                 </div>
                 <div className="pool-info-item">
                   <span className="pool-info-label">{t('drawRule')}</span>
-                  <span className="pool-info-value">&lt;10: refund</span>
+                  <span className="pool-info-value">&lt;12: refund</span>
                 </div>
                 <div className="pool-info-item">
                   <span className="pool-info-label">{t('nextDraw')}</span>

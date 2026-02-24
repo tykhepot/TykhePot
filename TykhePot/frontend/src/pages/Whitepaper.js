@@ -43,12 +43,13 @@ The Referral Pool ensures sustainable growth by rewarding users who bring new pa
         {
           title: '3. Pool Structure & Game Rules',
           heading: '3.1 Pool Types',
-          content: `TykhePot operates two parallel lottery pools to accommodate different user preferences and risk tolerances:`,
+          content: `TykhePot operates three parallel lottery pools to accommodate different user preferences and risk tolerances:`,
           items: [
-            { label: 'Hourly Pool', value: '', desc: 'Draws every hour. Minimum deposit: 200 TPOT. Minimum 10 players required to draw.' },
-            { label: 'Daily Pool', value: '', desc: 'Draws at UTC midnight. Minimum deposit: 100 TPOT. Minimum 10 players required to draw.' },
+            { label: 'Hourly Pool', value: '', desc: 'Draws every hour. Minimum deposit: 200 TPOT. Minimum 12 players required to draw.' },
+            { label: 'Min30 Pool', value: '', desc: 'Draws every 30 minutes! Minimum deposit: 500 TPOT. Minimum 12 players required to draw.' },
+            { label: 'Daily Pool', value: '', desc: 'Draws at UTC midnight. Minimum deposit: 100 TPOT. Minimum 12 players required to draw.' },
           ],
-          content2: `The dual-pool structure allows users to choose their preferred frequency and risk level. Hourly pools offer quicker results but smaller prizes, while daily pools offer larger accumulated prizes.`,
+          content2: `The multi-pool structure allows users to choose their preferred frequency and risk level. Min30 offers lightning-fast results, Hourly pools offer quick prizes, while Daily pools offer the largest accumulated prizes.`,
           heading: '3.2 Why 10 Players Minimum?',
           content3: `The 10-player threshold serves critical purposes:
 
@@ -70,7 +71,7 @@ The Referral Pool ensures sustainable growth by rewarding users who bring new pa
         {
           title: '4. Prize Distribution Mechanism',
           heading: '4.1 Distribution Formula',
-          content: `When a draw succeeds (≥10 players), the total prize pool is distributed as follows:`,
+          content: `When a draw succeeds (≥12 players), the total prize pool is distributed as follows:`,
           items: [
             { label: 'Platform Fee', value: '2%', desc: 'Protocol sustainability' },
             { label: 'Burn', value: '3%', desc: 'Permanent token destruction' },
@@ -97,7 +98,7 @@ The Referral Pool ensures sustainable growth by rewarding users who bring new pa
 
 4. **Roll Over (5%)**: The carryover creates progressive jackpots that grow over time, increasing excitement and attracting more participants.`,
           heading: '4.4 Failed Draw ( <10 Players)',
-          content4: `When fewer than 10 players participate:
+          content4: `When fewer than 12 players participate:
 
 1. **Deposits Return**: All deposits return to the reserve pool
 2. **Referral Rewards**: Unclaimed referral rewards return to the referral pool
@@ -117,7 +118,7 @@ This mechanism protects users when participation is low while ensuring the proto
           heading: '5.2 Why Pending Until Draw?',
           content2: `Referral rewards are held pending and only distributed when a draw succeeds:
 
-1. **Protection Against Failed Draws**: If a draw fails (<10 players), deposits return to users. By the same logic, referral rewards should not be paid.
+1. **Protection Against Failed Draws**: If a draw fails (<12 players), deposits return to users. By the same logic, referral rewards should not be paid.
 
 2. **Pool Integrity**: Referral rewards come from the referral pool (20% of total supply). Holding them pending ensures they're only used when the pool actually pays out.
 
@@ -163,7 +164,7 @@ This prevents abuse while giving every legitimate user a chance to experience th
           items: [
             { label: 'Emergency Pause', value: 'Admin can pause deposits during emergencies' },
             { label: 'Maximum Deposit', value: '1,000,000 TPOT per transaction' },
-            { label: 'Minimum Deposit', value: '200 TPOT (Hourly) / 100 TPOT (Daily)' },
+            { label: 'Minimum Deposit', value: '500 TPOT (Min30) / 200 TPOT (Hourly) / 100 TPOT (Daily)' },
             { label: 'Time Lock', value: '60-second window between operations' },
             { label: 'On-Chain Verification', value: 'All results verifiable on Solana blockchain' },
           ],
@@ -271,14 +272,15 @@ Please carefully consider your financial situation and risk tolerance before par
           heading: '3.1 奖池类型',
           content: `TykhePot 运营两个平行彩票池以满足不同用户的偏好和风险承受能力:`,
           items: [
-            { label: '小时池', value: '', desc: '每小时开奖。最低投入：200 TPOT。最少10人参与开奖。' },
-            { label: '天池', value: '', desc: 'UTC午夜开奖。最低投入：100 TPOT。最少10人参与开奖。' },
+            { label: '小时池', value: '', desc: '每小时开奖。最低投入：200 TPOT。最少12人参与开奖。' },
+            { label: '30分池', value: '', desc: '30分钟开奖！最低投入：500 TPOT。最少12人参与开奖。' },
+            { label: '天池', value: '', desc: 'UTC午夜开奖。最低投入：100 TPOT。最少12人参与开奖。' },
           ],
           content2: `双奖池结构允许用户选择偏好的频率和风险等级。小时池提供更快的结果但奖金较小，而天池提供更大累积奖金。`,
-          heading: '3.2 为什么设定10人门槛？',
-          content3: `10人门槛具有关键作用:
+          heading: '3.2 为什么设定12人门槛？',
+          content3: `12人门槛具有关键作用:
 
-1. **统计显著性**: 参与者少于10人时，中奖概率会极度偏斜。单个大额存款者可能会主导奖池，违背公平彩票的初衷。
+1. **统计显著性**: 参与者少于12人时，中奖概率会极度偏斜。单个大额存款者可能会主导奖池，违背公平彩票的初衷。
 
 2. **奖金分配**: 奖金结构（30%/20%/15%/10%/20%分布在不同获奖层级）需要足够多的参与者才能产生有意义的奖金差异。
 
@@ -296,7 +298,7 @@ Please carefully consider your financial situation and risk tolerance before par
         {
           title: '4. 奖金分配机制',
           heading: '4.1 分配公式',
-          content: `当开奖成功（≥10人）时，总奖池分配如下:`,
+          content: `当开奖成功（≥12人）时，总奖池分配如下:`,
           items: [
             { label: '平台费', value: '2%', desc: '协议可持续性' },
             { label: '销毁', value: '3%', desc: '永久代币销毁' },
@@ -322,8 +324,8 @@ Please carefully consider your financial situation and risk tolerance before par
 3. **普惠奖(20%)**: 每位参与者都能获得奖励，确保无人空手而归。这种"感谢参与"创造积极的用户情绪。
 
 4. **滚存(5%)**: 累计创造持续增长的头奖，增加吸引力并吸引更多参与者。`,
-          heading: '4.4 开奖失败（<10人）',
-          content4: `当参与者少于10人时:
+          heading: '4.4 开奖失败（<12人）',
+          content4: `当参与者少于12人时:
 
 1. **存款返还**: 所有存款返回储备池
 2. **推荐奖励**: 未发放的推荐奖励返回推荐池
@@ -343,7 +345,7 @@ Please carefully consider your financial situation and risk tolerance before par
           heading: '5.2 为何pending直到开奖？',
           content2: `推荐奖励暂时持有，仅在开奖成功时发放:
 
-1. **保护开奖失败**: 如果开奖失败（<10人），存款返还给用户。同理，推荐奖励也不应发放。
+1. **保护开奖失败**: 如果开奖失败（<12人），存款返还给用户。同理，推荐奖励也不应发放。
 
 2. **奖池完整性**: 推荐奖励来自推荐池（总供应量的20%）。持有pending确保仅在奖池实际派发时才被使用。
 

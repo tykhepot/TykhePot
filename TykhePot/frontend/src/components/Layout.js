@@ -19,6 +19,7 @@ const Layout = ({ children }) => {
   const navItems = [
     { path: '/', label: t('home'), icon: '🏠' },
     { path: '/hourly', label: t('hourlyPool'), icon: '⏰' },
+    { path: '/min30', label: t('min30Pool'), icon: '⏱️' },
     { path: '/daily', label: t('dailyPool'), icon: '🌙' },
     { path: '/staking', label: t('staking'), icon: '💎' },
     { path: '/airdrop', label: t('airdrop'), icon: '🎁' },

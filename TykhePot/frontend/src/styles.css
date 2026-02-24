@@ -404,6 +404,24 @@ input::placeholder {
   color: var(--color-error);
 }
 
+.pool-badge-new {
+  position: absolute;
+  top: -10px;
+  right: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  animation: pulse 2s infinite;
+}
+
+.pool-min30 {
+  border-color: oklch(65% 0.15 250 / 0.3);
+}
+
 /* ================================
    ANIMATIONS
    Micro-interactions per SuperDesign
@@ -612,12 +630,34 @@ input::placeholder {
   border-radius: var(--radius-xl);
   padding: var(--space-6);
   transition: all var(--transition-base);
+  min-width: 0;
+  width: 100%;
 }
 
 .pool-card:hover {
   transform: translateY(-4px);
   border-color: var(--color-gold);
   box-shadow: var(--shadow-gold);
+}
+
+/* Pools Grid - Fully responsive auto-fit */
+.pools-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-6);
+  width: 100%;
+}
+
+@media (max-width: 1100px) {
+  .pools-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 700px) {
+  .pools-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Stats */

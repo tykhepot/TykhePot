@@ -69,3 +69,13 @@ deposit_daily_with_airdrop(amount):
 - 前端: `https://www.tykhepot.io`
 - GitHub: `github.com/tykhepot/TykhePot`
 - 规则文档: `TykhePot/RULES.md`
+
+## 🔴 当前阻塞 (2026-02-24)
+- Devnet水龙头受限，需要2天后恢复
+- 合约需要升级但SOL不足 (需要2.6 SOL)
+- State账户未初始化，前端报错
+
+## 📋 网站优化任务
+- 优化钱包连接UI
+- 添加加载状态提示
+- 改进错误处理

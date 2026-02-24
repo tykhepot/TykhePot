@@ -21,7 +21,7 @@ pub const MIN30_MIN: u64 = 500_000_000_000;  // 30分钟池最低500 TPOT
 pub const DAY_MIN: u64 = 100_000_000_000;
 pub const FREE_AIRDROP: u64 = 100_000_000_000; // 100 TPOT
 pub const MAX_DEPOSIT: u64 = 1_000_000_000_000_000; // 1 million TPOT
-pub const MIN_PARTICIPANTS: u32 = 10; // Minimum participants to draw
+pub const MIN_PARTICIPANTS: u32 = 12; // Minimum participants to draw
 pub const TIME_TOLERANCE: i64 = 60; // 60 seconds tolerance
 pub const LOCK_PERIOD: i64 = 300; // 5 minutes lock before draw
 
@@ -179,7 +179,8 @@ pub struct WithdrawFee<'info> {
 #[derive(Accounts)]
 pub struct DepositHourly<'info> {
     #[account(mut)] pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
+    #[account(mut, seeds = [b"user", signer.key().as_ref()], bump)]
+    pub user: Account<'info, UserData>,
     #[account(mut)] pub user_token: Account<'info, TokenAccount>,
     #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
@@ -191,7 +192,8 @@ pub struct DepositHourly<'info> {
 #[derive(Accounts)]
 pub struct DepositMin30<'info> {
     #[account(mut)] pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
+    #[account(mut, seeds = [b"user", signer.key().as_ref()], bump)]
+    pub user: Account<'info, UserData>,
     #[account(mut)] pub user_token: Account<'info, TokenAccount>,
     #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
@@ -203,7 +205,8 @@ pub struct DepositMin30<'info> {
 #[derive(Accounts)]
 pub struct DepositDaily<'info> {
     #[account(mut)] pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)] pub user: Account<'info, UserData>,
+    #[account(mut, seeds = [b"user", signer.key().as_ref()], bump)]
+    pub user: Account<'info, UserData>,
     #[account(mut)] pub user_token: Account<'info, TokenAccount>,
     #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
@@ -216,11 +219,22 @@ pub struct DepositDaily<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitUser<'info> {
+    #[account(init, payer = user_signer, space = 8 + 200, seeds = [b"user", user_signer.key().as_ref()], bump)]
+    pub user: Account<'info, UserData>,
+    #[account(mut)]
+    pub user_signer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct ClaimAirdrop<'info> {
-    #[account(mut, seeds = [b"user", user.key().as_ref()], bump)]
+    #[account(init_if_needed, payer = user_signer, space = 8 + 200, seeds = [b"user", user_signer.key().as_ref()], bump)]
     pub user: Account<'info, UserData>,
     #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut)]
     pub user_signer: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -743,15 +757,56 @@ pub mod royalpot {
         Ok(())
     }
 
+    // ============ 初始化用户账户 ============
+    pub fn init_user(ctx: Context<InitUser>) -> Result<()> {
+        let user = &mut ctx.accounts.user;
+        user.owner = ctx.accounts.user_signer.key();
+        user.hourly_tickets = 0;
+        user.min30_tickets = 0;
+        user.daily_tickets = 0;
+        user.hourly_ticket_start = 0;
+        user.hourly_ticket_end = 0;
+        user.min30_ticket_start = 0;
+        user.min30_ticket_end = 0;
+        user.daily_ticket_start = 0;
+        user.daily_ticket_end = 0;
+        user.last_time = 0;
+        user.referrer = None;
+        user.has_ref_bonus = false;
+        user.airdrop_registered = false;
+        user.airdrop_played = false;
+        Ok(())
+    }
+
     // ============ 领取空投（注册资格）============
     // 点击按钮只是注册获取游戏资格
     // 用户需要到天池使用"免费投注"参与游戏
     pub fn claim_airdrop(ctx: Context<ClaimAirdrop>) -> Result<()> {
         let user = &mut ctx.accounts.user;
-        require!(!user.airdrop_registered, ErrorCode::AlreadyClaimed);
-
-        // 记录用户已注册获取空投资格
-        user.airdrop_registered = true;
+        
+        // 如果是新账户，初始化所有字段
+        if user.owner == Pubkey::default() {
+            user.owner = ctx.accounts.user_signer.key();
+            user.hourly_tickets = 0;
+            user.min30_tickets = 0;
+            user.daily_tickets = 0;
+            user.hourly_ticket_start = 0;
+            user.hourly_ticket_end = 0;
+            user.min30_ticket_start = 0;
+            user.min30_ticket_end = 0;
+            user.daily_ticket_start = 0;
+            user.daily_ticket_end = 0;
+            user.last_time = 0;
+            user.referrer = None;
+            user.has_ref_bonus = false;
+            user.airdrop_registered = true;
+            user.airdrop_played = false;
+            user.total_deposit = 0;
+        } else {
+            // 已存在的账户，只更新注册状态
+            require!(!user.airdrop_registered, ErrorCode::AlreadyClaimed);
+            user.airdrop_registered = true;
+        }
         
         // State 中增加已注册人数
         let state = &mut ctx.accounts.state;

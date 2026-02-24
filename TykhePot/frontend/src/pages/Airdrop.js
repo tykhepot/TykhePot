@@ -37,33 +37,65 @@ const Airdrop = () => {
       alert(t('walletNotConnected'));
       return;
     }
-    
-    if (hasClaimed) {
-      alert(language === 'en' 
-        ? 'You have already registered! Go to Daily Pool for free bet.' 
-        : '您已注册！请去每日奖池使用免费投注。');
-      return;
-    }
 
     setIsClaiming(true);
     setError('');
 
+    console.log("Starting claim airdrop...");
+
+    // 添加超时处理
+    const timeoutId = setTimeout(() => {
+      setIsClaiming(false);
+      console.log("Transaction timeout");
+      alert(language === 'en' 
+        ? 'Transaction timeout. Please try again.' 
+        : '交易超时，请重试。');
+    }, 60000);
+
     try {
+      console.log("Calling sdk.claimAirdrop()...");
       const result = await sdk.claimAirdrop();
+      clearTimeout(timeoutId);
+      console.log("Claim result:", result);
       
-      if (result.success) {
+      if (result && result.success) {
         setHasClaimed(true);
+        setIsClaiming(false);
         alert(language === 'en' 
           ? '🎉 Registered! Now go to Daily Pool and use FREE BET to join the game!' 
           : '🎉 注册成功！现在去每日奖池使用"免费投注"参与游戏！');
       } else {
-        setError(result.error || (language === 'en' ? 'Failed to register' : '注册失败'));
+        setIsClaiming(false);
+        setError(result?.error || (language === 'en' ? 'Failed to register' : '注册失败'));
       }
     } catch (err) {
+      clearTimeout(timeoutId);
+      setIsClaiming(false);
       console.error('Error claiming airdrop:', err);
-      setError(err.message || (language === 'en' ? 'Failed to claim airdrop' : '领取空投失败'));
+      console.error('Error message:', err.message);
+      console.error('Error stack:', err.stack);
+      // 检查各种可能的错误
+      if (err.message && (
+        err.message.includes('already in use') || 
+        err.message.includes('account already exists')
+      )) {
+        // 账户已存在，说明已注册
+        setHasClaimed(true);
+        alert(language === 'en' 
+          ? 'You are already registered! Go to Daily Pool for free bet.' 
+          : '您已注册！请去每日奖池使用免费投注。');
+      } else if (err.message && (
+        err.message.includes('Missing signature') ||
+        err.message.includes('signature verification')
+      )) {
+        // 账户不存在，需要先存款
+        alert(language === 'en' 
+          ? 'Please deposit first to create your account, then come back to claim airdrop!' 
+          : '请先去存款创建账户，然后再回来领取空投！');
+      } else {
+        setError(err.message || (language === 'en' ? 'Failed to register' : '注册失败'));
+      }
     }
-    setIsClaiming(false);
   };
 
   return (
