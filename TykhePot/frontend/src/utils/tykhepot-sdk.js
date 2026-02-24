@@ -117,6 +117,10 @@ const IDL = {
           name: "payouts",
           type: { vec: { defined: "WinnerPayout" } },
         },
+        {
+          name: "drawSeed",
+          type: { array: ["u8", 32] },
+        },
       ],
     },
     {
@@ -131,6 +135,10 @@ const IDL = {
         {
           name: "payouts",
           type: { vec: { defined: "WinnerPayout" } },
+        },
+        {
+          name: "drawSeed",
+          type: { array: ["u8", 32] },
         },
       ],
     },
@@ -382,6 +390,30 @@ const IDL = {
       },
     },
   ],
+  events: [
+    {
+      name: "DrawCompleted",
+      fields: [
+        { name: "poolType", type: { defined: "PoolType" }, index: false },
+        { name: "totalPool", type: "u64", index: false },
+        { name: "distributed", type: "u64", index: false },
+        { name: "rollover", type: "u64", index: false },
+        { name: "winnerCount", type: "u32", index: false },
+        { name: "timestamp", type: "i64", index: false },
+        { name: "drawSeed", type: { array: ["u8", 32] }, index: false },
+      ],
+    },
+    {
+      name: "ReferralPoolExhausted",
+      fields: [
+        { name: "referrer", type: "publicKey", index: false },
+        { name: "depositor", type: "publicKey", index: false },
+        { name: "requested", type: "u64", index: false },
+        { name: "available", type: "u64", index: false },
+        { name: "timestamp", type: "i64", index: false },
+      ],
+    },
+  ],
   errors: [
     { code: 6000, name: "Unauthorized", msg: "Unauthorized" },
     { code: 6001, name: "ContractPaused", msg: "Contract is paused" },
@@ -460,6 +492,30 @@ function findAirdropAuthPDA(programId) {
     [Buffer.from("airdrop")],
     programId
   );
+}
+
+// ─── Draw Seed Utilities ─────────────────────────────────────────────────────
+
+/**
+ * Generate a verifiable draw seed from a recent block hash.
+ *
+ * The backend calls this AFTER the lottery period closes to get an unpredictable seed
+ * that was not known when tickets were sold. The seed is emitted on-chain in the
+ * DrawCompleted event, allowing anyone to re-run the winner-selection algorithm and
+ * verify the results are correct.
+ *
+ * Usage (backend/admin):
+ *   const seed = await generateDrawSeed(connection);
+ *   await sdk.drawHourly(payouts, winnerTokenAccounts, seed);
+ *
+ * @param {Connection} connection - Solana connection
+ * @returns {Uint8Array} 32-byte seed derived from the most recent block hash
+ */
+async function generateDrawSeed(connection) {
+  const { blockhash } = await connection.getLatestBlockhash("finalized");
+  // Decode base58 blockhash to bytes (blockhash is a base58-encoded 32-byte value)
+  const decoded = web3.PublicKey.fromBase58(blockhash).toBytes();
+  return decoded; // Uint8Array[32]
 }
 
 // ─── SDK Class ───────────────────────────────────────────────────────────────
@@ -712,9 +768,13 @@ class TykhePotSDK {
   // Admin: draw hourly lottery with off-chain computed payouts
   // payouts: [{ winner: PublicKey, amount: BN }, ...]
   // winnerTokenAccounts: PublicKey[] (winner ATA list, same order as payouts)
-  async drawHourly(payouts, winnerTokenAccounts) {
+  // drawSeed: Uint8Array | number[] (32 bytes) — use generateDrawSeed(connection) to produce
+  async drawHourly(payouts, winnerTokenAccounts, drawSeed) {
     try {
       this._requireVaults("hourlyPoolVault");
+      if (!drawSeed || drawSeed.length !== 32) {
+        throw new Error("drawSeed must be a 32-byte Uint8Array. Use generateDrawSeed(connection).");
+      }
       const [statePDA] = findStatePDA(this.program.programId);
 
       const formattedPayouts = payouts.map((p) => ({
@@ -728,8 +788,11 @@ class TykhePotSDK {
         isSigner: false,
       }));
 
+      // Anchor expects fixed-size array as number[]
+      const seedArray = Array.from(drawSeed);
+
       const tx = await this.program.methods
-        .drawHourly(formattedPayouts)
+        .drawHourly(formattedPayouts, seedArray)
         .accounts({
           state: statePDA,
           authority: this.wallet.publicKey,
@@ -747,9 +810,13 @@ class TykhePotSDK {
   }
 
   // Admin: draw daily lottery
-  async drawDaily(payouts, winnerTokenAccounts) {
+  // drawSeed: Uint8Array | number[] (32 bytes) — use generateDrawSeed(connection) to produce
+  async drawDaily(payouts, winnerTokenAccounts, drawSeed) {
     try {
       this._requireVaults("dailyPoolVault");
+      if (!drawSeed || drawSeed.length !== 32) {
+        throw new Error("drawSeed must be a 32-byte Uint8Array. Use generateDrawSeed(connection).");
+      }
       const [statePDA] = findStatePDA(this.program.programId);
 
       const formattedPayouts = payouts.map((p) => ({
@@ -763,8 +830,11 @@ class TykhePotSDK {
         isSigner: false,
       }));
 
+      // Anchor expects fixed-size array as number[]
+      const seedArray = Array.from(drawSeed);
+
       const tx = await this.program.methods
-        .drawDaily(formattedPayouts)
+        .drawDaily(formattedPayouts, seedArray)
         .accounts({
           state: statePDA,
           authority: this.wallet.publicKey,
@@ -1028,4 +1098,4 @@ class TykhePotSDK {
 }
 
 export default TykhePotSDK;
-export { IDL };
+export { IDL, generateDrawSeed };

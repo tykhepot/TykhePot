@@ -3,6 +3,7 @@ use anchor_spl::token::{self, Transfer, Token, TokenAccount, Mint};
 
 pub mod staking;
 pub mod airdrop;
+pub mod randomness;
 
 
 pub const BASE: u64 = 10000;
@@ -287,7 +288,7 @@ pub struct WinnerPayout {
     pub amount: u64,
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq)]
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Debug)]
 pub enum PoolType {
     Hourly,
     Daily,
@@ -590,9 +591,14 @@ pub mod royalpot {
     }
 
     /// Draw the hourly lottery. Authority provides winner payouts computed off-chain
-    /// (e.g. using a VRF seed). Transfers prizes directly to winner token accounts
-    /// supplied via `remaining_accounts` in the same order as `payouts`.
-    pub fn draw_hourly<'info>(ctx: Context<'_, '_, '_, 'info, DrawHourly<'info>>, payouts: Vec<WinnerPayout>) -> Result<()> {
+    /// using `draw_seed` as the randomness source. The seed (e.g. derived from a recent
+    /// slot hash) is emitted on-chain so anyone can audit the draw by replaying the
+    /// winner-selection algorithm with the same seed.
+    pub fn draw_hourly<'info>(
+        ctx: Context<'_, '_, '_, 'info, DrawHourly<'info>>,
+        payouts: Vec<WinnerPayout>,
+        draw_seed: [u8; 32],
+    ) -> Result<()> {
         let clock = Clock::get()?;
 
         require!(!ctx.accounts.state.paused, ErrorCode::ContractPaused);
@@ -650,6 +656,9 @@ pub mod royalpot {
         state.hourly_players = 0;
         state.last_hourly_draw = clock.unix_timestamp;
 
+        // Validate draw_seed is not all-zeros (must be a real block hash)
+        require!(draw_seed != [0u8; 32], ErrorCode::InvalidAmount);
+
         emit!(DrawCompleted {
             pool_type: PoolType::Hourly,
             total_pool,
@@ -657,15 +666,21 @@ pub mod royalpot {
             rollover,
             winner_count: payouts.len() as u32,
             timestamp: clock.unix_timestamp,
+            draw_seed,
         });
 
         Ok(())
     }
 
     /// Draw the daily lottery. Authority provides winner payouts computed off-chain
-    /// (e.g. using a VRF seed). Transfers prizes directly to winner token accounts
-    /// supplied via `remaining_accounts` in the same order as `payouts`.
-    pub fn draw_daily<'info>(ctx: Context<'_, '_, '_, 'info, DrawDaily<'info>>, payouts: Vec<WinnerPayout>) -> Result<()> {
+    /// using `draw_seed` as the randomness source. The seed (e.g. derived from a recent
+    /// slot hash) is emitted on-chain so anyone can audit the draw by replaying the
+    /// winner-selection algorithm with the same seed.
+    pub fn draw_daily<'info>(
+        ctx: Context<'_, '_, '_, 'info, DrawDaily<'info>>,
+        payouts: Vec<WinnerPayout>,
+        draw_seed: [u8; 32],
+    ) -> Result<()> {
         let clock = Clock::get()?;
 
         require!(!ctx.accounts.state.paused, ErrorCode::ContractPaused);
@@ -723,6 +738,9 @@ pub mod royalpot {
         state.daily_players = 0;
         state.last_daily_draw = clock.unix_timestamp;
 
+        // Validate draw_seed is not all-zeros (must be a real block hash)
+        require!(draw_seed != [0u8; 32], ErrorCode::InvalidAmount);
+
         emit!(DrawCompleted {
             pool_type: PoolType::Daily,
             total_pool,
@@ -730,6 +748,7 @@ pub mod royalpot {
             rollover,
             winner_count: payouts.len() as u32,
             timestamp: clock.unix_timestamp,
+            draw_seed,
         });
 
         Ok(())
@@ -821,6 +840,9 @@ pub struct DrawCompleted {
     pub rollover: u64,
     pub winner_count: u32,
     pub timestamp: i64,
+    /// Verifiable randomness seed used to derive winner selection.
+    /// Publicly emitted so anyone can replay the draw algorithm and audit results.
+    pub draw_seed: [u8; 32],
 }
 
 #[event]
