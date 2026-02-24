@@ -67,6 +67,22 @@ pub struct UserData {
     pub total_deposit: u64,
 }
 
+/// Records a prize that vests linearly over VESTING_DAYS days (5% per day).
+/// Created by admin after each draw; winner claims daily via claim_vested.
+#[account]
+pub struct VestingAccount {
+    pub winner: Pubkey,           // 32 — prize recipient
+    pub total_amount: u64,        // 8  — total prize
+    pub claimed_amount: u64,      // 8  — already claimed
+    pub start_time: i64,          // 8  — vesting start (draw time)
+    pub vesting_id: u64,          // 8  — unique ID (use draw timestamp)
+    pub bump: u8,                 // 1
+}
+
+impl VestingAccount {
+    pub const SIZE: usize = 32 + 8 + 8 + 8 + 8 + 1; // 65
+}
+
 #[derive(Accounts)]
 pub struct Initialize<'info> {
     #[account(init, payer = authority, space = 8 + 200, seeds = [b"state"], bump)]
@@ -274,6 +290,56 @@ pub struct ClaimProfitAirdrop<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+// ─── Vesting Accounts ────────────────────────────────────────────────────────
+
+/// Admin creates a vesting record after draw and transfers prize to vesting_vault.
+#[derive(Accounts)]
+#[instruction(winner: Pubkey, amount: u64, vesting_id: u64)]
+pub struct InitVesting<'info> {
+    #[account(mut, seeds = [b"state"], bump = state.bump)]
+    pub state: Account<'info, State>,
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    /// Prize source: the hourly or daily pool vault (authority = state PDA)
+    #[account(mut)]
+    pub pool_vault: Account<'info, TokenAccount>,
+    /// Vesting holding vault (authority = vesting_auth PDA [b"vesting_auth"])
+    #[account(mut)]
+    pub vesting_vault: Account<'info, TokenAccount>,
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + VestingAccount::SIZE,
+        seeds = [b"vesting", winner.as_ref(), &vesting_id.to_le_bytes()],
+        bump,
+    )]
+    pub vesting_account: Account<'info, VestingAccount>,
+    pub system_program: Program<'info, System>,
+    pub token_program: Program<'info, Token>,
+}
+
+/// Winner claims unlocked vesting tokens.
+#[derive(Accounts)]
+#[instruction(vesting_id: u64)]
+pub struct ClaimVested<'info> {
+    pub winner: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"vesting", winner.key().as_ref(), &vesting_id.to_le_bytes()],
+        bump = vesting_account.bump,
+        constraint = vesting_account.winner == winner.key() @ ErrorCode::Unauthorized,
+    )]
+    pub vesting_account: Account<'info, VestingAccount>,
+    #[account(mut)]
+    pub vesting_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub user_token: Account<'info, TokenAccount>,
+    /// CHECK: vesting authority PDA — signs CPI transfers from vesting_vault
+    #[account(seeds = [b"vesting_auth"], bump)]
+    pub vesting_authority: AccountInfo<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
 #[derive(AnchorSerialize, AnchorDeserialize)]
 pub struct InitializeParams {
     pub pre_pool: u64,
@@ -312,6 +378,8 @@ pub enum ErrorCode {
     #[msg("A pause is already scheduled")] PauseAlreadyScheduled,
     #[msg("No pause has been scheduled")] NoPauseScheduled,
     #[msg("Pause timelock has not expired yet")] PauseTimelockNotExpired,
+    #[msg("Nothing to claim yet")] NothingToClaim,
+    #[msg("All vesting already claimed")] VestingFullyClaimed,
 }
 
 #[program]
@@ -827,6 +895,89 @@ pub mod royalpot {
         ctx: Context<ClaimProfitAirdrop>,
     ) -> Result<()> {
         airdrop::claim_profit_airdrop(ctx)
+    }
+
+    // ─── Prize Vesting Instructions ──────────────────────────────────────────
+
+    /// Admin: lock a winner's prize in the vesting vault and create a vesting record.
+    /// Call this after draw_hourly/draw_daily for each winner instead of direct transfer.
+    /// `vesting_id` should be the draw timestamp (unique per draw per winner).
+    pub fn init_vesting(
+        ctx: Context<InitVesting>,
+        winner: Pubkey,
+        amount: u64,
+        vesting_id: u64,
+    ) -> Result<()> {
+        require!(
+            ctx.accounts.authority.key() == ctx.accounts.state.authority,
+            ErrorCode::Unauthorized
+        );
+        require!(amount > 0, ErrorCode::InvalidAmount);
+
+        let clock = Clock::get()?;
+        let bump = ctx.accounts.state.bump;
+        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+
+        // Transfer prize from pool_vault → vesting_vault (signed by state PDA)
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: ctx.accounts.vesting_vault.to_account_info(),
+                    authority: ctx.accounts.state.to_account_info(),
+                },
+                seeds,
+            ),
+            amount,
+        )?;
+
+        let va = &mut ctx.accounts.vesting_account;
+        va.winner = winner;
+        va.total_amount = amount;
+        va.claimed_amount = 0;
+        va.start_time = clock.unix_timestamp;
+        va.vesting_id = vesting_id;
+        va.bump = ctx.bumps.vesting_account;
+
+        Ok(())
+    }
+
+    /// Winner: claim all currently unlocked vesting tokens.
+    /// 5% (500 bps) unlocks per day; fully vested after 20 days.
+    pub fn claim_vested(ctx: Context<ClaimVested>, _vesting_id: u64) -> Result<()> {
+        let clock = Clock::get()?;
+        let va = &mut ctx.accounts.vesting_account;
+
+        require!(va.claimed_amount < va.total_amount, ErrorCode::VestingFullyClaimed);
+
+        let elapsed_days = (clock.unix_timestamp - va.start_time) / 86400;
+        let unlocked_bps = (elapsed_days as u64)
+            .min(VESTING_DAYS)
+            .saturating_mul(VESTING_RELEASE_PER_DAY); // max = 20 * 500 = 10000
+        let unlocked_amount = va.total_amount * unlocked_bps / BASE;
+        let claimable = unlocked_amount.saturating_sub(va.claimed_amount);
+
+        require!(claimable > 0, ErrorCode::NothingToClaim);
+
+        // Transfer from vesting_vault → user_token (signed by vesting_auth PDA)
+        let auth_bump = ctx.bumps.vesting_authority;
+        let vesting_seeds: &[&[&[u8]]] = &[&[b"vesting_auth", &[auth_bump]]];
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.vesting_vault.to_account_info(),
+                    to: ctx.accounts.user_token.to_account_info(),
+                    authority: ctx.accounts.vesting_authority.to_account_info(),
+                },
+                vesting_seeds,
+            ),
+            claimable,
+        )?;
+
+        va.claimed_amount += claimable;
+        Ok(())
     }
 }
 

@@ -32,3 +32,7 @@ export const AIRDROP_VAULT = "";
 
 // 质押金库账户（authority = staking PDA [b"staking"]）
 export const STAKING_VAULT = "";
+
+// 归属奖金金库（authority = vesting_auth PDA [b"vesting_auth"]）
+// 用于 init_vesting 锁定奖金，由 claim_vested 按天解锁
+export const VESTING_VAULT = "";

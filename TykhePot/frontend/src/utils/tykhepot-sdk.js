@@ -15,6 +15,7 @@ import {
   REFERRAL_VAULT,
   AIRDROP_VAULT,
   STAKING_VAULT,
+  VESTING_VAULT,
 } from "../config/contract";
 
 // ─── IDL ────────────────────────────────────────────────────────────────────
@@ -245,6 +246,36 @@ const IDL = {
       ],
       args: [],
     },
+    // ─── Prize Vesting ───────────────────────────────────────────────────────
+    {
+      name: "initVesting",
+      accounts: [
+        { name: "state", isMut: true, isSigner: false },
+        { name: "authority", isMut: true, isSigner: true },
+        { name: "poolVault", isMut: true, isSigner: false },
+        { name: "vestingVault", isMut: true, isSigner: false },
+        { name: "vestingAccount", isMut: true, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [
+        { name: "winner", type: "publicKey" },
+        { name: "amount", type: "u64" },
+        { name: "vestingId", type: "u64" },
+      ],
+    },
+    {
+      name: "claimVested",
+      accounts: [
+        { name: "winner", isMut: false, isSigner: true },
+        { name: "vestingAccount", isMut: true, isSigner: false },
+        { name: "vestingVault", isMut: true, isSigner: false },
+        { name: "userToken", isMut: true, isSigner: false },
+        { name: "vestingAuthority", isMut: false, isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "vestingId", type: "u64" }],
+    },
   ],
   accounts: [
     {
@@ -353,6 +384,20 @@ const IDL = {
         ],
       },
     },
+    {
+      name: "VestingAccount",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "winner", type: "publicKey" },
+          { name: "totalAmount", type: "u64" },
+          { name: "claimedAmount", type: "u64" },
+          { name: "startTime", type: "i64" },
+          { name: "vestingId", type: "u64" },
+          { name: "bump", type: "u8" },
+        ],
+      },
+    },
   ],
   types: [
     {
@@ -431,6 +476,8 @@ const IDL = {
     { code: 6013, name: "PauseAlreadyScheduled", msg: "A pause is already scheduled" },
     { code: 6014, name: "NoPauseScheduled", msg: "No pause has been scheduled" },
     { code: 6015, name: "PauseTimelockNotExpired", msg: "Pause timelock has not expired yet" },
+    { code: 6016, name: "NothingToClaim", msg: "Nothing to claim yet" },
+    { code: 6017, name: "VestingFullyClaimed", msg: "All vesting already claimed" },
   ],
 };
 
@@ -494,6 +541,22 @@ function findAirdropAuthPDA(programId) {
   );
 }
 
+function findVestingPDA(winnerPubkey, vestingId, programId) {
+  const idx = Buffer.alloc(8);
+  idx.writeBigUInt64LE(BigInt(vestingId));
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("vesting"), winnerPubkey.toBuffer(), idx],
+    programId
+  );
+}
+
+function findVestingAuthPDA(programId) {
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("vesting_auth")],
+    programId
+  );
+}
+
 // ─── Draw Seed Utilities ─────────────────────────────────────────────────────
 
 /**
@@ -548,6 +611,7 @@ class TykhePotSDK {
     this.referralVault = REFERRAL_VAULT ? new web3.PublicKey(REFERRAL_VAULT) : null;
     this.airdropVault = AIRDROP_VAULT ? new web3.PublicKey(AIRDROP_VAULT) : null;
     this.stakingVault = STAKING_VAULT ? new web3.PublicKey(STAKING_VAULT) : null;
+    this.vestingVault = VESTING_VAULT ? new web3.PublicKey(VESTING_VAULT) : null;
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -1017,6 +1081,99 @@ class TykhePotSDK {
     } catch (error) {
       console.error("claimProfitAirdrop failed:", error);
       return { success: false, error: error.message };
+    }
+  }
+
+  // ─── Prize Vesting ────────────────────────────────────────────────────────
+
+  // Admin: lock a winner's prize in vesting_vault and create vesting record
+  // poolVaultPubkey: PublicKey of the hourly/daily pool_vault (source of funds)
+  // winner: PublicKey | string of the prize winner
+  // amount: number (TPOT, human-readable)
+  // vestingId: number (use draw timestamp ms / 1000 for uniqueness)
+  async initVesting(poolVaultPubkey, winner, amount, vestingId) {
+    try {
+      this._requireVaults("vestingVault");
+      const [statePDA] = findStatePDA(this.program.programId);
+      const winnerPubkey = new web3.PublicKey(winner);
+      const amountBN = this.parseAmount(amount);
+      const vestingIdBN = new BN(vestingId);
+      const [vestingAccountPDA] = findVestingPDA(winnerPubkey, vestingId, this.program.programId);
+
+      const tx = await this.program.methods
+        .initVesting(winnerPubkey, amountBN, vestingIdBN)
+        .accounts({
+          state: statePDA,
+          authority: this.wallet.publicKey,
+          poolVault: new web3.PublicKey(poolVaultPubkey),
+          vestingVault: this.vestingVault,
+          vestingAccount: vestingAccountPDA,
+          systemProgram: web3.SystemProgram.programId,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("initVesting failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Winner: claim all currently unlocked vesting tokens
+  // vestingId: number (same value used in initVesting)
+  async claimVested(vestingId) {
+    try {
+      this._requireVaults("vestingVault");
+      const user = this.wallet.publicKey;
+      const vestingIdBN = new BN(vestingId);
+      const [vestingAccountPDA] = findVestingPDA(user, vestingId, this.program.programId);
+      const [vestingAuthority] = findVestingAuthPDA(this.program.programId);
+      const userToken = await this.getTokenAccount(user);
+
+      const tx = await this.program.methods
+        .claimVested(vestingIdBN)
+        .accounts({
+          winner: user,
+          vestingAccount: vestingAccountPDA,
+          vestingVault: this.vestingVault,
+          userToken,
+          vestingAuthority,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("claimVested failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Query a vesting record and compute claimable amount
+  async getVestingInfo(winnerPublicKey, vestingId) {
+    try {
+      const winnerPubkey = new web3.PublicKey(winnerPublicKey);
+      const [vestingPDA] = findVestingPDA(winnerPubkey, vestingId, this.program.programId);
+      const va = await this.program.account.vestingAccount.fetch(vestingPDA);
+      const now = Math.floor(Date.now() / 1000);
+      const VESTING_DAYS = 20;
+      const elapsedDays = Math.floor((now - va.startTime.toNumber()) / 86400);
+      const daysVested = Math.min(elapsedDays, VESTING_DAYS);
+      const unlockedBps = daysVested * 500; // 5% per day in basis points
+      const unlockedAmount = va.totalAmount.toNumber() * unlockedBps / 10000;
+      const claimable = Math.max(0, unlockedAmount - va.claimedAmount.toNumber());
+      return {
+        winner: va.winner.toBase58(),
+        totalAmount: va.totalAmount.toNumber() / 1e9,
+        claimedAmount: va.claimedAmount.toNumber() / 1e9,
+        claimable: claimable / 1e9,
+        daysVested,
+        daysRemaining: Math.max(0, VESTING_DAYS - elapsedDays),
+        startTime: new Date(va.startTime.toNumber() * 1000),
+      };
+    } catch (e) {
+      return null;
     }
   }
 
