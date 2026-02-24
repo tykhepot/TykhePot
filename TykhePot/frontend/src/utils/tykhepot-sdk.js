@@ -44,6 +44,14 @@ const IDL = {
       args: [],
     },
     {
+      name: "executePause",
+      accounts: [
+        { name: "state", isMut: true, isSigner: false },
+        { name: "authority", isMut: false, isSigner: true },
+      ],
+      args: [],
+    },
+    {
       name: "resume",
       accounts: [
         { name: "state", isMut: true, isSigner: false },
@@ -252,6 +260,7 @@ const IDL = {
           { name: "lastDailyDraw", type: "i64" },
           { name: "hourlyRollover", type: "u64" },
           { name: "dailyRollover", type: "u64" },
+          { name: "pauseScheduledAt", type: "i64" },
         ],
       },
     },
@@ -387,6 +396,9 @@ const IDL = {
     { code: 6010, name: "InsufficientPoolBalance", msg: "Insufficient pool balance" },
     { code: 6011, name: "InvalidReferrer", msg: "Invalid referrer" },
     { code: 6012, name: "ReferrerNotParticipated", msg: "Referrer has not participated in the game" },
+    { code: 6013, name: "PauseAlreadyScheduled", msg: "A pause is already scheduled" },
+    { code: 6014, name: "NoPauseScheduled", msg: "No pause has been scheduled" },
+    { code: 6015, name: "PauseTimelockNotExpired", msg: "Pause timelock has not expired yet" },
   ],
 };
 
@@ -936,6 +948,68 @@ class TykhePotSDK {
       console.error("claimProfitAirdrop failed:", error);
       return { success: false, error: error.message };
     }
+  }
+
+  // ─── Admin: Pause Timelock ────────────────────────────────────────────────
+
+  // Schedule a pause 48h in the future (admin only)
+  async schedulePause() {
+    try {
+      const [statePDA] = findStatePDA(this.program.programId);
+      const tx = await this.program.methods
+        .pause()
+        .accounts({ state: statePDA, authority: this.wallet.publicKey })
+        .rpc();
+      return { success: true, tx };
+    } catch (error) {
+      console.error("schedulePause failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Execute the scheduled pause after 48h timelock expires (admin only)
+  async executePause() {
+    try {
+      const [statePDA] = findStatePDA(this.program.programId);
+      const tx = await this.program.methods
+        .executePause()
+        .accounts({ state: statePDA, authority: this.wallet.publicKey })
+        .rpc();
+      return { success: true, tx };
+    } catch (error) {
+      console.error("executePause failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Resume immediately and cancel any pending pause schedule (admin only)
+  async resume() {
+    try {
+      const [statePDA] = findStatePDA(this.program.programId);
+      const tx = await this.program.methods
+        .resume()
+        .accounts({ state: statePDA, authority: this.wallet.publicKey })
+        .rpc();
+      return { success: true, tx };
+    } catch (error) {
+      console.error("resume failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Returns pause schedule info for UI display
+  async getPauseStatus() {
+    const state = await this.getProtocolState();
+    if (!state) return null;
+    const scheduledAt = state.pauseScheduledAt?.toNumber?.() ?? 0;
+    const now = Math.floor(Date.now() / 1000);
+    return {
+      paused: state.paused,
+      scheduledAt,                             // unix timestamp, 0 = not scheduled
+      scheduledAtDate: scheduledAt ? new Date(scheduledAt * 1000) : null,
+      timelockExpired: scheduledAt > 0 && now >= scheduledAt,
+      secondsRemaining: scheduledAt > 0 ? Math.max(0, scheduledAt - now) : 0,
+    };
   }
 
   // ─── Event Listeners ──────────────────────────────────────────────────────

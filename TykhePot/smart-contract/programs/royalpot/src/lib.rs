@@ -16,6 +16,7 @@ pub const FREE_AIRDROP: u64 = 100_000_000_000; // 100 TPOT
 pub const MAX_DEPOSIT: u64 = 1_000_000_000_000_000; // 1 million TPOT
 pub const TIME_TOLERANCE: i64 = 300; // 300 seconds tolerance (Solana validators can skew ±25s)
 pub const LOCK_PERIOD: i64 = 300; // 5 minutes lock before draw
+pub const PAUSE_TIMELOCK: i64 = 86400 * 2; // 48h timelock before pause takes effect
 
 // Prize distribution constants
 pub const FIRST_PRIZE_RATE: u64 = 3000;  // 30%
@@ -49,6 +50,8 @@ pub struct State {
     pub last_daily_draw: i64,
     pub hourly_rollover: u64,
     pub daily_rollover: u64,
+    /// Unix timestamp when a pause was scheduled (0 = none pending)
+    pub pause_scheduled_at: i64,
 }
 
 #[account]
@@ -305,6 +308,9 @@ pub enum ErrorCode {
     #[msg("Insufficient pool balance")] InsufficientPoolBalance,
     #[msg("Invalid referrer")] InvalidReferrer,
     #[msg("Referrer has not participated in the game")] ReferrerNotParticipated,
+    #[msg("A pause is already scheduled")] PauseAlreadyScheduled,
+    #[msg("No pause has been scheduled")] NoPauseScheduled,
+    #[msg("Pause timelock has not expired yet")] PauseTimelockNotExpired,
 }
 
 #[program]
@@ -329,20 +335,38 @@ pub mod royalpot {
         state.last_daily_draw = Clock::get()?.unix_timestamp;
         state.hourly_rollover = 0;
         state.daily_rollover = 0;
+        state.pause_scheduled_at = 0;
         Ok(())
     }
 
+    /// Schedule a pause 48 hours in the future. Call execute_pause after the delay.
     pub fn pause(ctx: Context<Pause>) -> Result<()> {
         let state = &mut ctx.accounts.state;
         require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
-        state.paused = true;
+        require!(state.pause_scheduled_at == 0, ErrorCode::PauseAlreadyScheduled);
+        let clock = Clock::get()?;
+        state.pause_scheduled_at = clock.unix_timestamp + PAUSE_TIMELOCK;
         Ok(())
     }
 
+    /// Execute the scheduled pause after the 48h timelock has elapsed.
+    pub fn execute_pause(ctx: Context<Pause>) -> Result<()> {
+        let state = &mut ctx.accounts.state;
+        require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
+        require!(state.pause_scheduled_at > 0, ErrorCode::NoPauseScheduled);
+        let clock = Clock::get()?;
+        require!(clock.unix_timestamp >= state.pause_scheduled_at, ErrorCode::PauseTimelockNotExpired);
+        state.paused = true;
+        state.pause_scheduled_at = 0;
+        Ok(())
+    }
+
+    /// Resume operation immediately and cancel any pending pause schedule.
     pub fn resume(ctx: Context<Resume>) -> Result<()> {
         let state = &mut ctx.accounts.state;
         require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
         state.paused = false;
+        state.pause_scheduled_at = 0;
         Ok(())
     }
 
