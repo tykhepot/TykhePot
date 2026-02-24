@@ -4,7 +4,7 @@ import { useTranslation } from '../i18n/LanguageContext';
 import { useTykhePot } from '../hooks/useTykhePot';
 
 const Staking = () => {
-  const { wallet } = useApp();
+  const { wallet, userTokenBalance } = useApp();
   const { t, language } = useTranslation();
   const { stake, isLoading } = useTykhePot();
   const [stakeAmount, setStakeAmount] = useState('');
@@ -123,7 +123,7 @@ const Staking = () => {
               placeholder={language === 'en' ? 'Enter TPOT amount' : '输入 TPOT 数量'}
               style={styles.input}
             />
-            <span style={styles.balanceHint}>{language === 'en' ? 'Available: 0 TPOT' : '可用余额: 0 TPOT'}</span>
+            <span style={styles.balanceHint}>{language === 'en' ? `Available: ${userTokenBalance?.toLocaleString() ?? 0} TPOT` : `可用余额: ${userTokenBalance?.toLocaleString() ?? 0} TPOT`}</span>
           </div>
 
           <div style={styles.estimatedSection}>
