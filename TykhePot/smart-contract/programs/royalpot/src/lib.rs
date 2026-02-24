@@ -1,6 +1,10 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Transfer, Token, TokenAccount, Mint};
 
+pub mod staking;
+pub mod airdrop;
+
+
 pub const BASE: u64 = 10000;
 pub const BURN: u64 = 300;
 pub const PLAT: u64 = 200;
@@ -10,7 +14,7 @@ pub const HOUR_MIN: u64 = 200_000_000_000;
 pub const DAY_MIN: u64 = 100_000_000_000;
 pub const FREE_AIRDROP: u64 = 100_000_000_000; // 100 TPOT
 pub const MAX_DEPOSIT: u64 = 1_000_000_000_000_000; // 1 million TPOT
-pub const TIME_TOLERANCE: i64 = 60; // 60 seconds tolerance
+pub const TIME_TOLERANCE: i64 = 300; // 300 seconds tolerance (Solana validators can skew ±25s)
 pub const LOCK_PERIOD: i64 = 300; // 5 minutes lock before draw
 
 // Prize distribution constants
@@ -106,8 +110,8 @@ pub struct DepositHourly<'info> {
 
 #[derive(Accounts)]
 pub struct DepositDaily<'info> {
-    #[account(mut)] pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", signer.key().as_ref()], bump)] 
+    #[account(mut, seeds = [b"state"], bump = state.bump)] pub state: Account<'info, State>,
+    #[account(mut, seeds = [b"user", signer.key().as_ref()], bump)]
     pub user: Account<'info, UserData>,
     #[account(mut)] pub user_token: Account<'info, TokenAccount>,
     #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
@@ -116,13 +120,12 @@ pub struct DepositDaily<'info> {
     #[account(mut)] pub referral_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub referrer_token: Account<'info, TokenAccount>,
     #[account(mut)] pub user_referrer_bonus: Account<'info, TokenAccount>,
-    pub referral_auth: UncheckedAccount<'info>,
     pub signer: Signer<'info>,
     pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
-pub struct ClaimAirdrop<'info> {
+pub struct ClaimFreeAirdrop<'info> {
     #[account(mut, seeds = [b"user", user_signer.key().as_ref()], bump)]
     pub user: Account<'info, UserData>,
     #[account(mut)] pub airdrop_vault: Account<'info, TokenAccount>,
@@ -147,6 +150,123 @@ pub struct DrawDaily<'info> {
     pub authority: Signer<'info>,
     /// Token vault holding the daily prize pool (authority must be state PDA)
     #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+}
+
+// ─── Staking Accounts (Anchor requires these at crate root) ─────────────────
+
+#[derive(Accounts)]
+pub struct InitializeStaking<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + staking::StakingState::SIZE,
+        seeds = [b"staking_state"],
+        bump
+    )]
+    pub staking_state: Account<'info, staking::StakingState>,
+    pub token_mint: Account<'info, Mint>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(stake_index: u64)]
+pub struct Stake<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(mut, seeds = [b"staking_state"], bump = staking_state.bump)]
+    pub staking_state: Account<'info, staking::StakingState>,
+    #[account(
+        init,
+        payer = user,
+        space = 8 + staking::UserStake::SIZE,
+        seeds = [b"user_stake", user.key().as_ref(), &stake_index.to_le_bytes()],
+        bump
+    )]
+    pub user_stake: Account<'info, staking::UserStake>,
+    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
+    #[account(mut)] pub staking_vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(stake_index: u64)]
+pub struct ReleaseStake<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(mut, seeds = [b"staking_state"], bump = staking_state.bump)]
+    pub staking_state: Account<'info, staking::StakingState>,
+    #[account(
+        mut,
+        seeds = [b"user_stake", user.key().as_ref(), &stake_index.to_le_bytes()],
+        bump,
+        constraint = user_stake.owner == user.key()
+    )]
+    pub user_stake: Account<'info, staking::UserStake>,
+    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
+    #[account(mut)] pub staking_vault: Account<'info, TokenAccount>,
+    /// CHECK: staking authority PDA
+    #[account(seeds = [b"staking"], bump)]
+    pub staking_authority: AccountInfo<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+// ─── Profit-Based Airdrop Accounts (Anchor requires these at crate root) ────
+
+#[derive(Accounts)]
+pub struct InitializeAirdrop<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + airdrop::AirdropState::SIZE,
+        seeds = [b"airdrop_state"],
+        bump
+    )]
+    pub airdrop_state: Account<'info, airdrop::AirdropState>,
+    pub token_mint: Account<'info, Mint>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RecordProfit<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(mut, seeds = [b"airdrop_state"], bump = airdrop_state.bump)]
+    pub airdrop_state: Account<'info, airdrop::AirdropState>,
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = 8 + airdrop::UserAirdrop::SIZE,
+        seeds = [b"user_airdrop", user.key().as_ref()],
+        bump
+    )]
+    pub user_airdrop: Account<'info, airdrop::UserAirdrop>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ClaimProfitAirdrop<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+    #[account(mut, seeds = [b"airdrop_state"], bump = airdrop_state.bump)]
+    pub airdrop_state: Account<'info, airdrop::AirdropState>,
+    #[account(
+        mut,
+        seeds = [b"user_airdrop", user.key().as_ref()],
+        bump,
+        constraint = user_airdrop.owner == user.key()
+    )]
+    pub user_airdrop: Account<'info, airdrop::UserAirdrop>,
+    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
+    #[account(mut)] pub airdrop_vault: Account<'info, TokenAccount>,
+    /// CHECK: airdrop authority PDA
+    #[account(seeds = [b"airdrop"], bump)]
+    pub airdrop_authority: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -304,6 +424,8 @@ pub mod royalpot {
     }
 
     pub fn deposit_daily(ctx: Context<DepositDaily>, amount: u64, referrer: Option<Pubkey>) -> Result<()> {
+        // Extract state AccountInfo before taking mutable borrow (same pattern as draw_hourly)
+        let state_account_info = ctx.accounts.state.to_account_info();
         let state = &mut ctx.accounts.state;
         let user = &mut ctx.accounts.user;
         let clock = Clock::get()?;
@@ -358,7 +480,15 @@ pub mod royalpot {
         token::transfer(cpi_ctx, prize_amount)?;
         
         if let Some(referrer_key) = referrer {
-            if referrer_key != ctx.accounts.signer.key() && state.referral_pool > 0 {
+            if referrer_key != ctx.accounts.signer.key() && state.referral_pool == 0 {
+                emit!(ReferralPoolExhausted {
+                    referrer: referrer_key,
+                    depositor: ctx.accounts.signer.key(),
+                    requested: amount * REF / BASE,
+                    available: 0,
+                    timestamp: clock.unix_timestamp,
+                });
+            } else if referrer_key != ctx.accounts.signer.key() && state.referral_pool > 0 {
                 let referral_reward = (amount * REF / BASE).min(state.referral_pool);
                 if referral_reward > 0 {
                     let bump = state.bump;
@@ -368,14 +498,14 @@ pub mod royalpot {
                         Transfer {
                             from: ctx.accounts.referral_vault.to_account_info(),
                             to: ctx.accounts.referrer_token.to_account_info(),
-                            authority: ctx.accounts.referral_auth.to_account_info(),
+                            authority: state_account_info.clone(),
                         },
                         seeds,
                     );
                     token::transfer(cpi_ctx, referral_reward)?;
                     state.referral_pool = state.referral_pool.saturating_sub(referral_reward);
                 }
-                
+
                 if !user.has_ref_bonus {
                     let referred_bonus = amount * REFERRED_BONUS / BASE;
                     if referred_bonus > 0 {
@@ -386,7 +516,7 @@ pub mod royalpot {
                             Transfer {
                                 from: ctx.accounts.referral_vault.to_account_info(),
                                 to: ctx.accounts.user_referrer_bonus.to_account_info(),
-                                authority: ctx.accounts.referral_auth.to_account_info(),
+                                authority: state_account_info.clone(),
                             },
                             seeds,
                         );
@@ -555,7 +685,7 @@ pub mod royalpot {
         Ok(())
     }
 
-    pub fn claim_airdrop(ctx: Context<ClaimAirdrop>) -> Result<()> {
+    pub fn claim_free_airdrop(ctx: Context<ClaimFreeAirdrop>) -> Result<()> {
         let user = &mut ctx.accounts.user;
         require!(!user.airdrop_claimed, ErrorCode::AlreadyClaimed);
         
@@ -574,6 +704,61 @@ pub mod royalpot {
         user.airdrop_claimed = true;
         Ok(())
     }
+
+    // ─── Staking Instructions ────────────────────────────────────────────────
+
+    pub fn initialize_staking(
+        ctx: Context<InitializeStaking>,
+        short_term_pool: u64,
+        long_term_pool: u64,
+    ) -> Result<()> {
+        staking::initialize_staking(ctx, short_term_pool, long_term_pool)
+    }
+
+    pub fn stake(
+        ctx: Context<Stake>,
+        stake_index: u64,
+        amount: u64,
+        stake_type: staking::StakeType,
+    ) -> Result<()> {
+        staking::stake(ctx, stake_index, amount, stake_type)
+    }
+
+    pub fn release_stake(
+        ctx: Context<ReleaseStake>,
+        stake_index: u64,
+    ) -> Result<()> {
+        staking::release_stake(ctx, stake_index)
+    }
+
+    pub fn early_withdraw(
+        ctx: Context<ReleaseStake>,
+        stake_index: u64,
+    ) -> Result<()> {
+        staking::early_withdraw(ctx, stake_index)
+    }
+
+    // ─── Profit-Based Airdrop Instructions ──────────────────────────────────
+
+    pub fn initialize_airdrop(
+        ctx: Context<InitializeAirdrop>,
+        total_airdrop: u64,
+    ) -> Result<()> {
+        airdrop::initialize_airdrop(ctx, total_airdrop)
+    }
+
+    pub fn record_profit(
+        ctx: Context<RecordProfit>,
+        profit_amount: u64,
+    ) -> Result<()> {
+        airdrop::record_profit(ctx, profit_amount)
+    }
+
+    pub fn claim_profit_airdrop(
+        ctx: Context<ClaimProfitAirdrop>,
+    ) -> Result<()> {
+        airdrop::claim_profit_airdrop(ctx)
+    }
 }
 
 // ─── Events ────────────────────────────────────────────────────────────────
@@ -585,5 +770,14 @@ pub struct DrawCompleted {
     pub distributed: u64,
     pub rollover: u64,
     pub winner_count: u32,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct ReferralPoolExhausted {
+    pub referrer: Pubkey,
+    pub depositor: Pubkey,
+    pub requested: u64,
+    pub available: u64,
     pub timestamp: i64,
 }
