@@ -54,8 +54,8 @@ const Min30Pool = () => {
       <div className="container">
         {/* Header */}
         <div className="page-header-modern">
-          <div className="page-badge">⏰ Hourly Pool</div>
-          <h1 className="page-title-modern">{t('Min30Pool')}</h1>
+          <div className="page-badge">⏰ 30min Pool</div>
+          <h1 className="page-title-modern">{t('min30Pool')}</h1>
           <p className="page-subtitle-modern" style={{ color: '#FF6B6B' }}>
             {language === 'en' 
               ? '⚠️ Airdrop tokens can ONLY be used in Daily Pool'
@@ -72,18 +72,18 @@ const Min30Pool = () => {
             
             <div className="pool-display-modern">
               <span className="pool-label-modern">{language === 'en' ? 'Current Pool' : '当前奖池'}</span>
-              <span className="pool-value-modern">🪙 {(stats.Min30Pool / 1e9).toFixed(2)}M TPOT</span>
+              <span className="pool-value-modern">🪙 {(stats.min30Pool / 1e9).toFixed(2)}M TPOT</span>
             </div>
             
             <div className="countdown-modern">
               <span className="countdown-label-modern">{language === 'en' ? 'Next Draw' : '距离开奖'}</span>
-              <span className="countdown-value-modern">{formatTime(stats.Min30NextDraw)}</span>
+              <span className="countdown-value-modern">{formatTime(stats.min30NextDraw)}</span>
             </div>
             
             <div className="info-grid-modern">
               <div className="info-item-modern">
                 <span className="info-label-modern">{language === 'en' ? 'Participants' : '参与人数'}</span>
-                <span className="info-value-modern">{stats.Min30Participants || '--'}</span>
+                <span className="info-value-modern">{stats.min30Participants || '--'}</span>
               </div>
               <div className="info-item-modern">
                 <span className="info-label-modern">{language === 'en' ? 'Min Deposit' : '最低投入'}</span>
@@ -106,14 +106,14 @@ const Min30Pool = () => {
                 type="number"
                 value={depositAmount}
                 onChange={(e) => setDepositAmount(e.target.value)}
-                min="200"
+                min="500"
                 className="input-modern"
-                placeholder="200"
+                placeholder="500"
               />
             </div>
             
             <div className="quick-amount-grid">
-              {['200', '500', '1000', '5000'].map(amount => (
+              {['500', '1000', '5000', '10000'].map(amount => (
                 <button 
                   key={amount} 
                   className={`quick-btn ${depositAmount === amount ? 'active' : ''}`}

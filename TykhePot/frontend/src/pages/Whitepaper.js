@@ -8,14 +8,21 @@ const Whitepaper = () => {
   const content = {
     en: {
       title: 'TykhePot Whitepaper',
-      subtitle: 'Fair & Transparent On-Chain Entertainment Protocol',
-      disclaimer: 'This whitepaper is for informational purposes only. Cryptocurrency investments carry significant risk.',
+      subtitle: 'Fair & Transparent On-Chain Lottery Protocol on Solana',
+      version: 'v1.0 — February 2026',
+      disclaimer: 'This whitepaper is for informational purposes only. Lottery participation involves financial risk. Only participate with funds you can afford to lose.',
       sections: [
         {
           title: '1. Executive Summary',
-          content: `TykhePot is a decentralized lottery protocol built on Solana, offering fair and transparent entertainment through on-chain randomness. Named after Tykhe, the Greek goddess of fortune, we bring the excitement of lottery gaming to the blockchain era.
+          content: `TykhePot is a fully on-chain, decentralized lottery protocol built on Solana using the Anchor framework. Named after Tykhe — the Greek goddess of fortune — TykhePot delivers verifiable, tamper-proof prize draws through cryptographic draw seeds derived from finalized Solana blockhashes.
 
-Our mission is to create a trustless, verifiable, and community-driven lottery system where every participant can verify the fairness of each draw. By leveraging Solana's high throughput and low fees, TykhePot provides an accessible and enjoyable gaming experience for users worldwide.`,
+The protocol operates three parallel prize pools with different cadences (every 30 minutes, every hour, and daily), enabling users to choose their preferred participation frequency and risk level. All deposits, prize distributions, fee burns, and referral payouts are executed transparently on-chain with no intermediaries.
+
+Key design principles:
+• Verifiability: every draw seed is emitted on-chain and anyone can independently verify winner selection
+• Deflationary mechanics: 3% of every deposit is permanently burned, reducing total TPOT supply
+• Community growth: an 8% referral reward system incentivizes organic user acquisition
+• Prize vesting: large winnings (first-tier prizes) are released linearly over 20 days to protect winners and protocol stability`,
         },
         {
           title: '2. Tokenomics & Initial Distribution',
@@ -23,226 +30,236 @@ Our mission is to create a trustless, verifiable, and community-driven lottery s
           items: [
             { label: 'Token Name', value: 'TPOT' },
             { label: 'Total Supply', value: '1,000,000,000 TPOT' },
-            { label: 'Token Standard', value: 'SPL Token (Solana)' },
+            { label: 'Token Standard', value: 'SPL Token (Solana Program Library)' },
+            { label: 'Decimals', value: '9' },
           ],
-          heading: '2.2 Initial Distribution',
+          heading2: '2.2 Initial Distribution',
           items2: [
-            { label: 'Initial Liquidity', value: '50,000,000 (5%)', desc: 'DEX liquidity provision, managed externally' },
-            { label: 'Airdrop Pool', value: '100,000,000 (10%)', desc: '100 TPOT per wallet, one-time registration' },
-            { label: 'Staking Rewards', value: '350,000,000 (35%)', desc: 'Long-term staking incentives' },
-            { label: 'Pre-match Pool', value: '200,000,000 (20%)', desc: '1:1 matching for early participants' },
-            { label: 'Team Allocation', value: '100,000,000 (10%)', desc: '4-year linear vesting' },
-            { label: 'Referral Pool', value: '200,000,000 (20%)', desc: 'Referral rewards, exhausted when depleted' },
+            { label: 'Initial Liquidity', value: '50,000,000 (5%)', desc: 'DEX liquidity provision, managed externally by team' },
+            { label: 'Airdrop Pool', value: '100,000,000 (10%)', desc: 'Free claim: 100 TPOT per wallet, one-time only' },
+            { label: 'Staking Rewards', value: '350,000,000 (35%)', desc: 'Long-term staking incentives (8% APR / 48% APR)' },
+            { label: 'Reserve Matching Pool', value: '200,000,000 (20%)', desc: '1:1 deposit matching for Daily Pool participants' },
+            { label: 'Team Allocation', value: '100,000,000 (10%)', desc: 'Vested over 4 years, aligning long-term incentives' },
+            { label: 'Referral Pool', value: '200,000,000 (20%)', desc: 'Referral rewards funded from this pool until exhausted' },
           ],
-          content: `The initial distribution is designed to incentivize early participation, reward community growth, and ensure long-term sustainability of the protocol.
+          content: `The distribution is engineered to bootstrap liquidity, reward early adopters, and ensure long-term protocol sustainability.
 
-The Pre-match Pool provides 1:1 matching for user deposits, effectively doubling the prize pool for early participants. This creates strong incentive for early adoption while the pool is still full.
+The Reserve Matching Pool provides 1:1 matching on Daily Pool deposits, effectively doubling the prize pool for participants while the reserve lasts — creating strong early-adoption incentives.
 
-The Referral Pool ensures sustainable growth by rewarding users who bring new participants to the platform. Both referrers and referees receive benefits, aligning individual incentives with platform growth.`,
+The Referral Pool directly funds the 8% referral reward on each referred Daily Pool deposit, enabling sustainable organic growth without diluting circulating supply.`,
         },
         {
-          title: '3. Pool Structure & Game Rules',
+          title: '3. Prize Pool Architecture',
           heading: '3.1 Pool Types',
-          content: `TykhePot operates three parallel lottery pools to accommodate different user preferences and risk tolerances:`,
+          content: `TykhePot operates three independent prize pools simultaneously:`,
           items: [
-            { label: 'Hourly Pool', value: '', desc: 'Draws every hour. Minimum deposit: 200 TPOT. Minimum 12 players required to draw.' },
-            { label: 'Min30 Pool', value: '', desc: 'Draws every 30 minutes! Minimum deposit: 500 TPOT. Minimum 12 players required to draw.' },
-            { label: 'Daily Pool', value: '', desc: 'Draws at UTC midnight. Minimum deposit: 100 TPOT. Minimum 12 players required to draw.' },
+            { label: 'Hourly Pool (HOUR)', value: 'Draws every ~60 minutes', desc: 'Min deposit: 200 TPOT · Min participants to draw: 3 · No free-bet · No referral bonus' },
+            { label: '30-Minute Pool (MIN30)', value: 'Draws every ~30 minutes', desc: 'Min deposit: 500 TPOT · Min participants to draw: 3 · Highest frequency, smallest accumulation' },
+            { label: 'Daily Pool (DAILY)', value: 'Draws at UTC 00:00', desc: 'Min deposit: 100 TPOT · Min participants to draw: 5 · Supports free-bet & 8% referral rewards' },
           ],
-          content2: `The multi-pool structure allows users to choose their preferred frequency and risk level. Min30 offers lightning-fast results, Hourly pools offer quick prizes, while Daily pools offer the largest accumulated prizes.`,
-          heading: '3.2 Why 10 Players Minimum?',
-          content3: `The 10-player threshold serves critical purposes:
+          content2: `Each pool accumulates deposits independently. The minimum participant thresholds (3 for HOUR/MIN30, 5 for DAILY) exist to ensure meaningful prize differentiation across winner tiers. If the threshold is not met at draw time, the draw is simply skipped — no funds are lost and the pool carries its balance into the next round.`,
+          heading2: '3.2 Draw Eligibility Threshold',
+          content3: `The participant thresholds serve multiple purposes:
 
-1. **Statistical Significance**: With fewer than 10 participants, lottery odds become extremely skewed. A single large depositor could dominate the pool, defeating the purpose of a fair lottery.
+1. **Statistical Fairness**: With very few participants, a single large depositor dominates the pool disproportionately, undermining the lottery's fairness.
 
-2. **Prize Distribution**: The prize structure (30%/20%/15%/10%/20% across different winner tiers) requires sufficient participants to create meaningful prize differentiation.
+2. **Prize Tier Viability**: The prize structure awards 6 distinct tiers (1st/2nd/3rd/Lucky/Universal/Rollover). A meaningful distribution requires at least 3–5 participants.
 
-3. **Anti-Manipulation**: A minimum threshold prevents small groups from easily manipulating outcomes through coordinated deposits.
+3. **Anti-Manipulation**: A minimum threshold prevents small colluding groups from trivially winning every round.
 
-4. **Pool Viability**: With too few players, the prize pool becomes insufficient to attract future participants, creating a death spiral.`,
-          heading: '3.3 Deposit Flow',
-          items3: [
-            { label: 'Step 1', value: 'User deposits TPOT', desc: '100% of deposit enters the pool' },
-            { label: 'Step 2', value: '3% recorded as pending burn', desc: 'Will be destroyed upon successful draw' },
-            { label: 'Step 3', value: '97% enters prize pool', desc: 'Plus any 1:1 matching from Pre-match Pool' },
-            { label: 'Step 4', value: 'Referral rewards recorded', desc: '8% to referrer, 2% to referee (pending until draw)' },
-          ],
+4. **Protocol Safety**: Low-participation draws are skipped rather than refunded — pool balances roll forward, keeping the prize pot growing for future rounds.`,
+          heading3: '3.3 Maximum Deposit Limit',
+          content4: `A hard cap of **1,000,000 TPOT per transaction** prevents whale concentration attacks and maintains meaningful prize odds for all participants. This limit is enforced in the smart contract and cannot be overridden.`,
         },
         {
-          title: '4. Prize Distribution Mechanism',
-          heading: '4.1 Distribution Formula',
-          content: `When a draw succeeds (≥12 players), the total prize pool is distributed as follows:`,
+          title: '4. Fee Structure & Prize Distribution',
+          heading: '4.1 Fee Breakdown',
+          content: `On every successful draw, the pool balance is allocated as follows:`,
           items: [
-            { label: 'Platform Fee', value: '2%', desc: 'Protocol sustainability' },
-            { label: 'Burn', value: '3%', desc: 'Permanent token destruction' },
-            { label: 'Prize Pool', value: '95%', desc: 'Distributed to winners' },
+            { label: 'Burn', value: '3%', desc: 'Permanently destroyed — reduces total TPOT supply (deflationary pressure)' },
+            { label: 'Platform Fee', value: '2%', desc: 'Transferred to protocol treasury for ongoing development' },
+            { label: 'Prize Pool', value: '95%', desc: 'Distributed to winners according to the tier structure below' },
           ],
-          content2: `The 3% burn creates deflationary pressure, potentially increasing token value for all holders. The 2% platform fee ensures long-term protocol sustainability.`,
-          heading: '4.2 Winner Tiers',
+          content2: `The 3% burn is irreversible and cumulative — every draw permanently deflates the token supply, creating upward price pressure over time.`,
+          heading2: '4.2 Winner Tier Distribution',
           items2: [
-            { label: '1st Prize', value: '30%', desc: '1 winner - The Grand Jackpot' },
-            { label: '2nd Prize', value: '20%', desc: '2 winners - Second tier rewards' },
-            { label: '3rd Prize', value: '15%', desc: '3 winners - Third tier rewards' },
-            { label: 'Lucky Prize', value: '10%', desc: '5 winners - Random lucky participants' },
-            { label: 'Universal Prize', value: '20%', desc: 'All participants - Everyone wins something' },
-            { label: 'Roll Over', value: '5%', desc: 'Carries to next round - Jackpot grows' },
+            { label: '1st Prize', value: '30% of 95%', desc: '1 winner — Grand Jackpot. Prize released via 20-day linear vesting.' },
+            { label: '2nd Prize', value: '20% of 95%', desc: '2 winners — 10% each. Instant payout.' },
+            { label: '3rd Prize', value: '15% of 95%', desc: '3 winners — 5% each. Instant payout.' },
+            { label: 'Lucky Prize', value: '10% of 95%', desc: '5 winners — 2% each. Random selection. Instant payout.' },
+            { label: 'Universal Prize', value: '20% of 95%', desc: 'All participants — equal share. Ensures no participant leaves empty-handed.' },
+            { label: 'Roll Over', value: '5% of 95%', desc: 'Retained in pool — carries to next round, building progressive jackpots.' },
           ],
-          heading: '4.3 Why This Distribution?',
-          content3: `The prize structure is carefully designed:
-
-1. **Jackpot Excitement (30%)**: The large first prize creates life-changing winning opportunities, generating excitement and media attention.
-
-2. **Multiple Winner Tiers (20%+15%+10%)**: Multiple prize tiers ensure many players win something, maintaining engagement even if they don't hit the jackpot.
-
-3. **Universal Prize (20%)**: Every participant receives something, ensuring no one leaves empty-handed. This "thank you for playing" creates positive user sentiment.
-
-4. **Roll Over (5%)**: The carryover creates progressive jackpots that grow over time, increasing excitement and attracting more participants.`,
-          heading: '4.4 Failed Draw ( <10 Players)',
-          content4: `When fewer than 12 players participate:
-
-1. **Deposits Return**: All deposits return to the reserve pool
-2. **Referral Rewards**: Unclaimed referral rewards return to the referral pool
-3. **No Burn**: The pending 3% burn is cancelled
-4. **Next Round**: Pool starts fresh with remaining funds
-
-This mechanism protects users when participation is low while ensuring the protocol remains sustainable.`,
+          content3: `Winners in tiers 2–5 and Universal receive their prizes immediately at draw time. The 1st-prize winner receives their payout through a **20-day linear vesting schedule** (5% per day) managed by a separate on-chain vesting vault, protecting both the winner and the protocol from sudden liquidity events.`,
         },
         {
-          title: '5. Referral System',
-          heading: '5.1 How It Works',
-          content: `The referral system incentivizes community growth by rewarding both parties:`,
+          title: '5. Verifiable Randomness',
+          heading: '5.1 Draw Seed Mechanism',
+          content: `TykhePot does not rely on external oracle networks for randomness. Instead, it uses a **caller-provided draw seed** derived from a recently finalized Solana blockhash:
+
+1. The draw initiator (admin or authorized caller) samples the hash of a finalized Solana block
+2. This 32-byte seed is passed as a parameter to the \`draw_hourly\` / \`draw_daily\` instruction
+3. The contract validates the seed is non-zero before executing the draw
+4. The seed is emitted in the \`DrawCompleted\` on-chain event, making it permanently auditable
+
+Winner selection is computed deterministically from this seed using a weighted random algorithm based on each participant's deposit proportion.`,
+          heading2: '5.2 Why This Approach?',
+          content2: `Finalized blockhashes on Solana are cryptographically secure and cannot be predicted in advance by any party. Since Solana achieves block finality in approximately 1–2 seconds, the draw seed is both recent and immutable by the time it is used.
+
+Key properties:
+• **Publicly verifiable**: anyone can reproduce the winner selection using the emitted seed and on-chain deposit data
+• **Tamper-proof**: the seed is derived from network consensus, not from any single party
+• **No oracle dependency**: eliminates the latency, cost, and availability risk of external VRF providers`,
+          heading3: '5.3 Auditing a Draw',
+          content4: `To verify any historical draw:
+1. Fetch the \`DrawCompleted\` event for the round from on-chain logs
+2. Retrieve the \`draw_seed\` field from the event
+3. Replay the winner-selection algorithm (documented in the open-source contract) using the seed and the deposit snapshot
+4. Compare computed winners against the emitted \`payouts\` array
+
+The entire process is deterministic and requires no trust in the protocol team.`,
+        },
+        {
+          title: '6. Prize Vesting System',
+          heading: '6.1 20-Day Linear Vesting',
+          content: `To mitigate the risk of large instant prize withdrawals destabilizing liquidity, TykhePot implements on-chain linear vesting for 1st-place winners:`,
           items: [
-            { label: 'Referrer Reward', value: '8%', desc: 'Of referee\'s deposit, paid from referral pool upon successful draw' },
-            { label: 'Referee Bonus', value: '2% (one-time)', desc: 'On first deposit only, lifetime limit per wallet' },
+            { label: 'Vesting Duration', value: '20 days' },
+            { label: 'Release Rate', value: '5% per day (500 basis points)' },
+            { label: 'Cliff', value: 'None — vesting starts immediately after draw' },
+            { label: 'Early Claim', value: 'Winners can claim any accrued amount at any time; unclaimed amounts roll forward' },
+            { label: 'On-Chain Enforcement', value: 'Vesting vault is a separate PDA; winner signs their own claim transactions' },
           ],
-          heading: '5.2 Why Pending Until Draw?',
-          content2: `Referral rewards are held pending and only distributed when a draw succeeds:
+          content: `Immediately after a draw, the admin calls \`init_vesting\` to lock the 1st-prize amount into a dedicated vesting vault PDA. The winner can then call \`claim_vested\` at any time to withdraw all accrued portions (computed as \`min(days_elapsed, 20) × 5%\`).
 
-1. **Protection Against Failed Draws**: If a draw fails (<12 players), deposits return to users. By the same logic, referral rewards should not be paid.
-
-2. **Pool Integrity**: Referral rewards come from the referral pool (20% of total supply). Holding them pending ensures they're only used when the pool actually pays out.
-
-3. **Fairness**: Both the referrer's reward and referee's bonus depend on the pool succeeding. If users get their deposits back, referral rewards should too.
-
-4. **Economic Security**: This mechanism prevents draining the referral pool on failed rounds, ensuring long-term sustainability.`,
-          heading: '5.3 Free Bet Referral',
-          content3: `Even free bet participants can earn referral rewards:
-- Free bet (100 TPOT) generates 8 TPOT for the referrer
-- Free bet users receive 2% bonus (2 TPOT) on their first free bet
-- This ensures strong referral incentives regardless of deposit amount`,
+This design aligns winner and protocol interests: winners receive predictable, scheduled payouts while the protocol avoids sudden large outflows.`,
         },
         {
-          title: '6. Airdrop & Free Bet System',
-          heading: '6.1 Registration-Based Airdrop',
-          content: `Instead of directly distributing tokens, TykhePot uses a registration-based system:`,
+          title: '7. Referral System',
+          heading: '7.1 Mechanism',
+          content: `The referral system exclusively applies to Daily Pool deposits:`,
           items: [
-            { label: 'Step 1', value: 'User registers wallet', desc: 'Click "Register" to record wallet on-chain' },
-            { label: 'Step 2', value: 'Receive qualification', desc: 'Wallet marked as eligible for free bet' },
-            { label: 'Step 3', value: 'Use Free Bet', desc: 'In Daily Pool, check "Free Bet" to play with 100 TPOT' },
+            { label: 'Referrer Reward', value: '8% of referee\'s deposit', desc: 'Paid instantly from the Referral Pool upon draw success' },
+            { label: 'Referee Bonus', value: '2% one-time bonus', desc: 'Applied on the referee\'s first qualifying deposit only (lifetime limit per wallet)' },
           ],
-          heading: '6.2 Why This Design?',
-          content2: `The registration-based approach has several advantages:
+          content2: `Both rewards are funded from the dedicated **Referral Pool** (200,000,000 TPOT, 20% of total supply). When this pool is exhausted, referral rewards cease — referrers are notified via the protocol state flag.`,
+          heading2: '7.2 Free Bet Compatibility',
+          content3: `Daily Pool participants who use the **Free Bet** option (funded by the Airdrop claim) also generate referral rewards:
+• Referrer earns 8 TPOT (8% of the 100 TPOT free bet)
+• Referee receives 2 TPOT bonus (2%, one-time)
 
-1. **No Token Transfer**: Users don't receive transferable tokens, eliminating dump pressure on the token price.
-
-2. **Engagement First**: Users must engage with the platform before receiving value, building habit and understanding of the protocol.
-
-3. **1:1 Matching**: Free bets receive 1:1 matching from the Pre-match Pool, meaning 100 TPOT deposit = 200 TPOT in the pool.
-
-4. **Referral Compatible**: Even free bet users can earn referral rewards for their referrers, maintaining growth incentives.`,
-          heading: '6.3 One-Time Limit',
-          content3: `Each wallet can:
-- Register once (one-time eligibility)
-- Use free bet once (cannot be reused)
-- Receive 2% referee bonus once (lifetime)
-
-This prevents abuse while giving every legitimate user a chance to experience the platform.`,
+This ensures referral incentives remain strong even for users who have not yet purchased TPOT.`,
+          heading3: '7.3 Single Referrer Rule',
+          content4: `Each wallet address can only be bound to one referrer, enforced on-chain. Self-referral is explicitly prevented by the contract. Once bound, the referrer relationship is permanent and cannot be modified.`,
         },
         {
-          title: '7. Security & Safety Features',
-          heading: '7.1 Protocol Safeguards',
+          title: '8. Airdrop & Free Bet',
+          heading: '8.1 Airdrop Claim',
+          content: `Any wallet can claim a one-time airdrop of **100 TPOT** by calling the \`claim_free_airdrop\` instruction. This mints tokens from the Airdrop Pool directly to the claimer's token account.
+
+Key restrictions:
+• One claim per wallet address (enforced by on-chain user state)
+• Airdrop tokens are fully transferable SPL tokens
+• Airdrop pool total: 100,000,000 TPOT (10% of supply)`,
+          heading2: '8.2 Free Bet in Daily Pool',
+          content2: `Airdrop tokens can be used in the Daily Pool via the \`deposit_daily_free\` instruction. The free bet:
+• Uses 100 TPOT from the airdrop allocation
+• Is eligible for 1:1 reserve matching from the Reserve Pool
+• Can generate referral rewards for the user's referrer
+• Counts toward the pool participant threshold
+
+Free bets are treated identically to paid deposits for prize-drawing purposes — the smart contract makes no distinction.`,
+        },
+        {
+          title: '9. Security & Protocol Safeguards',
+          heading: '9.1 Emergency Pause',
+          content: `The protocol includes an admin-controlled emergency pause mechanism. When active:
+• New deposits are rejected across all pools
+• Existing pool balances are preserved on-chain
+• Draws can still be executed by the admin to settle active pools
+
+The pause state is stored in the protocol's \`State\` account and is publicly readable. To prevent abuse of this mechanism, a **48-hour time lock (172,800 seconds)** is enforced between consecutive pause toggles. This prevents rapid pause/unpause cycling by any compromised admin key.`,
+          heading2: '9.2 Deposit Constraints',
           items: [
-            { label: 'Emergency Pause', value: 'Admin can pause deposits during emergencies' },
-            { label: 'Maximum Deposit', value: '1,000,000 TPOT per transaction' },
-            { label: 'Minimum Deposit', value: '500 TPOT (Min30) / 200 TPOT (Hourly) / 100 TPOT (Daily)' },
-            { label: 'Time Lock', value: '60-second window between operations' },
-            { label: 'On-Chain Verification', value: 'All results verifiable on Solana blockchain' },
+            { label: 'Min deposit — Hourly', value: '200 TPOT' },
+            { label: 'Min deposit — Min30', value: '500 TPOT' },
+            { label: 'Min deposit — Daily', value: '100 TPOT' },
+            { label: 'Max deposit (all pools)', value: '1,000,000 TPOT per transaction' },
           ],
-          heading: '7.2 Random Number Generation',
-          content2: `TykhePot uses multiple sources for random number generation:
+          content2: `Both minimum and maximum limits are validated on-chain. Deposits outside these bounds are rejected with a descriptive error code.`,
+          heading3: '9.3 PDA Architecture',
+          content4: `All protocol vaults (pool vault, staking vault, vesting vaults) are **Program Derived Addresses (PDAs)** owned exclusively by the TykhePot program. No external key or multisig controls these accounts — only the program logic itself can authorize transfers, ensuring no custodial risk.
 
-1. **Primary**: Switchboard VRF (Verifiable Random Function) - Provides cryptographically secure randomness
-2. **Fallback**: Timestamp-based seed - Uses block timestamp combined with ticket numbers
-
-The VRF integration ensures provably fair draws that can be verified by anyone.`,
-          heading: '7.3 Team Token Vesting',
-          content3: `Team allocations are locked for 4 years with linear vesting:
-- Tokens remain locked until unlock date
-- Gradual release over 48 months
-- Aligns team incentives with long-term project success
-
-This prevents team members from dumping tokens early, protecting community interests.`,
+Vesting vault authority is a separate PDA (\`vesting_auth\`) that enables winners to self-sign claim transactions without admin involvement.`,
         },
         {
-          title: '8. Technical Architecture',
-          heading: '8.1 Blockchain',
-          content: `Built on Solana for:
-- High throughput (65,000 TPS)
-- Low transaction costs (~$0.001 per transaction)
-- Fast finality (<1 second)
+          title: '10. Technical Architecture',
+          heading: '10.1 Blockchain',
+          content: `Built on **Solana** for:
+• High throughput: up to 65,000 TPS
+• Low transaction cost: ~$0.0001 per transaction
+• Sub-second finality: ~400ms slot time, ~1–2s finality
 
-This ensures smooth user experience even during high traffic periods.`,
-          heading: '8.2 Smart Contract',
-          content2: `The TykhePot contract features:
-- Anchor framework for secure development
-- Comprehensive error handling
-- Upgradeable fee structures
-- Multi-signature support for admin functions`,
-          heading: '8.3 Frontend',
-          content3: `The web interface provides:
-- Multiple wallet support (Phantom, Solflare)
-- Real-time pool statistics
-- Multi-language support (English, Chinese)
-- Responsive mobile design`,
+These properties make sub-minute prize draws economically viable — something impossible on higher-fee blockchains.`,
+          heading2: '10.2 Smart Contract',
+          content2: `The \`royalpot\` program is built with the **Anchor framework** (Rust), providing:
+• Type-safe account validation via \`#[derive(Accounts)]\` macros
+• Automatic discriminator-based instruction routing
+• Comprehensive error enum with 18+ error codes (e.g., \`InsufficientBalance\`, \`AlreadyPaused\`, \`NothingToClaim\`)
+• Upgradeable program authority for critical patches`,
+          heading3: '10.3 Frontend',
+          content4: `The React-based web interface provides:
+• Multi-wallet support: Phantom, Solflare (via \`@solana/wallet-adapter-react\`)
+• Real-time pool statistics with 30-second auto-refresh
+• Multi-language support: English and Chinese
+• Mobile-responsive design
+• Direct Anchor program interaction via \`@coral-xyz/anchor\` SDK`,
         },
         {
-          title: '9. Roadmap',
+          title: '11. Roadmap',
           items: [
-            { label: 'Phase 1', value: 'Devnet Launch', desc: 'Contract deployment and testing on Solana devnet' },
-            { label: 'Phase 2', value: 'Testnet & Audit', desc: 'Security audit and bug bounty program' },
-            { label: 'Phase 3', value: 'Mainnet Launch', desc: 'Public launch with token distribution' },
-            { label: 'Phase 4', value: 'VRF Integration', desc: 'Switchboard VRF integration for provably fair draws' },
-            { label: 'Phase 5', value: 'Ecosystem Growth', desc: 'Staking, governance, and cross-chain expansion' },
+            { label: 'Phase 1 — Complete', value: 'Devnet Deployment', desc: 'Core contract deployed on Solana devnet; all pool types operational; frontend live' },
+            { label: 'Phase 2 — In Progress', value: 'Security Audit', desc: 'Third-party smart contract audit; public bug bounty program' },
+            { label: 'Phase 3', value: 'Mainnet Launch', desc: 'Token generation event; public launch on Solana mainnet-beta' },
+            { label: 'Phase 4', value: 'Liquidity Expansion', desc: 'DEX listings; cross-community partnerships; leaderboard rewards' },
+            { label: 'Phase 5', value: 'Governance & Ecosystem', desc: 'Community governance for fee parameters; mobile app; additional pool variants' },
           ],
         },
         {
-          title: '10. Risk Disclosure',
-          content: `1. **Market Risk**: Cryptocurrency prices are highly volatile. TPOT may lose significant value.
+          title: '12. Risk Disclosure',
+          content: `1. **Market Risk**: TPOT is a highly volatile digital asset. Its value may decrease significantly or go to zero.
 
-2. **Regulatory Risk**: Cryptocurrency regulations vary by jurisdiction and may change unexpectedly.
+2. **Regulatory Risk**: Lottery and gambling regulations vary by jurisdiction. Users are solely responsible for compliance with their local laws.
 
-3. **Technical Risk**: Smart contracts may contain vulnerabilities despite audits.
+3. **Smart Contract Risk**: Despite rigorous development practices, on-chain programs may contain undiscovered vulnerabilities.
 
-4. **Liquidity Risk**: Low trading volume may make it difficult to buy or sell TPOT.
+4. **Liquidity Risk**: Thin secondary market liquidity may make it difficult to buy or sell TPOT at desired prices.
 
-5. **Gambling Risk**: Lottery participation involves financial risk. Only play with what you can afford to lose.
+5. **Participation Risk**: Lottery outcomes are probabilistic — there is no guarantee of winning. The majority of participants will not receive prizes in any given round.
 
-6. **Platform Risk**: Despite security measures, no platform is completely immune to attacks.
+6. **Operational Risk**: The protocol's draw mechanism depends on an authorized admin initiating draws on schedule. Delays or outages may affect draw timing.
 
-Please carefully consider your financial situation and risk tolerance before participating.`,
+Please carefully evaluate your financial situation and risk tolerance before participating. Never deposit funds you cannot afford to lose.`,
         }
       ]
     },
     zh: {
       title: 'TykhePot 白皮书',
-      subtitle: '公平透明的链上娱乐协议',
-      disclaimer: '本白皮书仅供信息参考。加密货币投资存在重大风险。',
+      subtitle: 'Solana 链上公平透明彩票协议',
+      version: 'v1.0 — 2026年2月',
+      disclaimer: '本白皮书仅供参考。参与彩票涉及财务风险，请勿投入超出您承受能力的资金。',
       sections: [
         {
           title: '1. 执行摘要',
-          content: `TykhePot 是建立在 Solana 网络上的去中心化彩票协议，通过链上随机数实现公平透明的娱乐体验。以希腊幸运女神堤喀(Tykhe)命名，我们将彩票游戏的乐趣带入区块链时代。
+          content: `TykhePot 是基于 Solana 区块链、使用 Anchor 框架构建的全链上去中心化彩票协议。以希腊幸运女神堤喀（Tykhe）命名，TykhePot 通过从 Solana 已确认区块哈希派生的加密开奖种子，实现可验证、防篡改的公平开奖。
 
-我们的使命是创建一个无需信任、可验证、由社区驱动的彩票系统，每位参与者都可以验证每次开奖的公平性。借助 Solana 的高吞吐量和低手续费，TykhePot 为全球用户提供便捷愉快的游戏体验。`,
+协议运营三个独立奖池（每30分钟、每小时、每日），用户可根据自身偏好选择参与频率和风险等级。所有存款、奖金分配、手续费销毁和推荐奖励均通过链上指令透明执行，无任何中介。
+
+核心设计原则：
+• 可验证性：每次开奖种子均上链记录，任何人均可独立验证获奖结果
+• 通缩机制：每笔存款的3%永久销毁，持续减少TPOT流通总量
+• 社区增长：8%推荐奖励体系激励有机用户增长
+• 奖金归属：大额头奖通过20天线性归属释放，保护获奖者与协议稳定性`,
         },
         {
           title: '2. 代币经济学与初始分配',
@@ -250,213 +267,216 @@ Please carefully consider your financial situation and risk tolerance before par
           items: [
             { label: '代币名称', value: 'TPOT' },
             { label: '总供应量', value: '1,000,000,000 TPOT' },
-            { label: '代币标准', value: 'SPL Token (Solana)' },
+            { label: '代币标准', value: 'SPL Token（Solana 程序库）' },
+            { label: '精度', value: '9位小数' },
           ],
-          heading: '2.2 初始分配',
+          heading2: '2.2 初始分配',
           items2: [
-            { label: '初始流动性', value: '50,000,000 (5%)', desc: 'DEX流动性，合约外管理' },
-            { label: '空投池', value: '100,000,000 (10%)', desc: '每个钱包100 TPOT，一次性注册' },
-            { label: '质押奖励池', value: '350,000,000 (35%)', desc: '长期质押激励' },
-            { label: '前期奖池配额', value: '200,000,000 (20%)', desc: '1:1配捐给早期参与者' },
-            { label: '团队分配', value: '100,000,000 (10%)', desc: '4年线性解锁' },
-            { label: '推广奖励池', value: '200,000,000 (20%)', desc: '推荐奖励，耗完即止' },
+            { label: '初始流动性', value: '50,000,000 (5%)', desc: 'DEX 流动性注入，由团队外部管理' },
+            { label: '空投池', value: '100,000,000 (10%)', desc: '免费领取：每个钱包100 TPOT，一次性' },
+            { label: '质押奖励池', value: '350,000,000 (35%)', desc: '长期质押激励（8% APR / 48% APR）' },
+            { label: '储备配捐池', value: '200,000,000 (20%)', desc: '天池参与者1:1存款配捐' },
+            { label: '团队分配', value: '100,000,000 (10%)', desc: '4年归属，与长期激励对齐' },
+            { label: '推广奖励池', value: '200,000,000 (20%)', desc: '推荐奖励来源，耗尽即止' },
           ],
-          content: `初始分配旨在激励早期参与、奖励社区增长并确保协议的长期可持续性。
+          content: `分配方案旨在启动流动性、奖励早期参与者并确保协议长期可持续发展。
 
-前期奖池配额为用户存款提供1:1配捐，有效为早期参与者翻倍奖池金额。这在奖池充足时创造了强烈的早期采用动力。
+储备配捐池对天池存款提供1:1配捐，在储备充足期间有效翻倍参与者奖池规模，形成强烈的早期参与激励。
 
-推广奖励池通过奖励带来新参与者的用户来确保可持续增长。推荐人和被推荐人都能获得收益，使个人激励与平台增长保持一致。`,
+推广奖励池直接资助每笔被推荐天池存款的8%推荐奖励，实现可持续有机增长，无需稀释流通供应量。`,
         },
         {
-          title: '3. 奖池结构与游戏规则',
+          title: '3. 奖池架构',
           heading: '3.1 奖池类型',
-          content: `TykhePot 运营两个平行彩票池以满足不同用户的偏好和风险承受能力:`,
+          content: `TykhePot 同时运营三个独立奖池：`,
           items: [
-            { label: '小时池', value: '', desc: '每小时开奖。最低投入：200 TPOT。最少12人参与开奖。' },
-            { label: '30分池', value: '', desc: '30分钟开奖！最低投入：500 TPOT。最少12人参与开奖。' },
-            { label: '天池', value: '', desc: 'UTC午夜开奖。最低投入：100 TPOT。最少12人参与开奖。' },
+            { label: '小时池（HOUR）', value: '约每60分钟开奖', desc: '最低投入：200 TPOT · 开奖最低人数：3人 · 不支持免费投注和推荐奖励' },
+            { label: '30分池（MIN30）', value: '约每30分钟开奖', desc: '最低投入：500 TPOT · 开奖最低人数：3人 · 频率最高，奖池积累较小' },
+            { label: '天池（DAILY）', value: 'UTC 00:00开奖', desc: '最低投入：100 TPOT · 开奖最低人数：5人 · 支持免费投注和8%推荐奖励' },
           ],
-          content2: `双奖池结构允许用户选择偏好的频率和风险等级。小时池提供更快的结果但奖金较小，而天池提供更大累积奖金。`,
-          heading: '3.2 为什么设定12人门槛？',
-          content3: `12人门槛具有关键作用:
+          content2: `每个奖池独立累积存款。最低参与人数阈值（HOUR/MIN30为3人，DAILY为5人）旨在确保跨奖项层级的有意义奖金差异。若开奖时未达阈值，本轮开奖跳过——资金不丢失，奖池余额滚入下一期。`,
+          heading2: '3.2 开奖资格阈值',
+          content3: `参与人数阈值的设立有多重目的：
 
-1. **统计显著性**: 参与者少于12人时，中奖概率会极度偏斜。单个大额存款者可能会主导奖池，违背公平彩票的初衷。
+1. **统计公平性**：参与者极少时，单个大额存款者的比重失衡，破坏彩票公平性。
 
-2. **奖金分配**: 奖金结构（30%/20%/15%/10%/20%分布在不同获奖层级）需要足够多的参与者才能产生有意义的奖金差异。
+2. **奖项层级可行性**：奖金结构设有6个层级（头奖/二等/三等/幸运/普惠/滚存）。有意义的分配至少需要3-5名参与者。
 
-3. **防操纵**: 最低门槛防止小团体通过协调存款轻易操纵结果。
+3. **防操纵**：最低阈值防止少数共谋参与者轻易控制每轮结果。
 
-4. **奖池可行性**: 参与者太少会导致奖池不足以吸引未来参与者，形成死亡螺旋。`,
-          heading: '3.3 存款流程',
-          items3: [
-            { label: '步骤1', value: '用户存入TPOT', desc: '100%存款进入奖池' },
-            { label: '步骤2', value: '3%记录为待销毁', desc: '开奖成功后将被销毁' },
-            { label: '步骤3', value: '97%进入奖池', desc: '加上前期奖池配额的1:1配捐' },
-            { label: '步骤4', value: '记录推荐奖励', desc: '推荐人8%，被推荐人2%（pending，开奖后发放）' },
-          ],
+4. **协议安全**：低参与度轮次跳过而非退款——奖池余额滚入下一期，奖池持续累积。`,
+          heading3: '3.3 最高存款限额',
+          content4: `合约硬性规定每笔交易最高投入**1,000,000 TPOT**，防止巨鲸集中攻击，为所有参与者维护有意义的中奖概率。此限额在智能合约中强制执行，不可绕过。`,
         },
         {
-          title: '4. 奖金分配机制',
-          heading: '4.1 分配公式',
-          content: `当开奖成功（≥12人）时，总奖池分配如下:`,
+          title: '4. 费用结构与奖金分配',
+          heading: '4.1 费用明细',
+          content: `每次成功开奖时，奖池余额按以下比例分配：`,
           items: [
-            { label: '平台费', value: '2%', desc: '协议可持续性' },
-            { label: '销毁', value: '3%', desc: '永久代币销毁' },
-            { label: '奖池', value: '95%', desc: '分配给中奖者' },
+            { label: '销毁', value: '3%', desc: '永久销毁 — 减少TPOT总供应量（通缩压力）' },
+            { label: '平台费', value: '2%', desc: '转入协议国库用于持续开发' },
+            { label: '奖池', value: '95%', desc: '按以下层级结构分配给获奖者' },
           ],
-          content2: `3%销毁创造通缩压力，可能提升所有持币者的代币价值。2%平台费确保协议长期可持续。`,
-          heading: '4.2 获奖层级',
+          content2: `3%销毁不可逆且累积——每次开奖永久通缩代币供应量，随时间推移产生上行价格压力。`,
+          heading2: '4.2 获奖层级分配',
           items2: [
-            { label: '头奖', value: '30%', desc: '1人 - 超级大奖' },
-            { label: '二等奖', value: '20%', desc: '2人 - 二级奖励' },
-            { label: '三等奖', value: '15%', desc: '3人 - 三级奖励' },
-            { label: '幸运奖', value: '10%', desc: '5人 - 随机幸运参与者' },
-            { label: '普惠奖', value: '20%', desc: '所有参与者 - 人人有奖' },
-            { label: '滚存', value: '5%', desc: '转入下一期 - 奖池累积' },
+            { label: '头奖', value: '95%的30%', desc: '1人 — 超级大奖。奖金通过20天线性归属释放。' },
+            { label: '二等奖', value: '95%的20%', desc: '2人 — 各10%。即时到账。' },
+            { label: '三等奖', value: '95%的15%', desc: '3人 — 各5%。即时到账。' },
+            { label: '幸运奖', value: '95%的10%', desc: '5人 — 各2%。随机抽选。即时到账。' },
+            { label: '普惠奖', value: '95%的20%', desc: '所有参与者 — 等额分配。确保无人空手而归。' },
+            { label: '滚存', value: '95%的5%', desc: '保留在奖池 — 滚入下一期，形成累积头奖。' },
           ],
-          heading: '4.3 为何如此设计？',
-          content3: `奖金结构经过精心设计:
-
-1. **大奖惊喜(30%)**: 丰厚的头奖创造改变人生的中奖机会，产生兴奋感和媒体关注。
-
-2. **多层级获奖(20%+15%+10%)**: 多个奖项层级确保许多玩家都能有所斩获，即使未中头奖也能保持参与度。
-
-3. **普惠奖(20%)**: 每位参与者都能获得奖励，确保无人空手而归。这种"感谢参与"创造积极的用户情绪。
-
-4. **滚存(5%)**: 累计创造持续增长的头奖，增加吸引力并吸引更多参与者。`,
-          heading: '4.4 开奖失败（<12人）',
-          content4: `当参与者少于12人时:
-
-1. **存款返还**: 所有存款返回储备池
-2. **推荐奖励**: 未发放的推荐奖励返回推荐池
-3. **不销毁**: 待销毁的3%取消
-4. **下一期**: 奖池从剩余资金重新开始
-
-此机制在参与度低时保护用户，同时确保协议保持可持续性。`,
+          content3: `二等奖至普惠奖获奖者在开奖时立即收到奖金。头奖获奖者的奖金通过**20天线性归属计划**（每天5%）释放，由独立的链上归属金库PDA管理，保护获奖者和协议免受突发大额流动性冲击。`,
         },
         {
-          title: '5. 推荐系统',
-          heading: '5.1 工作原理',
-          content: `推荐系统通过奖励双方来激励社区增长:`,
+          title: '5. 可验证随机性',
+          heading: '5.1 开奖种子机制',
+          content: `TykhePot 不依赖任何外部预言机网络获取随机数。取而代之，使用**调用方提供的开奖种子**，派生自最近已确认的 Solana 区块哈希：
+
+1. 开奖发起方（管理员或授权调用方）采样一个已确认 Solana 区块的哈希
+2. 这32字节种子作为参数传入 \`draw_hourly\` / \`draw_daily\` 指令
+3. 合约验证种子非零后执行开奖
+4. 种子记录在 \`DrawCompleted\` 链上事件中，永久可审计
+
+获奖者选取基于此种子，以每位参与者的存款比例为权重，通过确定性算法计算。`,
+          heading2: '5.2 为何选择此方案？',
+          content2: `Solana 已确认区块哈希具备加密安全性，任何参与方均无法提前预测。由于 Solana 区块终局性约需1-2秒，开奖种子在使用时既近期又不可篡改。
+
+核心优势：
+• **公开可验证**：任何人均可利用已发布的种子和链上存款数据复现获奖者选取过程
+• **防篡改**：种子来自网络共识，而非任何单一方
+• **无预言机依赖**：消除外部VRF服务提供商的延迟、成本和可用性风险`,
+          heading3: '5.3 如何审计开奖',
+          content4: `验证任意历史开奖：
+1. 从链上日志获取该期的 \`DrawCompleted\` 事件
+2. 提取事件中的 \`draw_seed\` 字段
+3. 使用种子和存款快照重放获奖者选取算法（详见开源合约文档）
+4. 将计算得出的获奖者与事件中的 \`payouts\` 数组对比
+
+整个过程具有确定性，无需信任协议团队。`,
+        },
+        {
+          title: '6. 奖金归属系统',
+          heading: '6.1 20天线性归属',
+          content: `为降低大额即时奖金提取对流动性的冲击风险，TykhePot 对头奖获奖者实施链上线性归属：`,
           items: [
-            { label: '推荐人奖励', value: '8%', desc: '被推荐人存款的8%，开奖成功后从推荐池发放' },
-            { label: '被推荐人奖励', value: '2%（一次性）', desc: '首次存款时，终身每人一次' },
+            { label: '归属期限', value: '20天' },
+            { label: '释放速率', value: '每天5%（500基点）' },
+            { label: '锁仓期', value: '无 — 开奖后立即开始归属' },
+            { label: '提前认领', value: '获奖者可随时认领已归属部分；未认领金额自动滚转' },
+            { label: '链上执行', value: '归属金库为独立PDA；获奖者自主签署认领交易，无需管理员介入' },
           ],
-          heading: '5.2 为何pending直到开奖？',
-          content2: `推荐奖励暂时持有，仅在开奖成功时发放:
+          content: `开奖后，管理员调用 \`init_vesting\` 将头奖金额锁入专用归属金库PDA。获奖者随后可随时调用 \`claim_vested\` 提取已归属部分（计算方式：\`min(已过天数, 20) × 5%\`）。
 
-1. **保护开奖失败**: 如果开奖失败（<12人），存款返还给用户。同理，推荐奖励也不应发放。
-
-2. **奖池完整性**: 推荐奖励来自推荐池（总供应量的20%）。持有pending确保仅在奖池实际派发时才被使用。
-
-3. **公平性**: 推荐人的奖励和被推荐人的奖金都取决于奖池是否成功。如果用户获得存款退回，推荐奖励也应退回。
-
-4. **经济安全**: 此机制防止在失败轮次耗尽推荐池，确保长期可持续性。`,
-          heading: '5.3 免费投注推荐',
-          content3: `即使免费投注参与者也能获得推荐奖励:
-- 免费投注（100 TPOT）为推荐人产生 8 TPOT
-- 免费投注用户在首次免费投注时获得 2% 奖金（2 TPOT）
-- 这确保无论存款金额如何，都有强劲的推荐激励`,
+此设计平衡了获奖者和协议双方利益：获奖者获得可预期的分期付款，协议避免突发大额资金流出。`,
         },
         {
-          title: '6. 空投与免费投注系统',
-          heading: '6.1 注册制空投',
-          content: `TykhePot 采用基于注册的系统，而非直接分发代币:`,
+          title: '7. 推荐系统',
+          heading: '7.1 机制说明',
+          content: `推荐系统仅适用于天池存款：`,
           items: [
-            { label: '步骤1', value: '用户注册钱包', desc: '点击"注册"将钱包记录到链上' },
-            { label: '步骤2', value: '获得资格', desc: '钱包标记为符合免费投注条件' },
-            { label: '步骤3', value: '使用免费投注', desc: '在天池勾选"免费投注"用100 TPOT参与' },
+            { label: '推荐人奖励', value: '被推荐人存款的8%', desc: '开奖成功后立即从推广奖励池支付' },
+            { label: '被推荐人奖励', value: '一次性2%加成', desc: '仅首笔符合条件的存款适用（每钱包终身一次）' },
           ],
-          heading: '6.2 为何如此设计？',
-          content2: `基于注册的方式有几个优势:
+          content2: `两项奖励均从专用**推广奖励池**（200,000,000 TPOT，占总供应量20%）提取。池子耗尽后，推荐奖励停止——协议状态标志对外公示。`,
+          heading2: '7.2 免费投注兼容性',
+          content3: `使用**免费投注**选项（由空投领取资金支持）的天池参与者同样产生推荐奖励：
+• 推荐人获得8 TPOT（100 TPOT免费投注的8%）
+• 被推荐人获得2 TPOT加成（2%，一次性）
 
-1. **无代币转移**: 用户不获得可转移代币，消除了代币价格的下行压力。
-
-2. **先参与后获益**: 用户需在获得价值前与平台互动，培养使用习惯并了解协议。
-
-3. **1:1配捐**: 免费投注从前期奖池配额获得1:1配捐，意味着100 TPOT存款 = 奖池200 TPOT。
-
-4. **兼容推荐**: 即使免费投注用户也能为推荐人获得推荐奖励，保持增长激励。`,
-          heading: '6.3 一次性限制',
-          content3: `每个钱包可以:
-- 注册一次（一次性资格）
-- 使用免费投注一次（不可重复）
-- 获得被推荐人奖励一次（终身）
-
-这防止滥用，同时让每个合法用户都有机会体验平台。`,
+这确保即使尚未购买TPOT的用户，也能为推荐人带来有效激励。`,
+          heading3: '7.3 单一推荐人规则',
+          content4: `每个钱包地址只能绑定一个推荐人，在链上强制执行。合约明确禁止自我推荐。绑定关系一旦确立，永久有效，不可更改。`,
         },
         {
-          title: '7. 安全与保护功能',
-          heading: '7.1 协议保障',
+          title: '8. 空投与免费投注',
+          heading: '8.1 空投领取',
+          content: `任意钱包均可通过调用 \`claim_free_airdrop\` 指令一次性领取**100 TPOT**空投。代币从空投池直接铸造至领取方的代币账户。
+
+关键限制：
+• 每钱包地址仅限一次（由链上用户状态强制执行）
+• 空投代币为完全可转让的SPL代币
+• 空投池总量：100,000,000 TPOT（总供应量10%）`,
+          heading2: '8.2 天池免费投注',
+          content2: `空投代币可通过 \`deposit_daily_free\` 指令用于天池免费投注：
+• 使用100 TPOT空投额度
+• 可获得来自储备配捐池的1:1配捐
+• 可为用户推荐人产生推荐奖励
+• 计入奖池参与人数阈值
+
+免费投注在开奖目的上与付费存款完全等同——智能合约不作任何区分。`,
+        },
+        {
+          title: '9. 安全与协议保障',
+          heading: '9.1 紧急暂停',
+          content: `协议包含管理员控制的紧急暂停机制。激活时：
+• 所有奖池的新存款被拒绝
+• 现有奖池余额在链上完整保留
+• 管理员仍可执行开奖以结算活跃奖池
+
+暂停状态存储在协议的 \`State\` 账户中，公开可读。为防止机制被滥用，连续两次暂停切换之间强制执行**48小时时间锁（172,800秒）**，防止任何泄露的管理员密钥快速循环暂停/恢复。`,
+          heading2: '9.2 存款限制',
           items: [
-            { label: '紧急暂停', value: '管理员可在紧急情况下暂停存款' },
-            { label: '最大存款', value: '每笔交易1,000,000 TPOT' },
-            { label: '最低存款', value: '200 TPOT（小时池）/ 100 TPOT（天池）' },
-            { label: '时间锁', value: '操作间隔60秒窗口' },
-            { label: '链上验证', value: '所有结果可在Solana区块链上验证' },
+            { label: '最低存款 — 小时池', value: '200 TPOT' },
+            { label: '最低存款 — 30分池', value: '500 TPOT' },
+            { label: '最低存款 — 天池', value: '100 TPOT' },
+            { label: '最高存款（所有奖池）', value: '每笔交易1,000,000 TPOT' },
           ],
-          heading: '7.2 随机数生成',
-          content2: `TykhePot 使用多个随机数来源:
+          content2: `最低和最高限额均在链上验证。超出范围的存款将被拒绝并返回描述性错误代码。`,
+          heading3: '9.3 PDA架构',
+          content4: `所有协议金库（奖池金库、质押金库、归属金库）均为**程序派生地址（PDA）**，专属于TykhePot程序所有。没有任何外部密钥或多签可控制这些账户——仅程序逻辑本身可授权转账，确保无托管风险。
 
-1. **首选**: Switchboard VRF（可验证随机函数）- 提供加密安全的随机性
-2. **备选**: 基于时间戳的种子 - 使用区块时间戳结合票号
-
-VRF集成确保可证明公平的开奖，任何人都可以验证。`,
-          heading: '7.3 团队代币解锁',
-          content3: `团队分配锁定4年，线性解锁:
-- 代币保持锁定直到解锁日期
-- 48个月内逐步释放
-- 使团队激励与长期项目成功保持一致
-
-这防止团队成员提前抛售代币，保护社区利益。`,
+归属金库授权方为独立PDA（\`vesting_auth\`），使获奖者无需管理员介入即可自主签署认领交易。`,
         },
         {
-          title: '8. 技术架构',
-          heading: '8.1 区块链',
-          content: `建立在Solana网络上，因为:
-- 高吞吐量（65,000 TPS）
-- 低交易成本（每笔交易约$0.001）
-- 快速最终确定性（<1秒）
+          title: '10. 技术架构',
+          heading: '10.1 区块链基础设施',
+          content: `基于 **Solana** 构建，原因如下：
+• 高吞吐量：最高65,000 TPS
+• 极低交易成本：每笔交易约$0.0001
+• 亚秒级终局性：约400ms出块时间，1-2秒终局性
 
-这确保即使在高峰期也能提供流畅的用户体验。`,
-          heading: '8.2 智能合约',
-          content2: `TykhePot合约特点:
-- Anchor框架确保安全开发
-- 全面的错误处理
-- 可升级的费用结构
-- 多签支持管理功能`,
-          heading: '8.3 前端',
-          content3: `网页界面提供:
-- 多钱包支持（Phantom, Solflare）
-- 实时奖池统计
-- 多语言支持（英文、中文）
-- 响应式移动端设计`,
+这些特性使亚分钟级开奖在经济上可行——在高手续费区块链上这根本无法实现。`,
+          heading2: '10.2 智能合约',
+          content2: `\`royalpot\` 程序使用 **Anchor 框架（Rust）** 构建，具备：
+• 通过 \`#[derive(Accounts)]\` 宏实现类型安全账户验证
+• 基于辨别符的自动指令路由
+• 包含18+错误代码的完整错误枚举（如 \`InsufficientBalance\`、\`AlreadyPaused\`、\`NothingToClaim\`）
+• 可升级程序授权，支持关键补丁`,
+          heading3: '10.3 前端',
+          content4: `基于React的网页界面提供：
+• 多钱包支持：Phantom、Solflare（通过 \`@solana/wallet-adapter-react\`）
+• 实时奖池统计，30秒自动刷新
+• 多语言支持：英文和中文
+• 移动端响应式设计
+• 通过 \`@coral-xyz/anchor\` SDK 直接与 Anchor 程序交互`,
         },
         {
-          title: '9. 路线图',
+          title: '11. 路线图',
           items: [
-            { label: '第一阶段', value: 'Devnet上线', desc: '合约部署与Solana devnet测试' },
-            { label: '第二阶段', value: '测试网与审计', desc: '安全审计和漏洞赏金计划' },
-            { label: '第三阶段', value: '主网上线', desc: '公开上线与代币分发' },
-            { label: '第四阶段', value: 'VRF集成', desc: 'Switchboard VRF集成，实现可证明公平开奖' },
-            { label: '第五阶段', value: '生态增长', desc: '质押、治理与跨链扩展' },
+            { label: '第一阶段 — 已完成', value: 'Devnet 部署', desc: '核心合约部署至 Solana devnet；所有奖池类型已上线；前端已运行' },
+            { label: '第二阶段 — 进行中', value: '安全审计', desc: '第三方智能合约审计；公开漏洞赏金计划' },
+            { label: '第三阶段', value: '主网上线', desc: '代币生成事件；Solana mainnet-beta 公开上线' },
+            { label: '第四阶段', value: '流动性扩展', desc: 'DEX上市；跨社区合作；排行榜奖励' },
+            { label: '第五阶段', value: '治理与生态', desc: '费用参数社区治理；移动端App；更多奖池变体' },
           ],
         },
         {
-          title: '10. 风险披露',
-          content: `1. **市场风险**: 加密货币价格高度波动。TPOT可能大幅贬值。
+          title: '12. 风险披露',
+          content: `1. **市场风险**：TPOT是高度波动的数字资产，其价值可能大幅下跌甚至归零。
 
-2. **监管风险**: 各国对加密货币的监管不同，可能随时变化。
+2. **监管风险**：彩票和赌博法规因司法管辖区不同而异。用户对遵守当地法律法规负全责。
 
-3. **技术风险**: 尽管经过审计，智能合约可能存在漏洞。
+3. **智能合约风险**：尽管开发严谨，链上程序可能存在未发现的漏洞。
 
-4. **流动性风险**: 低交易量可能导致买卖TPOT困难。
+4. **流动性风险**：二级市场流动性不足可能导致按预期价格买卖TPOT困难。
 
-5. **赌博风险**: 彩票参与涉及财务风险。仅用可承受损失的资金参与。
+5. **参与风险**：彩票结果具有概率性——不保证中奖。任何单期大多数参与者将无法获得奖励。
 
-6. **平台风险**: 尽管有安全措施，没有任何平台能完全免疫攻击。
+6. **运营风险**：协议开奖机制依赖授权管理员按时发起开奖。延迟或中断可能影响开奖时间。
 
-参与前请仔细考虑您的财务状况和风险承受能力。`,
+参与前请仔细评估您的财务状况和风险承受能力。切勿投入您无法承受损失的资金。`,
         }
       ]
     }
@@ -467,31 +487,43 @@ VRF集成确保可证明公平的开奖，任何人都可以验证。`,
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        <Link to="/" style={styles.backLink}>← {language === 'en' ? 'Back' : '返回'}</Link>
+        <Link to="/" style={styles.backLink}>← {language === 'en' ? 'Back to Home' : '返回主页'}</Link>
         <h1 style={styles.title}>{c.title}</h1>
         <p style={styles.subtitle}>{c.subtitle}</p>
+        <p style={styles.version}>{c.version}</p>
         <p style={styles.disclaimer}>{c.disclaimer}</p>
+      </div>
+
+      <div style={styles.toc}>
+        <h3 style={styles.tocTitle}>{language === 'en' ? 'Table of Contents' : '目录'}</h3>
+        <ol style={styles.tocList}>
+          {c.sections.map((section, index) => (
+            <li key={index} style={styles.tocItem}>
+              <a href={`#section-${index}`} style={styles.tocLink}>{section.title}</a>
+            </li>
+          ))}
+        </ol>
       </div>
 
       <div style={styles.content}>
         {c.sections.map((section, index) => (
-          <div key={index} style={styles.section}>
+          <div key={index} id={`section-${index}`} style={styles.section}>
             <h2 style={styles.sectionTitle}>{section.title}</h2>
-            
+
             {section.heading && (
               <h3 style={styles.heading}>{section.heading}</h3>
             )}
-            
+
             {section.content && (
               <p style={styles.paragraph}>{section.content}</p>
             )}
-            
+
             {section.items && (
               <div style={styles.table}>
                 {section.items.map((item, i) => (
                   <div key={i} style={styles.tableRow}>
                     <span style={styles.tableLabel}>{item.label}</span>
-                    <span style={styles.tableValue}>{item.value}</span>
+                    {item.value && <span style={styles.tableValue}>{item.value}</span>}
                     {item.desc && <span style={styles.tableDesc}>{item.desc}</span>}
                   </div>
                 ))}
@@ -501,7 +533,7 @@ VRF集成确保可证明公平的开奖，任何人都可以验证。`,
             {section.heading2 && (
               <h3 style={styles.heading}>{section.heading2}</h3>
             )}
-            
+
             {section.content2 && (
               <p style={styles.paragraph}>{section.content2}</p>
             )}
@@ -511,7 +543,7 @@ VRF集成确保可证明公平的开奖，任何人都可以验证。`,
                 {section.items2.map((item, i) => (
                   <div key={i} style={styles.tableRow}>
                     <span style={styles.tableLabel}>{item.label}</span>
-                    <span style={styles.tableValue}>{item.value}</span>
+                    {item.value && <span style={styles.tableValue}>{item.value}</span>}
                     {item.desc && <span style={styles.tableDesc}>{item.desc}</span>}
                   </div>
                 ))}
@@ -521,7 +553,7 @@ VRF集成确保可证明公平的开奖，任何人都可以验证。`,
             {section.heading3 && (
               <h3 style={styles.heading}>{section.heading3}</h3>
             )}
-            
+
             {section.content3 && (
               <p style={styles.paragraph}>{section.content3}</p>
             )}
@@ -531,17 +563,13 @@ VRF集成确保可证明公平的开奖，任何人都可以验证。`,
                 {section.items3.map((item, i) => (
                   <div key={i} style={styles.tableRow}>
                     <span style={styles.tableLabel}>{item.label}</span>
-                    <span style={styles.tableValue}>{item.value}</span>
+                    {item.value && <span style={styles.tableValue}>{item.value}</span>}
                     {item.desc && <span style={styles.tableDesc}>{item.desc}</span>}
                   </div>
                 ))}
               </div>
             )}
 
-            {section.heading4 && (
-              <h3 style={styles.heading}>{section.heading4}</h3>
-            )}
-            
             {section.content4 && (
               <p style={styles.paragraph}>{section.content4}</p>
             )}
@@ -550,7 +578,8 @@ VRF集成确保可证明公平的开奖，任何人都可以验证。`,
       </div>
 
       <div style={styles.footer}>
-        <p>© 2026 TykhePot. All rights reserved.</p>
+        <p>© 2026 TykhePot Protocol. All rights reserved.</p>
+        <p style={styles.footerNote}>{language === 'en' ? 'Built on Solana · Open Source · Verifiable' : '构建于 Solana · 开源 · 可验证'}</p>
       </div>
     </div>
   );
@@ -558,101 +587,161 @@ VRF集成确保可证明公平的开奖，任何人都可以验证。`,
 
 const styles = {
   container: {
-    maxWidth: '800px',
+    maxWidth: '860px',
     margin: '0 auto',
-    padding: '2rem 1rem',
+    padding: '2rem 1.25rem',
+    color: '#E0E0E0',
   },
   header: {
     textAlign: 'center',
     marginBottom: '2rem',
+    padding: '2rem',
+    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
+    borderRadius: '16px',
+    border: '1px solid rgba(255, 215, 0, 0.3)',
   },
   backLink: {
     display: 'inline-block',
     color: '#FFD700',
     textDecoration: 'none',
-    marginBottom: '1rem',
+    marginBottom: '1.25rem',
     fontSize: '0.9rem',
+    opacity: 0.8,
   },
   title: {
-    fontSize: '1.75rem',
-    color: '#FFD700',
+    fontSize: '2rem',
+    fontWeight: '700',
+    background: 'linear-gradient(135deg, #FFD700, #FFA500)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    backgroundClip: 'text',
     marginBottom: '0.5rem',
   },
   subtitle: {
-    fontSize: '0.9rem',
+    fontSize: '1rem',
     color: '#A0A0A0',
+    marginBottom: '0.25rem',
+  },
+  version: {
+    fontSize: '0.8rem',
+    color: '#666',
+    marginBottom: '1rem',
   },
   disclaimer: {
-    fontSize: '0.75rem',
+    fontSize: '0.78rem',
     color: '#FF6B6B',
-    marginTop: '0.5rem',
     fontStyle: 'italic',
+    padding: '0.75rem 1rem',
+    background: 'rgba(255, 107, 107, 0.08)',
+    borderRadius: '8px',
+    border: '1px solid rgba(255, 107, 107, 0.2)',
+    margin: '0',
+  },
+  toc: {
+    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
+    borderRadius: '12px',
+    padding: '1.25rem 1.5rem',
+    marginBottom: '1.5rem',
+    border: '1px solid rgba(255, 215, 0, 0.15)',
+  },
+  tocTitle: {
+    fontSize: '0.95rem',
+    color: '#FFD700',
+    marginBottom: '0.75rem',
+    fontWeight: '600',
+  },
+  tocList: {
+    margin: 0,
+    paddingLeft: '1.25rem',
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gap: '0.25rem 1.5rem',
+  },
+  tocItem: {
+    lineHeight: 1.6,
+  },
+  tocLink: {
+    color: '#A0A0A0',
+    textDecoration: 'none',
+    fontSize: '0.85rem',
+    transition: 'color 0.15s',
   },
   content: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1.5rem',
+    gap: '1.25rem',
   },
   section: {
     background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
     borderRadius: '12px',
-    padding: '1.25rem',
-    border: '1px solid rgba(255, 215, 0, 0.2)',
+    padding: '1.5rem',
+    border: '1px solid rgba(255, 215, 0, 0.15)',
+    scrollMarginTop: '80px',
   },
   sectionTitle: {
-    fontSize: '1.1rem',
+    fontSize: '1.15rem',
     color: '#FFD700',
     marginBottom: '1rem',
-    paddingBottom: '0.5rem',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+    paddingBottom: '0.6rem',
+    borderBottom: '1px solid rgba(255, 215, 0, 0.2)',
+    fontWeight: '700',
   },
   heading: {
-    fontSize: '1rem',
+    fontSize: '0.95rem',
     color: '#FFFFFF',
-    marginTop: '1rem',
+    marginTop: '1.25rem',
     marginBottom: '0.5rem',
+    fontWeight: '600',
   },
   paragraph: {
-    color: '#E0E0E0',
-    lineHeight: 1.7,
-    fontSize: '0.9rem',
+    color: '#D0D0D0',
+    lineHeight: 1.75,
+    fontSize: '0.875rem',
     marginBottom: '0.75rem',
     whiteSpace: 'pre-wrap',
   },
   table: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.5rem',
+    gap: '0.25rem',
+    marginBottom: '0.75rem',
   },
   tableRow: {
     display: 'flex',
     flexDirection: 'column',
-    padding: '0.75rem 0',
-    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+    padding: '0.6rem 0.75rem',
+    borderRadius: '6px',
+    background: 'rgba(0, 0, 0, 0.2)',
+    borderLeft: '2px solid rgba(255, 215, 0, 0.3)',
   },
   tableLabel: {
     color: '#FFD700',
-    fontSize: '0.9rem',
-    fontWeight: 600,
+    fontSize: '0.875rem',
+    fontWeight: '600',
+    marginBottom: '0.15rem',
   },
   tableValue: {
     color: '#FFFFFF',
     fontSize: '0.85rem',
-    fontWeight: 500,
-    marginTop: '0.25rem',
+    fontWeight: '500',
+    marginBottom: '0.1rem',
   },
   tableDesc: {
-    color: '#A0A0A0',
+    color: '#909090',
     fontSize: '0.8rem',
-    marginTop: '0.25rem',
   },
   footer: {
     textAlign: 'center',
     marginTop: '2rem',
-    paddingTop: '1rem',
-    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
-    color: '#666',
+    paddingTop: '1.25rem',
+    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+    color: '#555',
     fontSize: '0.8rem',
+    lineHeight: 1.8,
+  },
+  footerNote: {
+    color: '#444',
+    fontSize: '0.75rem',
   },
 };
 
