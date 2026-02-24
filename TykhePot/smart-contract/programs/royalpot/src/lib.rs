@@ -61,7 +61,7 @@ pub struct UserData {
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    #[account(init, payer = authority, space = 8 + 160, seeds = [b"state"], bump)]
+    #[account(init, payer = authority, space = 8 + 200, seeds = [b"state"], bump)]
     pub state: Account<'info, State>,
     #[account(mut)] pub authority: Signer<'info>,
     pub token_mint: Account<'info, Mint>,
@@ -84,10 +84,9 @@ pub struct Resume<'info> {
 
 #[derive(Accounts)]
 pub struct WithdrawFee<'info> {
-    #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut, seeds = [b"state"], bump = state.bump)] pub state: Account<'info, State>,
     #[account(mut)] pub vault: Account<'info, TokenAccount>,
     #[account(mut)] pub dest: Account<'info, TokenAccount>,
-    pub platform_auth: UncheckedAccount<'info>,
     pub authority: Signer<'info>,
     pub token_program: Program<'info, Token>,
 }
@@ -135,14 +134,20 @@ pub struct ClaimAirdrop<'info> {
 
 #[derive(Accounts)]
 pub struct DrawHourly<'info> {
-    #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut, seeds = [b"state"], bump = state.bump)] pub state: Account<'info, State>,
     pub authority: Signer<'info>,
+    /// Token vault holding the hourly prize pool (authority must be state PDA)
+    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(Accounts)]
 pub struct DrawDaily<'info> {
-    #[account(mut)] pub state: Account<'info, State>,
+    #[account(mut, seeds = [b"state"], bump = state.bump)] pub state: Account<'info, State>,
     pub authority: Signer<'info>,
+    /// Token vault holding the daily prize pool (authority must be state PDA)
+    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+    pub token_program: Program<'info, Token>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize)]
@@ -151,12 +156,18 @@ pub struct InitializeParams {
     pub referral_pool: u64,
 }
 
+/// Specifies a single winner and their prize amount for distribution at draw time.
+/// Authority computes winners off-chain (using VRF seed) and submits payouts on-chain.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct WinningNumbers {
-    pub first_prize: u64,
-    pub second_prizes: Vec<u64>,
-    pub third_prizes: Vec<u64>,
-    pub lucky_prizes: Vec<u64>,
+pub struct WinnerPayout {
+    pub winner: Pubkey,
+    pub amount: u64,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq)]
+pub enum PoolType {
+    Hourly,
+    Daily,
 }
 
 #[error_code]
@@ -215,19 +226,18 @@ pub mod royalpot {
     }
 
     pub fn withdraw_platform_fee(ctx: Context<WithdrawFee>, amount: u64) -> Result<()> {
-        let state = &mut ctx.accounts.state;
-        require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
-        require!(!state.paused, ErrorCode::ContractPaused);
+        require!(ctx.accounts.authority.key() == ctx.accounts.state.authority, ErrorCode::Unauthorized);
+        require!(!ctx.accounts.state.paused, ErrorCode::ContractPaused);
         require!(amount > 0, ErrorCode::InvalidAmount);
-        
-        let bump = state.bump;
+
+        let bump = ctx.accounts.state.bump;
         let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {
                 from: ctx.accounts.vault.to_account_info(),
                 to: ctx.accounts.dest.to_account_info(),
-                authority: ctx.accounts.platform_auth.to_account_info(),
+                authority: ctx.accounts.state.to_account_info(),
             },
             seeds,
         );
@@ -399,51 +409,149 @@ pub mod royalpot {
         Ok(())
     }
 
-    pub fn draw_hourly(ctx: Context<DrawHourly>, _winning_numbers: WinningNumbers) -> Result<()> {
-        let state = &mut ctx.accounts.state;
+    /// Draw the hourly lottery. Authority provides winner payouts computed off-chain
+    /// (e.g. using a VRF seed). Transfers prizes directly to winner token accounts
+    /// supplied via `remaining_accounts` in the same order as `payouts`.
+    pub fn draw_hourly<'info>(ctx: Context<'_, '_, '_, 'info, DrawHourly<'info>>, payouts: Vec<WinnerPayout>) -> Result<()> {
         let clock = Clock::get()?;
-        
-        require!(!state.paused, ErrorCode::ContractPaused);
-        require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
-        require!(state.hourly_players >= 2, ErrorCode::NotEnoughParticipants);
-        
-        let time_since_last_draw = clock.unix_timestamp - state.last_hourly_draw;
+
+        require!(!ctx.accounts.state.paused, ErrorCode::ContractPaused);
+        require!(ctx.accounts.authority.key() == ctx.accounts.state.authority, ErrorCode::Unauthorized);
+        require!(ctx.accounts.state.hourly_players >= 2, ErrorCode::NotEnoughParticipants);
+
+        let time_since_last_draw = clock.unix_timestamp - ctx.accounts.state.last_hourly_draw;
         require!(time_since_last_draw >= 3600 - TIME_TOLERANCE, ErrorCode::DrawTooEarly);
-        
-        let total_pool = state.hourly_pool + state.hourly_rollover;
+
+        let total_pool = ctx.accounts.state.hourly_pool + ctx.accounts.state.hourly_rollover;
         require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
-        
+
         let rollover = total_pool * ROLLOVER_RATE / BASE;
-        
+        let distributable = total_pool - rollover;
+
+        // Validate total payouts do not exceed the distributable amount
+        let total_payout: u64 = payouts.iter().fold(0u64, |acc, p| acc.saturating_add(p.amount));
+        require!(total_payout <= distributable, ErrorCode::InsufficientPoolBalance);
+        require!(payouts.len() <= ctx.remaining_accounts.len(), ErrorCode::InvalidAmount);
+
+        // Extract AccountInfos before the loop to avoid lifetime conflicts
+        let bump = ctx.accounts.state.bump;
+        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+        let token_program = ctx.accounts.token_program.to_account_info();
+        let pool_vault = ctx.accounts.pool_vault.to_account_info();
+        let state_authority = ctx.accounts.state.to_account_info();
+        let winner_accounts: Vec<AccountInfo> = ctx.remaining_accounts.iter()
+            .take(payouts.len())
+            .cloned()
+            .collect();
+
+        // Transfer prizes to each winner
+        for (i, payout) in payouts.iter().enumerate() {
+            if payout.amount == 0 {
+                continue;
+            }
+            token::transfer(
+                CpiContext::new_with_signer(
+                    token_program.clone(),
+                    Transfer {
+                        from: pool_vault.clone(),
+                        to: winner_accounts[i].clone(),
+                        authority: state_authority.clone(),
+                    },
+                    seeds,
+                ),
+                payout.amount,
+            )?;
+        }
+
+        // Reset pool state
+        let state = &mut ctx.accounts.state;
         state.hourly_rollover = rollover;
         state.hourly_pool = 0;
         state.hourly_players = 0;
         state.last_hourly_draw = clock.unix_timestamp;
-        
+
+        emit!(DrawCompleted {
+            pool_type: PoolType::Hourly,
+            total_pool,
+            distributed: total_payout,
+            rollover,
+            winner_count: payouts.len() as u32,
+            timestamp: clock.unix_timestamp,
+        });
+
         Ok(())
     }
 
-    pub fn draw_daily(ctx: Context<DrawDaily>, _winning_numbers: WinningNumbers) -> Result<()> {
-        let state = &mut ctx.accounts.state;
+    /// Draw the daily lottery. Authority provides winner payouts computed off-chain
+    /// (e.g. using a VRF seed). Transfers prizes directly to winner token accounts
+    /// supplied via `remaining_accounts` in the same order as `payouts`.
+    pub fn draw_daily<'info>(ctx: Context<'_, '_, '_, 'info, DrawDaily<'info>>, payouts: Vec<WinnerPayout>) -> Result<()> {
         let clock = Clock::get()?;
-        
-        require!(!state.paused, ErrorCode::ContractPaused);
-        require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
-        require!(state.daily_players >= 3, ErrorCode::NotEnoughParticipants);
-        
-        let time_since_last_draw = clock.unix_timestamp - state.last_daily_draw;
+
+        require!(!ctx.accounts.state.paused, ErrorCode::ContractPaused);
+        require!(ctx.accounts.authority.key() == ctx.accounts.state.authority, ErrorCode::Unauthorized);
+        require!(ctx.accounts.state.daily_players >= 3, ErrorCode::NotEnoughParticipants);
+
+        let time_since_last_draw = clock.unix_timestamp - ctx.accounts.state.last_daily_draw;
         require!(time_since_last_draw >= 86400 - TIME_TOLERANCE, ErrorCode::DrawTooEarly);
-        
-        let total_pool = state.daily_pool + state.daily_rollover;
+
+        let total_pool = ctx.accounts.state.daily_pool + ctx.accounts.state.daily_rollover;
         require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
-        
+
         let rollover = total_pool * ROLLOVER_RATE / BASE;
-        
+        let distributable = total_pool - rollover;
+
+        // Validate total payouts do not exceed the distributable amount
+        let total_payout: u64 = payouts.iter().fold(0u64, |acc, p| acc.saturating_add(p.amount));
+        require!(total_payout <= distributable, ErrorCode::InsufficientPoolBalance);
+        require!(payouts.len() <= ctx.remaining_accounts.len(), ErrorCode::InvalidAmount);
+
+        // Extract AccountInfos before the loop to avoid lifetime conflicts
+        let bump = ctx.accounts.state.bump;
+        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
+        let token_program = ctx.accounts.token_program.to_account_info();
+        let pool_vault = ctx.accounts.pool_vault.to_account_info();
+        let state_authority = ctx.accounts.state.to_account_info();
+        let winner_accounts: Vec<AccountInfo> = ctx.remaining_accounts.iter()
+            .take(payouts.len())
+            .cloned()
+            .collect();
+
+        // Transfer prizes to each winner
+        for (i, payout) in payouts.iter().enumerate() {
+            if payout.amount == 0 {
+                continue;
+            }
+            token::transfer(
+                CpiContext::new_with_signer(
+                    token_program.clone(),
+                    Transfer {
+                        from: pool_vault.clone(),
+                        to: winner_accounts[i].clone(),
+                        authority: state_authority.clone(),
+                    },
+                    seeds,
+                ),
+                payout.amount,
+            )?;
+        }
+
+        // Reset pool state
+        let state = &mut ctx.accounts.state;
         state.daily_rollover = rollover;
         state.daily_pool = 0;
         state.daily_players = 0;
         state.last_daily_draw = clock.unix_timestamp;
-        
+
+        emit!(DrawCompleted {
+            pool_type: PoolType::Daily,
+            total_pool,
+            distributed: total_payout,
+            rollover,
+            winner_count: payouts.len() as u32,
+            timestamp: clock.unix_timestamp,
+        });
+
         Ok(())
     }
 
@@ -466,4 +574,16 @@ pub mod royalpot {
         user.airdrop_claimed = true;
         Ok(())
     }
+}
+
+// ─── Events ────────────────────────────────────────────────────────────────
+
+#[event]
+pub struct DrawCompleted {
+    pub pool_type: PoolType,
+    pub total_pool: u64,
+    pub distributed: u64,
+    pub rollover: u64,
+    pub winner_count: u32,
+    pub timestamp: i64,
 }

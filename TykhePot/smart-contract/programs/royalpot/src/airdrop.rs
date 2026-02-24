@@ -87,7 +87,7 @@ pub fn record_profit(
     // 计算可领取空投（10倍盈利，最高10000 TPOT）
     let calculated_airdrop = user_airdrop.total_profit
         .checked_mul(AIRDROP_CLAIM_MULTIPLIER)
-        .unwrap()
+        .ok_or(AirdropErrorCode::MathOverflow)?
         .min(MAX_AIRDROP_PER_USER);
     
     // 已经领取的部分
@@ -281,4 +281,6 @@ pub enum AirdropErrorCode {
     NoEligibleAirdrop,
     #[msg("Airdrop pool exhausted")]
     AirdropExhausted,
+    #[msg("Arithmetic overflow")]
+    MathOverflow,
 }

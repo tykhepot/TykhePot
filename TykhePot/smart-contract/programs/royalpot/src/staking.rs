@@ -9,19 +9,19 @@ pub const LONG_STAKE_DAYS: i64 = 180;
 pub const SECONDS_PER_DAY: i64 = 86400;
 
 // 计算质押收益
-pub fn calculate_reward(amount: u64, apr: u64, days: i64) -> u64 {
+pub fn calculate_reward(amount: u64, apr: u64, days: i64) -> Result<u64> {
     // 收益 = 本金 × 年化率 × 天数 / 365
     let reward = (amount as u128)
         .checked_mul(apr as u128)
-        .unwrap()
+        .ok_or(StakingErrorCode::MathOverflow)?
         .checked_mul(days as u128)
-        .unwrap()
+        .ok_or(StakingErrorCode::MathOverflow)?
         .checked_div(365)
-        .unwrap()
+        .ok_or(StakingErrorCode::MathOverflow)?
         .checked_div(10000)
-        .unwrap();
-    
-    reward as u64
+        .ok_or(StakingErrorCode::MathOverflow)?;
+
+    Ok(reward as u64)
 }
 
 // 数据结构
@@ -117,7 +117,7 @@ pub fn stake(
         ),
     };
     
-    let reward = calculate_reward(amount, apr, days);
+    let reward = calculate_reward(amount, apr, days)?;
     
     // 检查奖励池是否充足
     require!(reward <= pool_remaining, StakingErrorCode::InsufficientRewardPool);
@@ -415,4 +415,6 @@ pub enum StakingErrorCode {
     StakeNotMatured,
     #[msg("Stake matured, use release instead")]
     StakeMaturedUseRelease,
+    #[msg("Arithmetic overflow")]
+    MathOverflow,
 }
