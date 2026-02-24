@@ -1,32 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
+import { useTykhePot } from '../hooks/useTykhePot';
 
 const Airdrop = () => {
-  const { wallet, sdk } = useApp();
+  const { wallet } = useApp();
   const { t } = useTranslation();
+  const { claimFreeAirdrop, getUserState } = useTykhePot();
   const [isClaiming, setIsClaiming] = useState(false);
   const [hasClaimed, setHasClaimed] = useState(false);
   const [error, setError] = useState('');
 
-  // 模拟数据 - 实际应该从合约读取
   const airdropData = {
-    totalAirdrop: '100,000,000', // 1亿TPOT空投池
-    airdropAmount: '100', // 每人100 TPOT
+    totalAirdrop: '100,000,000',
+    airdropAmount: '100',
   };
 
   useEffect(() => {
-    // 检查用户是否已领取 - 需要从合约读取
-    if (wallet.publicKey && sdk) {
+    if (wallet.publicKey) {
       checkClaimStatus();
     }
-  }, [wallet.publicKey, sdk]);
+  }, [wallet.publicKey]);
 
   const checkClaimStatus = async () => {
     try {
-      // TODO: 从合约读取用户是否已领取
-      // const status = await sdk.getUserAirdropStatus(wallet.publicKey);
-      // setHasClaimed(status.claimed);
+      const userData = await getUserState();
+      if (userData) {
+        setHasClaimed(userData.airdropClaimed);
+      }
     } catch (err) {
       console.error('Error checking airdrop status:', err);
     }
@@ -37,64 +38,21 @@ const Airdrop = () => {
       alert(t('walletNotConnected'));
       return;
     }
+    if (hasClaimed) {
+      alert('You have already claimed your airdrop!');
+      return;
+    }
 
     setIsClaiming(true);
     setError('');
 
-    console.log("Starting claim airdrop...");
-
-    // 添加超时处理
-    const timeoutId = setTimeout(() => {
-      setIsClaiming(false);
-      console.log("Transaction timeout");
-      alert(language === 'en' 
-        ? 'Transaction timeout. Please try again.' 
-        : '交易超时，请重试。');
-    }, 60000);
-
-    try {
-      console.log("Calling sdk.claimAirdrop()...");
-      const result = await sdk.claimAirdrop();
-      clearTimeout(timeoutId);
-      console.log("Claim result:", result);
-      
-      if (result && result.success) {
-        setHasClaimed(true);
-        setIsClaiming(false);
-        alert(language === 'en' 
-          ? '🎉 Registered! Now go to Daily Pool and use FREE BET to join the game!' 
-          : '🎉 注册成功！现在去每日奖池使用"免费投注"参与游戏！');
-      } else {
-        setIsClaiming(false);
-        setError(result?.error || (language === 'en' ? 'Failed to register' : '注册失败'));
-      }
-    } catch (err) {
-      clearTimeout(timeoutId);
-      setIsClaiming(false);
-      console.error('Error claiming airdrop:', err);
-      console.error('Error message:', err.message);
-      console.error('Error stack:', err.stack);
-      // 检查各种可能的错误
-      if (err.message && (
-        err.message.includes('already in use') || 
-        err.message.includes('account already exists')
-      )) {
-        // 账户已存在，说明已注册
-        setHasClaimed(true);
-        alert(language === 'en' 
-          ? 'You are already registered! Go to Daily Pool for free bet.' 
-          : '您已注册！请去每日奖池使用免费投注。');
-      } else if (err.message && (
-        err.message.includes('Missing signature') ||
-        err.message.includes('signature verification')
-      )) {
-        // 账户不存在，需要先存款
-        alert(language === 'en' 
-          ? 'Please deposit first to create your account, then come back to claim airdrop!' 
-          : '请先去存款创建账户，然后再回来领取空投！');
-      } else {
-        setError(err.message || (language === 'en' ? 'Failed to register' : '注册失败'));
-      }
+    const result = await claimFreeAirdrop();
+    setIsClaiming(false);
+    if (result.success) {
+      setHasClaimed(true);
+      alert('🎉 Successfully claimed 100 TPOT!');
+    } else {
+      setError(result.error || 'Failed to claim airdrop');
     }
   };
 
@@ -117,11 +75,10 @@ const Airdrop = () => {
       <div style={styles.card}>
         <h2 style={styles.cardTitle}>📜 {t('airdropRules')}</h2>
         <ul style={styles.rulesList}>
-          <li style={styles.ruleItem}>✅ Register once to get <strong>FREE BET</strong> (100 TPOT value)</li>
-          <li style={styles.ruleItem}>✅ One-time registration only</li>
-          <li style={styles.ruleItem}>✅ Go to <strong>Daily Pool</strong> and click "FREE BET" to play</li>
-          <li style={styles.ruleItem}>❌ Each wallet can only use FREE BET once</li>
-          <li style={styles.ruleItem}>💡 Win up to 30% of the pool in prizes!</li>
+          <li style={styles.ruleItem}>✅ Every wallet can claim <strong>100 TPOT</strong> for FREE</li>
+          <li style={styles.ruleItem}>✅ One-time claim only - cannot claim twice</li>
+          <li style={styles.ruleItem}>✅ No participation requirements</li>
+          <li style={styles.ruleItem}>✅ Use for pool deposits or stake for rewards</li>
         </ul>
       </div>
 
@@ -138,8 +95,8 @@ const Airdrop = () => {
           <div style={styles.claimedBox}>
             <span style={styles.claimedIcon}>✅</span>
             <div style={styles.claimedText}>
-              <strong>✅ You are registered! Ready for FREE BET!</strong>
-              <p style={{ color: '#10B981', marginTop: '8px' }}>🎰 Go to <strong>Daily Pool</strong> → Click "FREE BET" to play!</p>
+              <strong>You have claimed your 100 TPOT!</strong>
+              <p>Use it to join pools or stake for rewards</p>
             </div>
           </div>
         ) : (

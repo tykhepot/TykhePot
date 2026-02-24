@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer, Mint};
+use anchor_spl::token::{self, Transfer};
 
 // 质押模块常量
 pub const STAKING_APR_SHORT: u64 = 800; // 8% = 800/10000
@@ -9,19 +9,19 @@ pub const LONG_STAKE_DAYS: i64 = 180;
 pub const SECONDS_PER_DAY: i64 = 86400;
 
 // 计算质押收益
-pub fn calculate_reward(amount: u64, apr: u64, days: i64) -> u64 {
+pub fn calculate_reward(amount: u64, apr: u64, days: i64) -> Result<u64> {
     // 收益 = 本金 × 年化率 × 天数 / 365
     let reward = (amount as u128)
         .checked_mul(apr as u128)
-        .unwrap()
+        .ok_or(StakingErrorCode::MathOverflow)?
         .checked_mul(days as u128)
-        .unwrap()
+        .ok_or(StakingErrorCode::MathOverflow)?
         .checked_div(365)
-        .unwrap()
+        .ok_or(StakingErrorCode::MathOverflow)?
         .checked_div(10000)
-        .unwrap();
-    
-    reward as u64
+        .ok_or(StakingErrorCode::MathOverflow)?;
+
+    Ok(reward as u64)
 }
 
 // 数据结构
@@ -66,7 +66,7 @@ impl UserStake {
 
 // 初始化质押模块
 pub fn initialize_staking(
-    ctx: Context<InitializeStaking>,
+    ctx: Context<crate::InitializeStaking>,
     short_term_pool: u64,
     long_term_pool: u64,
 ) -> Result<()> {
@@ -92,7 +92,7 @@ pub fn initialize_staking(
 
 // 质押代币
 pub fn stake(
-    ctx: Context<Stake>,
+    ctx: Context<crate::Stake>,
     stake_index: u64,
     amount: u64,
     stake_type: StakeType,
@@ -117,7 +117,7 @@ pub fn stake(
         ),
     };
     
-    let reward = calculate_reward(amount, apr, days);
+    let reward = calculate_reward(amount, apr, days)?;
     
     // 检查奖励池是否充足
     require!(reward <= pool_remaining, StakingErrorCode::InsufficientRewardPool);
@@ -170,8 +170,8 @@ pub fn stake(
 
 // 到期释放质押
 pub fn release_stake(
-    ctx: Context<ReleaseStake>,
-    stake_index: u64,
+    ctx: Context<crate::ReleaseStake>,
+    _stake_index: u64,
 ) -> Result<()> {
     let staking_state = &mut ctx.accounts.staking_state;
     let user_stake = &mut ctx.accounts.user_stake;
@@ -228,8 +228,8 @@ pub fn release_stake(
 
 // 提前赎回（无收益）
 pub fn early_withdraw(
-    ctx: Context<ReleaseStake>,
-    stake_index: u64,
+    ctx: Context<crate::ReleaseStake>,
+    _stake_index: u64,
 ) -> Result<()> {
     let staking_state = &mut ctx.accounts.staking_state;
     let user_stake = &mut ctx.accounts.user_stake;
@@ -284,90 +284,7 @@ pub fn early_withdraw(
     Ok(())
 }
 
-// 账户结构
-#[derive(Accounts)]
-pub struct InitializeStaking<'info> {
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + StakingState::SIZE,
-        seeds = [b"staking_state"],
-        bump
-    )]
-    pub staking_state: Account<'info, StakingState>,
-    
-    pub token_mint: Account<'info, Mint>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(stake_index: u64)]
-pub struct Stake<'info> {
-    #[account(mut)]
-    pub user: Signer<'info>,
-    
-    #[account(
-        mut,
-        seeds = [b"staking_state"],
-        bump = staking_state.bump
-    )]
-    pub staking_state: Account<'info, StakingState>,
-    
-    #[account(
-        init,
-        payer = user,
-        space = 8 + UserStake::SIZE,
-        seeds = [b"user_stake", user.key().as_ref(), &stake_index.to_le_bytes()],
-        bump
-    )]
-    pub user_stake: Account<'info, UserStake>,
-    
-    #[account(mut)]
-    pub user_token: Account<'info, TokenAccount>,
-    
-    #[account(mut)]
-    pub staking_vault: Account<'info, TokenAccount>,
-    
-    pub token_program: Program<'info, Token>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-#[instruction(stake_index: u64)]
-pub struct ReleaseStake<'info> {
-    #[account(mut)]
-    pub user: Signer<'info>,
-    
-    #[account(
-        mut,
-        seeds = [b"staking_state"],
-        bump = staking_state.bump
-    )]
-    pub staking_state: Account<'info, StakingState>,
-    
-    #[account(
-        mut,
-        seeds = [b"user_stake", user.key().as_ref(), &stake_index.to_le_bytes()],
-        bump,
-        constraint = user_stake.owner == user.key()
-    )]
-    pub user_stake: Account<'info, UserStake>,
-    
-    #[account(mut)]
-    pub user_token: Account<'info, TokenAccount>,
-    
-    #[account(mut)]
-    pub staking_vault: Account<'info, TokenAccount>,
-    
-    /// CHECK: 质押授权PDA
-    #[account(seeds = [b"staking"], bump)]
-    pub staking_authority: AccountInfo<'info>,
-    
-    pub token_program: Program<'info, Token>,
-}
+// Accounts structs are defined in lib.rs (crate root) as required by Anchor's #[program] macro
 
 // 事件
 #[event]
@@ -415,4 +332,6 @@ pub enum StakingErrorCode {
     StakeNotMatured,
     #[msg("Stake matured, use release instead")]
     StakeMaturedUseRelease,
+    #[msg("Arithmetic overflow")]
+    MathOverflow,
 }

@@ -1,45 +1,72 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
 
+const MIN_DEPOSIT = 200;      // TPOT
+const MAX_DEPOSIT = 1_000_000; // TPOT
+
 const HourlyPool = () => {
-  const { stats, wallet, userTokenBalance, sdk, refreshStats } = useApp();
+  const { stats, wallet, sdk, refreshStats, userTokenBalance } = useApp();
   const { t, language } = useTranslation();
   const [depositAmount, setDepositAmount] = useState('200');
   const [isDepositing, setIsDepositing] = useState(false);
+  const [txStatus, setTxStatus] = useState(null); // null | 'pending' | 'success' | 'error'
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleDeposit = async () => {
+  const handleDeposit = useCallback(async () => {
     if (!wallet.publicKey) {
       alert(t('walletNotConnected'));
       return;
     }
-    
-    const amount = parseInt(depositAmount);
-    if (isNaN(amount) || amount < 200) {
-      alert(language === 'en' ? 'Minimum deposit is 200 TPOT' : '最低投入200 TPOT');
+    if (stats.isPaused) {
+      alert(t('contractPaused'));
       return;
     }
-    
-    // 检查用户余额
-    if (!userTokenBalance || userTokenBalance < amount) {
-      alert(language === 'en' ? 'Insufficient balance' : '余额不足');
+
+    const amount = parseFloat(depositAmount);
+    if (isNaN(amount) || amount < MIN_DEPOSIT) {
+      setErrorMessage(language === 'en'
+        ? `Minimum deposit is ${MIN_DEPOSIT} TPOT`
+        : `最低投入 ${MIN_DEPOSIT} TPOT`);
       return;
     }
-    
+    if (amount > MAX_DEPOSIT) {
+      setErrorMessage(language === 'en'
+        ? `Maximum deposit is ${MAX_DEPOSIT.toLocaleString()} TPOT`
+        : `最高投入 ${MAX_DEPOSIT.toLocaleString()} TPOT`);
+      return;
+    }
+    if (userTokenBalance < amount) {
+      setErrorMessage(language === 'en'
+        ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT`
+        : `余额不足。您有 ${userTokenBalance.toFixed(2)} TPOT`);
+      return;
+    }
+
     setIsDepositing(true);
+    setTxStatus('pending');
+    setErrorMessage('');
+
     try {
       const result = await sdk.depositHourly(amount);
       if (result.success) {
-        alert(language === 'en' ? 'Deposit successful!' : '存款成功！');
+        setTxStatus('success');
+        alert(language === 'en'
+          ? `Success! Transaction: ${result.tx.slice(0, 8)}...`
+          : `成功！交易: ${result.tx.slice(0, 8)}...`);
         refreshStats();
+        setDepositAmount('200');
       } else {
-        alert(language === 'en' ? `Deposit failed: ${result.error}` : `存款失败: ${result.error}`);
+        setTxStatus('error');
+        setErrorMessage(result.error || 'Transaction failed');
       }
-    } catch (error) {
-      alert(language === 'en' ? `Error: ${error.message}` : `错误: ${error.message}`);
+    } catch (err) {
+      setTxStatus('error');
+      setErrorMessage(err.message || 'Unknown error');
+    } finally {
+      setIsDepositing(false);
     }
-    setIsDepositing(false);
-  };
+  }, [wallet, depositAmount, stats.isPaused, userTokenBalance, language, sdk, refreshStats, t]);
 
   const formatTime = (timestamp) => {
     const diff = Math.max(0, timestamp - Date.now());
@@ -56,10 +83,10 @@ const HourlyPool = () => {
         <div className="page-header-modern">
           <div className="page-badge">⏰ Hourly Pool</div>
           <h1 className="page-title-modern">{t('hourlyPool')}</h1>
-          <p className="page-subtitle-modern" style={{ color: '#FF6B6B' }}>
+          <p className="page-subtitle-modern">
             {language === 'en' 
-              ? '⚠️ Airdrop tokens can ONLY be used in Daily Pool'
-              : '⚠️ 空投代币只能用于每日奖池'
+              ? 'Fast-paced gaming with hourly draws'
+              : '每小时开奖，快节奏游戏体验'
             }
           </p>
         </div>
@@ -124,13 +151,43 @@ const HourlyPool = () => {
               ))}
             </div>
             
-            <button 
+            {errorMessage && (
+              <div style={{
+                color: '#ff4444',
+                background: 'rgba(255,68,68,0.1)',
+                border: '1px solid rgba(255,68,68,0.3)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-3)',
+                fontSize: 'var(--text-sm)',
+                marginBottom: 'var(--space-3)',
+              }}>
+                ⚠️ {errorMessage}
+              </div>
+            )}
+            {txStatus === 'success' && (
+              <div style={{
+                color: '#4CAF50',
+                background: 'rgba(76,175,80,0.1)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-3)',
+                fontSize: 'var(--text-sm)',
+                marginBottom: 'var(--space-3)',
+              }}>
+                ✅ {language === 'en' ? 'Deposit successful!' : '存款成功！'}
+              </div>
+            )}
+            <button
               onClick={handleDeposit}
-              disabled={isDepositing}
+              disabled={isDepositing || stats.isPaused}
               className="btn btn-primary btn-lg"
               style={{ width: '100%', marginTop: 'var(--space-4)' }}
             >
-              {isDepositing ? (language === 'en' ? 'Processing...' : '处理中...') : `🎰 ${language === 'en' ? 'Join Now' : '参与抽奖'}`}
+              {isDepositing
+                ? (language === 'en' ? '⏳ Processing...' : '⏳ 处理中...')
+                : stats.isPaused
+                  ? (language === 'en' ? '⏸ Paused' : '⏸ 已暂停')
+                  : `🎰 ${language === 'en' ? 'Join Now' : '参与抽奖'}`
+              }
             </button>
           </div>
         </div>
@@ -140,11 +197,11 @@ const HourlyPool = () => {
           <h2 className="card-title-modern">💰 {t('prizeDistribution')}</h2>
           <div className="prize-grid">
             {[
-              { name: '🥇 1st Prize', percent: '30% - 1人', color: '#FFD700' },
-              { name: '🥈 2nd Prize', percent: '20% - 2人(各10%)', color: '#C0C0C0' },
-              { name: '🥉 3rd Prize', percent: '15% - 3人(各5%)', color: '#CD7F32' },
-              { name: '🎁 Lucky Prize', percent: '10% - 5人(各2%)', color: '#8B5CF6' },
-              { name: '🌟 Universal Prize', percent: '20% - 全员', color: '#10B981' },
+              { name: '🥇 1st Prize', percent: '30%', color: '#FFD700' },
+              { name: '🥈 2nd Prize', percent: '20%', color: '#C0C0C0' },
+              { name: '🥉 3rd Prize', percent: '15%', color: '#CD7F32' },
+              { name: '🎁 Lucky Prize', percent: '10%', color: '#8B5CF6' },
+              { name: '🌟 Universal Prize', percent: '20%', color: '#10B981' },
               { name: '🔄 Roll Over', percent: '5%', color: '#6B7280' },
             ].map((prize, idx) => (
               <div key={idx} className="prize-item-modern">

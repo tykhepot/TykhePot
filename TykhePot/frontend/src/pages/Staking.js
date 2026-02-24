@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
+import { useTykhePot } from '../hooks/useTykhePot';
 
 const Staking = () => {
   const { wallet } = useApp();
   const { t, language } = useTranslation();
+  const { stake, isLoading } = useTykhePot();
   const [stakeAmount, setStakeAmount] = useState('');
   const [selectedOption, setSelectedOption] = useState('short');
   const [isStaking, setIsStaking] = useState(false);
+  const [lastTx, setLastTx] = useState(null);
 
   const calculateReward = (amount, days, apr) => {
     return (amount * apr * days) / 36500;
@@ -18,12 +21,22 @@ const Staking = () => {
       alert(t('walletNotConnected'));
       return;
     }
+    if (!stakeAmount || parseFloat(stakeAmount) <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
     setIsStaking(true);
-    // TODO: 调用合约
-    setTimeout(() => {
-      setIsStaking(false);
+    const stakeType = selectedOption === 'long' ? 'LongTerm' : 'ShortTerm';
+    // stakeIndex: use current timestamp as unique index (simple approach)
+    const stakeIndex = Math.floor(Date.now() / 1000);
+    const result = await stake(stakeAmount, stakeType, stakeIndex);
+    setIsStaking(false);
+    if (result.success) {
+      setLastTx(result.tx);
       alert(t('stakingSuccessful'));
-    }, 2000);
+    } else {
+      alert(`Staking failed: ${result.error}`);
+    }
   };
 
   const stakingOptions = [

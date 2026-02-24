@@ -12,7 +12,7 @@ const ContractTest = () => {
     getUserState,
     depositHourly,
     depositDaily,
-    claimVested,
+    claimFreeAirdrop,
     formatAmount,
   } = useTykhePot();
 
@@ -63,7 +63,7 @@ const ContractTest = () => {
   };
 
   const handleClaim = async () => {
-    const result = await claimVested();
+    const result = await claimFreeAirdrop();
     if (result.success) {
       setLastTx(result.tx);
       alert(`领取成功! 交易: ${result.tx}`);
@@ -105,9 +105,10 @@ const ContractTest = () => {
         <h3>协议状态</h3>
         {protocolState ? (
           <div>
-            <p>{t('hourlyPoolTotal')}: {formatAmount(protocolState.hourlyPool?.totalAmount || 0)} TPOT</p>
-            <p>{t('dailyPoolTotal')}: {formatAmount(protocolState.dailyPool?.totalAmount || 0)} TPOT</p>
-            <p>总销毁: {formatAmount(protocolState.totalBurned || 0)} TPOT</p>
+            <p>{t('hourlyPoolTotal')}: {formatAmount(protocolState.hourlyPool || 0)} TPOT</p>
+            <p>{t('dailyPoolTotal')}: {formatAmount(protocolState.dailyPool || 0)} TPOT</p>
+            <p>总销毁: {formatAmount(protocolState.burned || 0)} TPOT</p>
+            <p>暂停: {protocolState.paused ? '是' : '否'}</p>
           </div>
         ) : (
           <p>未获取到协议状态</p>

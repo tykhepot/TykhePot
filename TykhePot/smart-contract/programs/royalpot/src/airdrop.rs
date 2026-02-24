@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Token, TokenAccount, Transfer, Mint};
+use anchor_spl::token::{self, Transfer};
 
 // 空投模块常量
 pub const AIRDROP_CLAIM_MULTIPLIER: u64 = 10; // 获利金额的10倍
@@ -41,7 +41,7 @@ impl UserAirdrop {
 
 // 初始化空投模块
 pub fn initialize_airdrop(
-    ctx: Context<InitializeAirdrop>,
+    ctx: Context<crate::InitializeAirdrop>,
     total_airdrop: u64,
 ) -> Result<()> {
     let airdrop_state = &mut ctx.accounts.airdrop_state;
@@ -64,7 +64,7 @@ pub fn initialize_airdrop(
 
 // 记录用户游戏盈利
 pub fn record_profit(
-    ctx: Context<RecordProfit>,
+    ctx: Context<crate::RecordProfit>,
     profit_amount: u64,
 ) -> Result<()> {
     require!(profit_amount > 0, AirdropErrorCode::InvalidProfit);
@@ -87,7 +87,7 @@ pub fn record_profit(
     // 计算可领取空投（10倍盈利，最高10000 TPOT）
     let calculated_airdrop = user_airdrop.total_profit
         .checked_mul(AIRDROP_CLAIM_MULTIPLIER)
-        .unwrap()
+        .ok_or(AirdropErrorCode::MathOverflow)?
         .min(MAX_AIRDROP_PER_USER);
     
     // 已经领取的部分
@@ -110,9 +110,9 @@ pub fn record_profit(
     Ok(())
 }
 
-// 领取空投
-pub fn claim_airdrop(
-    ctx: Context<ClaimAirdrop>,
+// 领取基于盈利的空投
+pub fn claim_profit_airdrop(
+    ctx: Context<crate::ClaimProfitAirdrop>,
 ) -> Result<()> {
     let airdrop_state = &mut ctx.accounts.airdrop_state;
     let user_airdrop = &mut ctx.accounts.user_airdrop;
@@ -169,81 +169,7 @@ pub fn claim_airdrop(
     Ok(())
 }
 
-// 账户结构
-#[derive(Accounts)]
-pub struct InitializeAirdrop<'info> {
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + AirdropState::SIZE,
-        seeds = [b"airdrop_state"],
-        bump
-    )]
-    pub airdrop_state: Account<'info, AirdropState>,
-    
-    pub token_mint: Account<'info, Mint>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct RecordProfit<'info> {
-    #[account(mut)]
-    pub user: Signer<'info>,
-    
-    #[account(
-        mut,
-        seeds = [b"airdrop_state"],
-        bump = airdrop_state.bump
-    )]
-    pub airdrop_state: Account<'info, AirdropState>,
-    
-    #[account(
-        init_if_needed,
-        payer = user,
-        space = 8 + UserAirdrop::SIZE,
-        seeds = [b"user_airdrop", user.key().as_ref()],
-        bump
-    )]
-    pub user_airdrop: Account<'info, UserAirdrop>,
-    
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct ClaimAirdrop<'info> {
-    #[account(mut)]
-    pub user: Signer<'info>,
-    
-    #[account(
-        mut,
-        seeds = [b"airdrop_state"],
-        bump = airdrop_state.bump
-    )]
-    pub airdrop_state: Account<'info, AirdropState>,
-    
-    #[account(
-        mut,
-        seeds = [b"user_airdrop", user.key().as_ref()],
-        bump,
-        constraint = user_airdrop.owner == user.key()
-    )]
-    pub user_airdrop: Account<'info, UserAirdrop>,
-    
-    #[account(mut)]
-    pub user_token: Account<'info, TokenAccount>,
-    
-    #[account(mut)]
-    pub airdrop_vault: Account<'info, TokenAccount>,
-    
-    /// CHECK: 空投授权PDA
-    #[account(seeds = [b"airdrop"], bump)]
-    pub airdrop_authority: AccountInfo<'info>,
-    
-    pub token_program: Program<'info, Token>,
-}
+// Accounts structs are defined in lib.rs (crate root) as required by Anchor's #[program] macro
 
 // 事件
 #[event]
@@ -281,4 +207,6 @@ pub enum AirdropErrorCode {
     NoEligibleAirdrop,
     #[msg("Airdrop pool exhausted")]
     AirdropExhausted,
+    #[msg("Arithmetic overflow")]
+    MathOverflow,
 }

@@ -54,7 +54,11 @@ const DailyPool = () => {
 
     const amount = parseFloat(depositAmount);
     if (isNaN(amount) || amount < 100) {
-      alert(t('minDeposit100'));
+      setErrorMessage(language === 'en' ? 'Minimum deposit is 100 TPOT' : '最低投入 100 TPOT');
+      return;
+    }
+    if (amount > 1_000_000) {
+      setErrorMessage(language === 'en' ? 'Maximum deposit is 1,000,000 TPOT' : '最高投入 1,000,000 TPOT');
       return;
     }
 
@@ -88,19 +92,19 @@ const DailyPool = () => {
 
     // 普通存款
     if (userTokenBalance < amount) {
-      alert(language === 'en' 
-        ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT` 
+      setErrorMessage(language === 'en'
+        ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT`
         : `余额不足。您有 ${userTokenBalance.toFixed(2)} TPOT`);
       return;
     }
 
     if (referrer && !isValidReferrer(referrer)) {
-      alert(t('invalidReferrer'));
+      setErrorMessage(language === 'en' ? 'Invalid referrer address' : '推荐人地址无效');
       return;
     }
 
     if (referrer === wallet.publicKey.toString()) {
-      alert(t('cannotUseOwnAddress'));
+      setErrorMessage(language === 'en' ? 'Cannot use your own address as referrer' : '不能使用自己的地址作为推荐人');
       return;
     }
 
