@@ -6,6 +6,7 @@ const DailyPool = () => {
   const { stats, wallet, sdk, refreshStats, userTokenBalance } = useApp();
   const { t, language } = useTranslation();
   const [depositAmount, setDepositAmount] = useState('100');
+  const [useAirdrop, setUseAirdrop] = useState(false); // 是否使用免费投注
   const [referrer, setReferrer] = useState('');
   const [isDepositing, setIsDepositing] = useState(false);
   const [txStatus, setTxStatus] = useState(null);
@@ -61,6 +62,35 @@ const DailyPool = () => {
       return;
     }
 
+    // 如果选择免费投注
+    if (useAirdrop) {
+      setIsDepositing(true);
+      setTxStatus('pending');
+      setErrorMessage('');
+
+      try {
+        const result = await sdk.depositDailyFree();
+        
+        if (result.success) {
+          setTxStatus('success');
+          setUseAirdrop(false);
+          alert(language === 'en' 
+            ? '🎉 FREE BET placed! Good luck!' 
+            : '🎉 免费投注已下注！祝你好运！');
+          refreshStats();
+        } else {
+          setTxStatus('error');
+          setErrorMessage(result.error || (language === 'en' ? 'Failed' : '失败'));
+        }
+      } catch (error) {
+        setTxStatus('error');
+        setErrorMessage(error.message || (language === 'en' ? 'Error' : '错误'));
+      }
+      setIsDepositing(false);
+      return;
+    }
+
+    // 普通存款
     if (userTokenBalance < amount) {
       setErrorMessage(language === 'en'
         ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT`
@@ -175,6 +205,23 @@ const DailyPool = () => {
           <div className="card card-glass">
             <h2 className="card-title-modern">🎰 {t('joinNowBtn')}</h2>
             
+            {/* Airdrop Balance Option */}
+            <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(255, 215, 0, 0.1)', borderRadius: '8px', border: '1px solid rgba(255, 215, 0, 0.3)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={useAirdrop} 
+                  onChange={(e) => setUseAirdrop(e.target.checked)}
+                  style={{ width: '18px', height: '18px' }}
+                />
+                <span style={{ color: '#FFD700', fontWeight: '600', fontSize: '14px' }}>
+                  {language === 'en' 
+                    ? '🎁 FREE BET (100 TPOT) - Register at Airdrop page first!' 
+                    : '🎁 免费投注 (100 TPOT) - 需要先去空投页面注册！'}
+                </span>
+              </label>
+            </div>
+            
             <div className="form-group-modern">
               <label className="form-label-modern">{language === 'en' ? 'Amount (TPOT)' : '投入数量 (TPOT)'}</label>
               <input
@@ -264,11 +311,11 @@ const DailyPool = () => {
           <h2 className="card-title-modern">💰 {t('prizeDistribution')}</h2>
           <div className="prize-grid">
             {[
-              { name: language === 'en' ? '🥇 1st Prize' : '🥇 头奖', percent: '30%', color: '#FFD700' },
-              { name: language === 'en' ? '🥈 2nd Prize' : '🥈 二奖', percent: '20%', color: '#C0C0C0' },
-              { name: language === 'en' ? '🥉 3rd Prize' : '🥉 三奖', percent: '15%', color: '#CD7F32' },
-              { name: language === 'en' ? '🎁 Lucky Prize' : '🎁 幸运奖', percent: '10%', color: '#8B5CF6' },
-              { name: language === 'en' ? '🌟 Universal Prize' : '🌟 普惠奖', percent: '20%', color: '#10B981' },
+              { name: language === 'en' ? '🥇 1st Prize' : '🥇 头奖', percent: '30% - 1人', color: '#FFD700' },
+              { name: language === 'en' ? '🥈 2nd Prize' : '🥈 二奖', percent: '20% - 2人(各10%)', color: '#C0C0C0' },
+              { name: language === 'en' ? '🥉 3rd Prize' : '🥉 三奖', percent: '15% - 3人(各5%)', color: '#CD7F32' },
+              { name: language === 'en' ? '🎁 Lucky Prize' : '🎁 幸运奖', percent: '10% - 5人(各2%)', color: '#8B5CF6' },
+              { name: language === 'en' ? '🌟 Universal Prize' : '🌟 普惠奖', percent: '20% - 全员', color: '#10B981' },
               { name: language === 'en' ? '🔄 Roll Over' : '🔄 回流', percent: '5%', color: '#6B7280' },
             ].map((prize, idx) => (
               <div key={idx} className="prize-item-modern">

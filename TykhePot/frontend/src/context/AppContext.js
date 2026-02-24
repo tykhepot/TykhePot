@@ -11,6 +11,23 @@ const getNextHourlyDraw = () => {
   return nextHour.getTime();
 };
 
+// 计算下一次30分钟池开奖时间
+const getNextMin30Draw = () => {
+  const now = new Date();
+  const next = new Date(now);
+  next.setSeconds(0, 0);
+  // 向下取整到最近的30分钟
+  const minutes = Math.floor(next.getMinutes() / 30) * 30;
+  next.setMinutes(minutes);
+  // 如果当前时间刚好是30分钟边界，则加30分钟
+  if (now.getMinutes() % 30 === 0 && now.getSeconds() === 0) {
+    next.setMinutes(next.getMinutes() + 30);
+  } else {
+    next.setMinutes(next.getMinutes() + 30);
+  }
+  return next.getTime();
+};
+
 // 计算下一次天池开奖时间（下一个UTC 0点）
 const getNextDailyDraw = () => {
   const now = new Date();
@@ -29,10 +46,13 @@ export const AppProvider = ({ children }) => {
     totalBurned: 0,
     onlinePlayers: 0,
     hourlyPool: 0,
+    min30Pool: 0,
     dailyPool: 0,
     hourlyParticipants: 0,
+    min30Participants: 0,
     dailyParticipants: 0,
     hourlyNextDraw: getNextHourlyDraw(),
+    min30NextDraw: getNextMin30Draw(),
     dailyNextDraw: getNextDailyDraw(),
     isLoading: true,
     isPaused: false,
@@ -66,17 +86,21 @@ export const AppProvider = ({ children }) => {
       if (poolStats) {
         const now = Date.now();
         const hourlyLastDraw = poolStats.lastHourlyDraw * 1000;
+        const min30LastDraw = poolStats.lastMin30Draw * 1000;
         const dailyLastDraw = poolStats.lastDailyDraw * 1000;
         
         setStats({
-          totalPool: poolStats.hourlyPool + poolStats.dailyPool,
+          totalPool: poolStats.hourlyPool + poolStats.min30Pool + poolStats.dailyPool,
           totalBurned: poolStats.totalBurned,
-          onlinePlayers: poolStats.hourlyParticipants + poolStats.dailyParticipants,
+          onlinePlayers: poolStats.hourlyParticipants + poolStats.min30Participants + poolStats.dailyParticipants,
           hourlyPool: poolStats.hourlyPool,
+          min30Pool: poolStats.min30Pool,
           dailyPool: poolStats.dailyPool,
           hourlyParticipants: poolStats.hourlyParticipants,
+          min30Participants: poolStats.min30Participants,
           dailyParticipants: poolStats.dailyParticipants,
           hourlyNextDraw: getNextHourlyDraw(),
+          min30NextDraw: getNextMin30Draw(),
           dailyNextDraw: getNextDailyDraw(),
           isLoading: false,
           isPaused: poolStats.paused,

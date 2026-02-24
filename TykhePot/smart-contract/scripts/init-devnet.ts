@@ -1,7 +1,7 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program, web3, BN } from "@coral-xyz/anchor";
 
-const PROGRAM_ID = new web3.PublicKey("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
+const PROGRAM_ID = new web3.PublicKey("8qSEv4yYQpfJuu18KTHfDZjasr52ZPgYGLPYRWBAvJvu");
 const TOKEN_MINT = new web3.PublicKey("FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY");
 const RESERVE_MINT = new web3.PublicKey("9Z3c9tVQo2YfakysXUbLr2UdP4HKnszNUz1BdLjCTQm2");
 

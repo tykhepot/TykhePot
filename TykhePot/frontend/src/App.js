@@ -11,6 +11,7 @@ import RiskDisclaimer from './components/RiskDisclaimer';
 import InitPage from './pages/InitPage';
 import Home from './pages/Home';
 import HourlyPool from './pages/HourlyPool';
+import Min30Pool from './pages/Min30Pool';
 import DailyPool from './pages/DailyPool';
 import Staking from './pages/Staking';
 import Airdrop from './pages/Airdrop';
@@ -94,19 +95,21 @@ function AppContent() {
   
   // 使用 useMemo 创建钱包适配器
   const wallets = useMemo(() => {
-    const phantomAdapter = new PhantomWalletAdapter({
-      // 设置 appUrl 帮助 Phantom 识别回跳地址
-      appUrl: window.location?.origin || 'https://www.tykhepot.io',
+    console.log("Creating wallet adapters...");
+    
+    // 创建适配器
+    const phantomAdapter = new PhantomWalletAdapter();
+    const solflareAdapter = new SolflareWalletAdapter({
+      network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
     });
     
-    return [
-      // Solflare 放前面，移动端更容易连接
-      new SolflareWalletAdapter({
-        network: NETWORK === 'mainnet' ? 'mainnet-beta' : 'devnet'
-      }),
-      // Phantom 放后面
-      phantomAdapter,
-    ];
+    console.log("Phantom adapter:", phantomAdapter.name);
+    console.log("Solflare adapter:", solflareAdapter.name);
+    
+    const walletList = [solflareAdapter, phantomAdapter];
+    
+    console.log("Wallets:", walletList);
+    return walletList;
   }, []);
 
   // 移动端连接处理 - 在页面加载时检测并提示
@@ -143,6 +146,7 @@ function AppContentInner() {
           <Route path="/init" element={<InitPage />} />
           <Route path="/" element={<PageWrapper><Home /></PageWrapper>} />
           <Route path="/hourly" element={<PageWrapper><HourlyPool /></PageWrapper>} />
+          <Route path="/min30" element={<PageWrapper><Min30Pool /></PageWrapper>} />
           <Route path="/daily" element={<PageWrapper><DailyPool /></PageWrapper>} />
           <Route path="/staking" element={<PageWrapper><Staking /></PageWrapper>} />
           <Route path="/airdrop" element={<PageWrapper><Airdrop /></PageWrapper>} />

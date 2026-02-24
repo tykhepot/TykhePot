@@ -5,6 +5,7 @@ const translations = {
     // Navigation
     home: 'Home',
     hourlyPool: 'Hourly Pool',
+    min30Pool: '30min Pool',
     dailyPool: 'Daily Pool',
     staking: 'Staking',
     airdrop: 'Airdrop',
@@ -30,6 +31,8 @@ const translations = {
     choosePool: 'Choose Your Pool',
     hourlyTitle: '⏰ Hourly Pool',
     hourlyDesc: 'Draws every hour, fast-paced gaming',
+    min30Title: '⚡ Min30 Pool',
+    min30Desc: 'Lightning fast, draws every 30 minutes!',
     dailyTitle: '🌙 Daily Pool',
     dailyDesc: 'Daily grand prize with referral rewards',
     minDeposit: 'Min Deposit',
@@ -139,6 +142,7 @@ const translations = {
     // Navigation
     home: '首页',
     hourlyPool: '小时池',
+    min30Pool: '30分钟池',
     dailyPool: '天池',
     staking: '质押',
     airdrop: '空投',
@@ -164,6 +168,8 @@ const translations = {
     choosePool: '选择奖池',
     hourlyTitle: '⏰ 小时池',
     hourlyDesc: '每小时开奖，快节奏游戏',
+    min30Title: '⚡ 30分池',
+    min30Desc: '闪电级快节奏，30分钟开奖！',
     dailyTitle: '🌙 天池',
     dailyDesc: '每日大奖，推广有奖励',
     minDeposit: '最低投入',
