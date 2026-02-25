@@ -46,7 +46,7 @@ pub fn initialize_airdrop(
 ) -> Result<()> {
     let airdrop_state = &mut ctx.accounts.airdrop_state;
     
-    airdrop_state.authority = ctx.accounts.authority.key();
+    airdrop_state.authority = ctx.accounts.payer.key();
     airdrop_state.token_mint = ctx.accounts.token_mint.key();
     airdrop_state.total_airdrop = total_airdrop;
     airdrop_state.claimed_amount = 0;

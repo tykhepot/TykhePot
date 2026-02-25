@@ -72,7 +72,7 @@ pub fn initialize_staking(
 ) -> Result<()> {
     let staking_state = &mut ctx.accounts.staking_state;
     
-    staking_state.authority = ctx.accounts.authority.key();
+    staking_state.authority = ctx.accounts.payer.key();
     staking_state.token_mint = ctx.accounts.token_mint.key();
     staking_state.short_term_pool = short_term_pool;
     staking_state.long_term_pool = long_term_pool;

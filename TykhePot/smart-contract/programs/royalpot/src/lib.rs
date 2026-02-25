@@ -1,230 +1,1043 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Transfer, Token, TokenAccount, Mint};
+use anchor_spl::token::{self, Burn, Transfer, Token, TokenAccount, Mint};
 
 pub mod staking;
 pub mod airdrop;
-pub mod randomness;
 
+// ============================================================
+// Constants
+// ============================================================
 
-pub const BASE: u64 = 10000;
-pub const BURN: u64 = 300;
-pub const PLAT: u64 = 200;
-pub const REF: u64 = 800;
-pub const REFERRED_BONUS: u64 = 200; // 2% for referred user
-pub const HOUR_MIN: u64 = 200_000_000_000;
-pub const DAY_MIN: u64 = 100_000_000_000;
-pub const FREE_AIRDROP: u64 = 100_000_000_000; // 100 TPOT
-pub const MAX_DEPOSIT: u64 = 1_000_000_000_000_000; // 1 million TPOT
-pub const TIME_TOLERANCE: i64 = 300; // 300 seconds tolerance (Solana validators can skew ±25s)
-pub const LOCK_PERIOD: i64 = 300; // 5 minutes lock before draw
-pub const PAUSE_TIMELOCK: i64 = 86400 * 2; // 48h timelock before pause takes effect
+pub const BASE: u64 = 10_000;
+pub const BURN_RATE: u64 = 300;   // 3%  — only on successful draw
+pub const PLAT_RATE: u64 = 200;   // 2%  — only on successful draw
+// Prize = 100% - 3% - 2% = 95%
 
-// Prize distribution constants
-pub const FIRST_PRIZE_RATE: u64 = 3000;  // 30%
-pub const SECOND_PRIZE_RATE: u64 = 2000; // 20%
-pub const THIRD_PRIZE_RATE: u64 = 1500;  // 15%
-pub const LUCKY_PRIZE_RATE: u64 = 1000;  // 10%
-pub const UNIVERSAL_PRIZE_RATE: u64 = 2000; // 20%
-pub const ROLLOVER_RATE: u64 = 500;      // 5%
+pub const MIN_PARTICIPANTS: u32 = 12;
+pub const LOCK_PERIOD: i64 = 300; // 5 min before draw, betting closes
 
-// Vesting constants
+// Pool durations (UTC seconds)
+pub const DURATION_30MIN:  i64 = 1_800;
+pub const DURATION_HOURLY: i64 = 3_600;
+pub const DURATION_DAILY:  i64 = 86_400;
+
+// Minimum deposits (9-decimal TPOT)
+pub const MIN_30MIN:  u64 = 500_000_000_000;  // 500 TPOT
+pub const MIN_HOURLY: u64 = 200_000_000_000;  // 200 TPOT
+pub const MIN_DAILY:  u64 = 100_000_000_000;  // 100 TPOT
+
+pub const FREE_BET_AMOUNT: u64 = 100_000_000_000; // 100 TPOT
+
+// Vesting (kept for staking module)
 pub const VESTING_DAYS: u64 = 20;
-pub const VESTING_RELEASE_PER_DAY: u64 = 500; // 5% per day
+pub const VESTING_RELEASE_PER_DAY: u64 = 500; // 5% per day (basis points)
+
+// Account space
+pub const GLOBAL_STATE_SIZE: usize = 8 + 32 + 32 + 32 + 1 + 32; // extra padding
+pub const POOL_STATE_SIZE:   usize = 8 + 1 + 8 + 8 + 8 + 8 + 8 + 4 + 4 + 32 + 1 + 16;
+pub const USER_DEPOSIT_SIZE: usize = 8 + 32 + 1 + 8 + 8 + 1 + 8;
+pub const FREE_DEPOSIT_SIZE: usize = 8 + 32 + 1 + 1 + 8 + 1 + 8;
+pub const AIRDROP_CLAIM_SIZE: usize = 8 + 32 + 1 + 1 + 8;
 
 declare_id!("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
 
+// ============================================================
+// Enums
+// ============================================================
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PoolType {
+    Min30  = 0,
+    Hourly = 1,
+    Daily  = 2,
+}
+
+impl PoolType {
+    pub fn duration(&self) -> i64 {
+        match self {
+            PoolType::Min30  => DURATION_30MIN,
+            PoolType::Hourly => DURATION_HOURLY,
+            PoolType::Daily  => DURATION_DAILY,
+        }
+    }
+    pub fn min_deposit(&self) -> u64 {
+        match self {
+            PoolType::Min30  => MIN_30MIN,
+            PoolType::Hourly => MIN_HOURLY,
+            PoolType::Daily  => MIN_DAILY,
+        }
+    }
+}
+
+pub fn pool_type_from_u8(v: u8) -> Result<PoolType> {
+    match v {
+        0 => Ok(PoolType::Min30),
+        1 => Ok(PoolType::Hourly),
+        2 => Ok(PoolType::Daily),
+        _ => err!(ErrorCode::InvalidPoolType),
+    }
+}
+
+// ============================================================
+// Account Structs
+// ============================================================
+
+/// One-time global config. Written at initialize, never changed.
 #[account]
-pub struct State {
-    pub authority: Pubkey,
+pub struct GlobalState {
     pub token_mint: Pubkey,
-    pub platform_wallet: Pubkey,
-    pub pre_pool: u64,
-    pub referral_pool: u64,
-    pub hourly_pool: u64,
-    pub hourly_players: u32,
-    pub daily_pool: u64,
-    pub daily_players: u32,
-    pub burned: u64,
-    pub paused: bool,
+    /// TPOT token account where platform fees accumulate
+    pub platform_fee_vault: Pubkey,
+    /// Token account that funds free bets (airdrop source)
+    pub airdrop_vault: Pubkey,
     pub bump: u8,
-    pub last_hourly_draw: i64,
-    pub last_daily_draw: i64,
-    pub hourly_rollover: u64,
-    pub daily_rollover: u64,
-    /// Unix timestamp when a pause was scheduled (0 = none pending)
-    pub pause_scheduled_at: i64,
+    /// Reserved for future use
+    pub _padding: [u8; 32],
 }
 
+/// Per-pool state. Three PDAs: 30min / hourly / daily.
 #[account]
-pub struct UserData {
-    pub owner: Pubkey,
-    pub hourly_tickets: u64,
-    pub daily_tickets: u64,
-    pub last_time: i64,
-    pub referrer: Option<Pubkey>,
-    pub has_ref_bonus: bool,
-    pub airdrop_claimed: bool,
-    pub total_deposit: u64,
-    /// Set to true after claim_free_airdrop; cleared after use_free_bet_daily.
+pub struct PoolState {
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub round_start_time: i64,
+    pub round_end_time: i64,
+    /// Sum of regular deposits in current round
+    pub total_deposited: u64,
+    /// Sum of free-bet tokens currently in vault
+    pub free_bet_total: u64,
+    /// Number of regular depositors in current round
+    pub regular_count: u32,
+    /// Number of active free-bet holders (persists across failed rounds)
+    pub free_count: u32,
+    /// SPL token account (authority = this PoolState PDA)
+    pub vault: Pubkey,
+    pub bump: u8,
+    pub _padding: [u8; 15],
+}
+
+/// Created per user per pool per round. Closed (zeroed) on refund.
+#[account]
+pub struct UserDeposit {
+    pub user: Pubkey,
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub amount: u64,
+    pub bump: u8,
+    pub _padding: [u8; 7],
+}
+
+/// Created once per user per pool when they activate a free bet.
+/// Persists across failed rounds (is_active stays true).
+/// Set is_active = false on successful draw (consumed).
+#[account]
+pub struct FreeDeposit {
+    pub user: Pubkey,
+    pub pool_type: u8,
+    pub is_active: bool,
+    pub amount: u64, // always FREE_BET_AMOUNT
+    pub bump: u8,
+    pub _padding: [u8; 7],
+}
+
+/// Created once when user calls claim_free_airdrop.
+/// free_bet_available = true means they can activate one free bet.
+#[account]
+pub struct AirdropClaim {
+    pub user: Pubkey,
     pub free_bet_available: bool,
+    pub bump: u8,
+    pub _padding: [u8; 6],
 }
 
-impl UserData {
-    // 32 (owner) + 8 (hourly_tickets) + 8 (daily_tickets) + 8 (last_time) +
-    // 33 (Option<Pubkey>) + 1 (has_ref_bonus) + 1 (airdrop_claimed) + 8 (total_deposit) +
-    // 1 (free_bet_available) = 100
-    pub const SIZE: usize = 32 + 8 + 8 + 8 + 33 + 1 + 1 + 8 + 1; // 100
+// ============================================================
+// Error Codes
+// ============================================================
+
+#[error_code]
+pub enum ErrorCode {
+    #[msg("Betting is closed for this round (within 5min of draw)")]
+    BettingClosed,
+    #[msg("Deposit amount is below the minimum for this pool")]
+    BelowMinimum,
+    #[msg("Already deposited in this round")]
+    AlreadyDeposited,
+    #[msg("Draw time has not arrived yet")]
+    TooEarlyForDraw,
+    #[msg("Number of participant accounts does not match pool state")]
+    ParticipantCountMismatch,
+    #[msg("Invalid or mismatched participant account")]
+    InvalidParticipant,
+    #[msg("No free bet available — claim airdrop first")]
+    NoFreeBetAvailable,
+    #[msg("Free bet is already active in this pool")]
+    FreeBetAlreadyActive,
+    #[msg("Math overflow")]
+    MathOverflow,
+    #[msg("Invalid pool type (must be 0, 1, or 2)")]
+    InvalidPoolType,
+    #[msg("Wrong round number in participant account")]
+    WrongRoundNumber,
+    #[msg("Vault address mismatch")]
+    VaultMismatch,
+    #[msg("Platform vault mismatch")]
+    PlatformVaultMismatch,
+    #[msg("Airdrop vault mismatch")]
+    AirdropVaultMismatch,
+    #[msg("Token mint mismatch")]
+    MintMismatch,
 }
 
-/// Records a prize that vests linearly over VESTING_DAYS days (5% per day).
-/// Created by admin after each draw; winner claims daily via claim_vested.
-#[account]
-pub struct VestingAccount {
-    pub winner: Pubkey,           // 32 — prize recipient
-    pub total_amount: u64,        // 8  — total prize
-    pub claimed_amount: u64,      // 8  — already claimed
-    pub start_time: i64,          // 8  — vesting start (draw time)
-    pub vesting_id: u64,          // 8  — unique ID (use draw timestamp)
-    pub bump: u8,                 // 1
+// ============================================================
+// Events
+// ============================================================
+
+#[event]
+pub struct DrawExecuted {
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub winner: Pubkey,
+    pub prize_amount: u64,
+    pub burn_amount: u64,
+    pub platform_amount: u64,
+    pub total_pool: u64,
+    pub participant_count: u32,
+    pub draw_seed: [u8; 32],
+    pub timestamp: i64,
 }
 
-impl VestingAccount {
-    pub const SIZE: usize = 32 + 8 + 8 + 8 + 8 + 1; // 65
+#[event]
+pub struct RoundRefunded {
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub regular_refunded: u32,
+    pub free_carried_over: u32,
+    pub total_refunded: u64,
+    pub timestamp: i64,
 }
+
+#[event]
+pub struct Deposited {
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub user: Pubkey,
+    pub amount: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct FreeBetActivated {
+    pub pool_type: u8,
+    pub user: Pubkey,
+    pub timestamp: i64,
+}
+
+// ============================================================
+// Program
+// ============================================================
+
+#[program]
+pub mod royalpot {
+    use super::*;
+
+    // ----------------------------------------------------------
+    // One-time setup
+    // ----------------------------------------------------------
+
+    /// Initialize global config. Called once at deployment.
+    /// After this, no admin controls exist — everything is rule-based.
+    pub fn initialize(
+        ctx: Context<Initialize>,
+        platform_fee_vault: Pubkey,
+    ) -> Result<()> {
+        let state = &mut ctx.accounts.global_state;
+        state.token_mint = ctx.accounts.token_mint.key();
+        state.platform_fee_vault = platform_fee_vault;
+        state.airdrop_vault = ctx.accounts.airdrop_vault.key();
+        state.bump = ctx.bumps.global_state;
+        state._padding = [0u8; 32];
+        Ok(())
+    }
+
+    /// Initialize one pool. Called three times (30min / hourly / daily).
+    /// initial_start_time: UTC unix timestamp aligned to pool boundary.
+    pub fn initialize_pool(
+        ctx: Context<InitializePool>,
+        pool_type: u8,
+        initial_start_time: i64,
+    ) -> Result<()> {
+        let pt = pool_type_from_u8(pool_type)?;
+        let pool = &mut ctx.accounts.pool_state;
+        pool.pool_type = pool_type;
+        pool.round_number = 1;
+        pool.round_start_time = initial_start_time;
+        pool.round_end_time = initial_start_time + pt.duration();
+        pool.total_deposited = 0;
+        pool.free_bet_total = 0;
+        pool.regular_count = 0;
+        pool.free_count = 0;
+        pool.vault = ctx.accounts.pool_vault.key();
+        pool.bump = ctx.bumps.pool_state;
+        pool._padding = [0u8; 15];
+        Ok(())
+    }
+
+    // ----------------------------------------------------------
+    // User actions
+    // ----------------------------------------------------------
+
+    /// Regular deposit into a pool for the current round.
+    pub fn deposit(ctx: Context<Deposit>, amount: u64) -> Result<()> {
+        let clock = Clock::get()?;
+        let pool = &mut ctx.accounts.pool_state;
+        let pt = pool_type_from_u8(pool.pool_type)?;
+
+        // Betting closes 5 minutes before draw
+        require!(
+            clock.unix_timestamp < pool.round_end_time - LOCK_PERIOD,
+            ErrorCode::BettingClosed
+        );
+
+        // Enforce per-pool minimum
+        require!(amount >= pt.min_deposit(), ErrorCode::BelowMinimum);
+
+        // Record deposit (init fails if PDA already exists → prevents double deposit)
+        let dep = &mut ctx.accounts.user_deposit;
+        dep.user = ctx.accounts.user.key();
+        dep.pool_type = pool.pool_type;
+        dep.round_number = pool.round_number;
+        dep.amount = amount;
+        dep.bump = ctx.bumps.user_deposit;
+        dep._padding = [0u8; 7];
+
+        // Transfer tokens: user → pool vault
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.user_token_account.to_account_info(),
+                    to: ctx.accounts.pool_vault.to_account_info(),
+                    authority: ctx.accounts.user.to_account_info(),
+                },
+            ),
+            amount,
+        )?;
+
+        pool.total_deposited = pool
+            .total_deposited
+            .checked_add(amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+        pool.regular_count = pool
+            .regular_count
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        emit!(Deposited {
+            pool_type: pool.pool_type,
+            round_number: pool.round_number,
+            user: ctx.accounts.user.key(),
+            amount,
+            timestamp: clock.unix_timestamp,
+        });
+        Ok(())
+    }
+
+    /// Activate free bet for a pool.
+    /// Transfers 100 TPOT from airdrop_vault → pool_vault.
+    /// FreeDeposit PDA persists until a successful draw consumes it.
+    pub fn use_free_bet(ctx: Context<UseFreeBet>, pool_type: u8) -> Result<()> {
+        let clock = Clock::get()?;
+        let pool = &mut ctx.accounts.pool_state;
+
+        // Betting closes 5 min before draw
+        require!(
+            clock.unix_timestamp < pool.round_end_time - LOCK_PERIOD,
+            ErrorCode::BettingClosed
+        );
+
+        // Verify airdrop claim is available
+        let claim = &mut ctx.accounts.airdrop_claim;
+        require!(claim.free_bet_available, ErrorCode::NoFreeBetAvailable);
+
+        // Init FreeDeposit (init fails if already active for this pool)
+        let free_dep = &mut ctx.accounts.free_deposit;
+        free_dep.user = ctx.accounts.user.key();
+        free_dep.pool_type = pool_type;
+        free_dep.is_active = true;
+        free_dep.amount = FREE_BET_AMOUNT;
+        free_dep.bump = ctx.bumps.free_deposit;
+        free_dep._padding = [0u8; 7];
+
+        // Consume the airdrop claim (one-time use)
+        claim.free_bet_available = false;
+
+        // Transfer 100 TPOT: airdrop_vault → pool_vault
+        // Signed by global_state PDA
+        let gs_bump = ctx.accounts.global_state.bump;
+        let global_seeds: &[&[u8]] = &[b"global_state", &[gs_bump]];
+        let signer = &[global_seeds];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.airdrop_vault.to_account_info(),
+                    to: ctx.accounts.pool_vault.to_account_info(),
+                    authority: ctx.accounts.global_state.to_account_info(),
+                },
+                signer,
+            ),
+            FREE_BET_AMOUNT,
+        )?;
+
+        pool.free_bet_total = pool
+            .free_bet_total
+            .checked_add(FREE_BET_AMOUNT)
+            .ok_or(ErrorCode::MathOverflow)?;
+        pool.free_count = pool
+            .free_count
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        emit!(FreeBetActivated {
+            pool_type: pool.pool_type,
+            user: ctx.accounts.user.key(),
+            timestamp: clock.unix_timestamp,
+        });
+        Ok(())
+    }
+
+    /// Execute draw. Permissionless — anyone can call after round_end_time.
+    ///
+    /// remaining_accounts layout (must match pool state exactly):
+    ///   [0 .. regular_count*2 - 1]:
+    ///     pairs (user_deposit_pda, user_token_account) for regular depositors
+    ///   [regular_count*2 .. (regular_count+free_count)*2 - 1]:
+    ///     pairs (free_deposit_pda, user_token_account) for free-bet holders
+    ///
+    /// On < 12 participants:  refund regular, free bets carry over to next round.
+    /// On >= 12 participants: burn 3%, platform 2%, winner 95% — equal probability.
+    pub fn execute_draw<'info>(
+        ctx: Context<'_, '_, '_, 'info, ExecuteDraw<'info>>,
+        draw_seed: [u8; 32],
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+
+        // --- read pool fields before mutably borrowing pool ---
+        let pool_type    = ctx.accounts.pool_state.pool_type;
+        let pool_bump    = ctx.accounts.pool_state.bump;
+        let round_number = ctx.accounts.pool_state.round_number;
+        let round_end    = ctx.accounts.pool_state.round_end_time;
+        let regular_count = ctx.accounts.pool_state.regular_count as usize;
+        let free_count    = ctx.accounts.pool_state.free_count as usize;
+        let total_deposited = ctx.accounts.pool_state.total_deposited;
+        let free_bet_total  = ctx.accounts.pool_state.free_bet_total;
+        let vault_key       = ctx.accounts.pool_state.vault;
+
+        // Time check
+        require!(clock.unix_timestamp >= round_end, ErrorCode::TooEarlyForDraw);
+
+        // Vault sanity
+        require!(ctx.accounts.pool_vault.key() == vault_key, ErrorCode::VaultMismatch);
+
+        let total_count = regular_count + free_count;
+
+        // Account count must match exactly
+        require!(
+            ctx.remaining_accounts.len() == total_count * 2,
+            ErrorCode::ParticipantCountMismatch
+        );
+
+        let pool_seeds: &[&[u8]] = &[b"pool", &[pool_type], &[pool_bump]];
+        let signer = &[pool_seeds];
+
+        // ----------------------------------------------------------------
+        // BRANCH A: Not enough participants — refund regular, carry free
+        // ----------------------------------------------------------------
+        if total_count < MIN_PARTICIPANTS as usize {
+            // Refund each regular depositor
+            for i in 0..regular_count {
+                let dep_acc      = &ctx.remaining_accounts[i * 2];
+                let user_tok_acc = &ctx.remaining_accounts[i * 2 + 1];
+
+                // Verify and read UserDeposit
+                let dep_data = UserDeposit::try_deserialize(
+                    &mut dep_acc.data.borrow().as_ref(),
+                )?;
+                require!(dep_data.pool_type == pool_type, ErrorCode::InvalidParticipant);
+                require!(dep_data.round_number == round_number, ErrorCode::WrongRoundNumber);
+
+                // Refund: pool_vault → user token account
+                token::transfer(
+                    CpiContext::new_with_signer(
+                        ctx.accounts.token_program.to_account_info(),
+                        Transfer {
+                            from: ctx.accounts.pool_vault.to_account_info(),
+                            to: user_tok_acc.to_account_info(),
+                            authority: ctx.accounts.pool_state.to_account_info(),
+                        },
+                        signer,
+                    ),
+                    dep_data.amount,
+                )?;
+            }
+            // Free-bet accounts: do nothing — they carry over.
+            // Their 100 TPOT stays in vault; free_count preserved in next round.
+
+            emit!(RoundRefunded {
+                pool_type,
+                round_number,
+                regular_refunded: regular_count as u32,
+                free_carried_over: free_count as u32,
+                total_refunded: total_deposited,
+                timestamp: clock.unix_timestamp,
+            });
+
+            // Advance to next round, preserving free bet state
+            let pt = pool_type_from_u8(pool_type)?;
+            let pool = &mut ctx.accounts.pool_state;
+            pool.round_number = pool
+                .round_number
+                .checked_add(1)
+                .ok_or(ErrorCode::MathOverflow)?;
+            pool.round_start_time = round_end;
+            pool.round_end_time = round_end + pt.duration();
+            pool.total_deposited = 0;
+            pool.regular_count = 0;
+            // free_bet_total and free_count intentionally preserved
+            return Ok(());
+        }
+
+        // ----------------------------------------------------------------
+        // BRANCH B: Enough participants — draw!
+        // ----------------------------------------------------------------
+
+        let total_pool = total_deposited
+            .checked_add(free_bet_total)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        // Equal-probability winner selection
+        let winner_idx = (u64::from_le_bytes(draw_seed[0..8].try_into().unwrap())
+            % total_count as u64) as usize;
+
+        // Resolve winner's token account and pubkey
+        let (winner_pubkey, winner_token_acc) = if winner_idx < regular_count {
+            let dep_acc = &ctx.remaining_accounts[winner_idx * 2];
+            let tok_acc = &ctx.remaining_accounts[winner_idx * 2 + 1];
+            let dep = UserDeposit::try_deserialize(&mut dep_acc.data.borrow().as_ref())?;
+            require!(dep.pool_type == pool_type, ErrorCode::InvalidParticipant);
+            require!(dep.round_number == round_number, ErrorCode::WrongRoundNumber);
+            (dep.user, tok_acc)
+        } else {
+            let free_idx = winner_idx - regular_count;
+            let dep_acc = &ctx.remaining_accounts[(regular_count + free_idx) * 2];
+            let tok_acc = &ctx.remaining_accounts[(regular_count + free_idx) * 2 + 1];
+            let dep = FreeDeposit::try_deserialize(&mut dep_acc.data.borrow().as_ref())?;
+            require!(dep.pool_type == pool_type, ErrorCode::InvalidParticipant);
+            require!(dep.is_active, ErrorCode::InvalidParticipant);
+            (dep.user, tok_acc)
+        };
+
+        // Distributions — only executed on successful draw
+        let burn_amount = total_pool
+            .checked_mul(BURN_RATE).ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+        let plat_amount = total_pool
+            .checked_mul(PLAT_RATE).ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+        let prize_amount = total_pool
+            .checked_sub(burn_amount).ok_or(ErrorCode::MathOverflow)?
+            .checked_sub(plat_amount).ok_or(ErrorCode::MathOverflow)?;
+
+        // 3% burn (reduces total supply)
+        token::burn(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Burn {
+                    mint: ctx.accounts.token_mint.to_account_info(),
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    authority: ctx.accounts.pool_state.to_account_info(),
+                },
+                signer,
+            ),
+            burn_amount,
+        )?;
+
+        // 2% platform fee
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: ctx.accounts.platform_vault.to_account_info(),
+                    authority: ctx.accounts.pool_state.to_account_info(),
+                },
+                signer,
+            ),
+            plat_amount,
+        )?;
+
+        // 95% prize to winner
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: winner_token_acc.to_account_info(),
+                    authority: ctx.accounts.pool_state.to_account_info(),
+                },
+                signer,
+            ),
+            prize_amount,
+        )?;
+
+        // Mark all free-bet accounts as consumed (is_active = false)
+        // Layout after 8-byte discriminator: user(32) pool_type(1) is_active(1) ...
+        // is_active byte offset = 8 + 32 + 1 = 41
+        for i in 0..free_count {
+            let free_acc = &ctx.remaining_accounts[(regular_count + i) * 2];
+            let mut data = free_acc.try_borrow_mut_data()?;
+            data[41] = 0u8; // is_active = false
+        }
+
+        emit!(DrawExecuted {
+            pool_type,
+            round_number,
+            winner: winner_pubkey,
+            prize_amount,
+            burn_amount,
+            platform_amount: plat_amount,
+            total_pool,
+            participant_count: total_count as u32,
+            draw_seed,
+            timestamp: clock.unix_timestamp,
+        });
+
+        // Advance to next round (full reset)
+        let pt = pool_type_from_u8(pool_type)?;
+        let pool = &mut ctx.accounts.pool_state;
+        pool.round_number = pool
+            .round_number
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
+        pool.round_start_time = round_end;
+        pool.round_end_time = round_end + pt.duration();
+        pool.total_deposited = 0;
+        pool.free_bet_total = 0;
+        pool.regular_count = 0;
+        pool.free_count = 0;
+
+        Ok(())
+    }
+
+    /// Register user for one free bet.
+    /// Creates AirdropClaim PDA with free_bet_available = true.
+    pub fn claim_free_airdrop(ctx: Context<ClaimFreeAirdrop>) -> Result<()> {
+        let claim = &mut ctx.accounts.airdrop_claim;
+        claim.user = ctx.accounts.user.key();
+        claim.free_bet_available = true;
+        claim.bump = ctx.bumps.airdrop_claim;
+        claim._padding = [0u8; 6];
+        Ok(())
+    }
+
+    // ----------------------------------------------------------
+    // Staking module (delegated)
+    // ----------------------------------------------------------
+    pub fn initialize_staking(
+        ctx: Context<InitializeStaking>,
+        short_term_pool: u64,
+        long_term_pool: u64,
+    ) -> Result<()> {
+        staking::initialize_staking(ctx, short_term_pool, long_term_pool)
+    }
+    pub fn stake(
+        ctx: Context<Stake>,
+        stake_index: u64,
+        amount: u64,
+        stake_type: staking::StakeType,
+    ) -> Result<()> {
+        staking::stake(ctx, stake_index, amount, stake_type)
+    }
+    pub fn release_stake(ctx: Context<ReleaseStake>, stake_index: u64) -> Result<()> {
+        staking::release_stake(ctx, stake_index)
+    }
+    pub fn early_withdraw(ctx: Context<ReleaseStake>, stake_index: u64) -> Result<()> {
+        staking::early_withdraw(ctx, stake_index)
+    }
+
+    // ----------------------------------------------------------
+    // Profit airdrop module (delegated)
+    // ----------------------------------------------------------
+    pub fn initialize_airdrop(
+        ctx: Context<InitializeAirdrop>,
+        total_airdrop: u64,
+    ) -> Result<()> {
+        airdrop::initialize_airdrop(ctx, total_airdrop)
+    }
+    pub fn record_profit(ctx: Context<RecordProfit>, profit_amount: u64) -> Result<()> {
+        airdrop::record_profit(ctx, profit_amount)
+    }
+    pub fn claim_profit_airdrop(ctx: Context<ClaimProfitAirdrop>) -> Result<()> {
+        airdrop::claim_profit_airdrop(ctx)
+    }
+
+    // ----------------------------------------------------------
+    // Vesting (kept for prize winner vesting option)
+    // ----------------------------------------------------------
+    pub fn init_vesting(
+        ctx: Context<InitVesting>,
+        total_amount: u64,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+        let v = &mut ctx.accounts.vesting_account;
+        v.beneficiary = ctx.accounts.beneficiary.key();
+        v.total_amount = total_amount;
+        v.claimed_amount = 0;
+        v.start_time = clock.unix_timestamp;
+        v.bump = ctx.bumps.vesting_account;
+
+        token::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.funder_token_account.to_account_info(),
+                    to: ctx.accounts.vesting_vault.to_account_info(),
+                    authority: ctx.accounts.funder.to_account_info(),
+                },
+            ),
+            total_amount,
+        )?;
+        Ok(())
+    }
+
+    pub fn claim_vested(ctx: Context<ClaimVested>) -> Result<()> {
+        let clock = Clock::get()?;
+        let v = &ctx.accounts.vesting_account;
+
+        let elapsed_days = ((clock.unix_timestamp - v.start_time) / 86400) as u64;
+        let vested_days = elapsed_days.min(VESTING_DAYS);
+        let vested_amount = v
+            .total_amount
+            .checked_mul(vested_days * VESTING_RELEASE_PER_DAY)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10_000)
+            .ok_or(ErrorCode::MathOverflow)?;
+        let claimable = vested_amount.saturating_sub(v.claimed_amount);
+        require!(claimable > 0, ErrorCode::BelowMinimum);
+
+        let bump = v.bump;
+        let vesting_seeds: &[&[u8]] = &[
+            b"vesting",
+            v.beneficiary.as_ref(),
+            &[bump],
+        ];
+        let signer = &[vesting_seeds];
+
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.vesting_vault.to_account_info(),
+                    to: ctx.accounts.beneficiary_token_account.to_account_info(),
+                    authority: ctx.accounts.vesting_account.to_account_info(),
+                },
+                signer,
+            ),
+            claimable,
+        )?;
+
+        ctx.accounts.vesting_account.claimed_amount = ctx
+            .accounts
+            .vesting_account
+            .claimed_amount
+            .checked_add(claimable)
+            .ok_or(ErrorCode::MathOverflow)?;
+        Ok(())
+    }
+}
+
+// ============================================================
+// Account Contexts
+// ============================================================
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
-    #[account(init, payer = authority, space = 8 + 200, seeds = [b"state"], bump)]
-    pub state: Account<'info, State>,
-    #[account(mut)] pub authority: Signer<'info>,
-    pub token_mint: Account<'info, Mint>,
-    pub platform_wallet: UncheckedAccount<'info>,
-    pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
-}
+    #[account(mut)]
+    pub payer: Signer<'info>,
 
-#[derive(Accounts)]
-pub struct Pause<'info> {
-    #[account(mut)] pub state: Account<'info, State>,
-    pub authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct Resume<'info> {
-    #[account(mut)] pub state: Account<'info, State>,
-    pub authority: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct WithdrawFee<'info> {
-    #[account(mut, seeds = [b"state"], bump = state.bump)] pub state: Account<'info, State>,
-    #[account(mut)] pub vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub dest: Account<'info, TokenAccount>,
-    pub authority: Signer<'info>,
-    pub token_program: Program<'info, Token>,
-}
-
-#[derive(Accounts)]
-pub struct DepositHourly<'info> {
-    #[account(mut)] pub state: Account<'info, State>,
     #[account(
-        init_if_needed,
-        payer = signer,
-        space = 8 + UserData::SIZE,
-        seeds = [b"user", signer.key().as_ref()],
-        bump
+        init,
+        payer = payer,
+        space = GLOBAL_STATE_SIZE,
+        seeds = [b"global_state"],
+        bump,
     )]
-    pub user: Account<'info, UserData>,
-    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
-    #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub signer: Signer<'info>,
+    pub global_state: Account<'info, GlobalState>,
+
+    pub token_mint: Account<'info, Mint>,
+
+    /// The token account that funds free bets. Authority must be global_state PDA.
+    pub airdrop_vault: Account<'info, TokenAccount>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(pool_type: u8)]
+pub struct InitializePool<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    #[account(
+        init,
+        payer = payer,
+        space = POOL_STATE_SIZE,
+        seeds = [b"pool".as_ref(), &[pool_type]],
+        bump,
+    )]
+    pub pool_state: Account<'info, PoolState>,
+
+    /// Token account for this pool. Authority must be pool_state PDA.
+    pub pool_vault: Account<'info, TokenAccount>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Deposit<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"pool".as_ref(), &[pool_state.pool_type]],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Account<'info, PoolState>,
+
+    /// UserDeposit PDA — init ensures one deposit per user per round.
+    #[account(
+        init,
+        payer = user,
+        space = USER_DEPOSIT_SIZE,
+        seeds = [
+            b"deposit".as_ref(),
+            &[pool_state.pool_type],
+            user.key().as_ref(),
+            &pool_state.round_number.to_le_bytes(),
+        ],
+        bump,
+    )]
+    pub user_deposit: Account<'info, UserDeposit>,
+
+    #[account(
+        mut,
+        constraint = user_token_account.owner == user.key(),
+        constraint = user_token_account.mint == pool_vault.mint,
+    )]
+    pub user_token_account: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = pool_vault.key() == pool_state.vault @ ErrorCode::VaultMismatch,
+    )]
+    pub pool_vault: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct DepositDaily<'info> {
-    #[account(mut, seeds = [b"state"], bump = state.bump)] pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", signer.key().as_ref()], bump)]
-    pub user: Account<'info, UserData>,
-    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
-    #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub referral_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub referrer_token: Account<'info, TokenAccount>,
-    #[account(mut)] pub user_referrer_bonus: Account<'info, TokenAccount>,
-    pub signer: Signer<'info>,
+#[instruction(pool_type: u8)]
+pub struct UseFreeBet<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    #[account(
+        seeds = [b"global_state"],
+        bump = global_state.bump,
+    )]
+    pub global_state: Account<'info, GlobalState>,
+
+    #[account(
+        mut,
+        seeds = [b"pool".as_ref(), &[pool_type]],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Account<'info, PoolState>,
+
+    /// AirdropClaim PDA — must exist and have free_bet_available = true
+    #[account(
+        mut,
+        seeds = [b"airdrop_claim", user.key().as_ref()],
+        bump = airdrop_claim.bump,
+    )]
+    pub airdrop_claim: Account<'info, AirdropClaim>,
+
+    /// FreeDeposit PDA — init (fails if already active, preventing double-use)
+    #[account(
+        init,
+        payer = user,
+        space = FREE_DEPOSIT_SIZE,
+        seeds = [b"free_deposit".as_ref(), &[pool_type], user.key().as_ref()],
+        bump,
+    )]
+    pub free_deposit: Account<'info, FreeDeposit>,
+
+    #[account(
+        mut,
+        constraint = airdrop_vault.key() == global_state.airdrop_vault @ ErrorCode::AirdropVaultMismatch,
+    )]
+    pub airdrop_vault: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = pool_vault.key() == pool_state.vault @ ErrorCode::VaultMismatch,
+    )]
+    pub pool_vault: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
-/// Registers the user for a free 100-TPOT bet. No tokens move here.
-/// Call use_free_bet_daily afterwards to place the bet into the daily pool.
+#[derive(Accounts)]
+pub struct ExecuteDraw<'info> {
+    /// Anyone can call — no signer authority check.
+    pub caller: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"pool".as_ref(), &[pool_state.pool_type]],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Account<'info, PoolState>,
+
+    #[account(
+        mut,
+        constraint = pool_vault.key() == pool_state.vault @ ErrorCode::VaultMismatch,
+    )]
+    pub pool_vault: Account<'info, TokenAccount>,
+
+    /// Token mint — needed for burn CPI
+    #[account(mut)]
+    pub token_mint: Account<'info, Mint>,
+
+    /// Platform fee destination — verified against GlobalState
+    #[account(
+        mut,
+        constraint = platform_vault.key() == global_state.platform_fee_vault @ ErrorCode::PlatformVaultMismatch,
+    )]
+    pub platform_vault: Account<'info, TokenAccount>,
+
+    #[account(
+        seeds = [b"global_state"],
+        bump = global_state.bump,
+    )]
+    pub global_state: Account<'info, GlobalState>,
+
+    pub token_program: Program<'info, Token>,
+    // remaining_accounts: [deposit_pda, user_tok_acc] × regular_count
+    //                   + [free_dep_pda, user_tok_acc] × free_count
+}
+
 #[derive(Accounts)]
 pub struct ClaimFreeAirdrop<'info> {
+    #[account(mut)]
+    pub user: Signer<'info>,
+
     #[account(
-        init_if_needed,
-        payer = user_signer,
-        space = 8 + UserData::SIZE,
-        seeds = [b"user", user_signer.key().as_ref()],
-        bump
+        init,
+        payer = user,
+        space = AIRDROP_CLAIM_SIZE,
+        seeds = [b"airdrop_claim", user.key().as_ref()],
+        bump,
     )]
-    pub user: Account<'info, UserData>,
-    #[account(mut)] pub user_signer: Signer<'info>,
+    pub airdrop_claim: Account<'info, AirdropClaim>,
+
     pub system_program: Program<'info, System>,
 }
 
-/// Use the free 100-TPOT bet: transfers from airdrop_vault directly to daily_pool_vault.
-/// Requires free_bet_available == true (set by claim_free_airdrop).
-#[derive(Accounts)]
-pub struct UseFreeBetDaily<'info> {
-    #[account(mut, seeds = [b"state"], bump = state.bump)]
-    pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", user_signer.key().as_ref()], bump)]
-    pub user: Account<'info, UserData>,
-    #[account(mut)] pub airdrop_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub daily_pool_vault: Account<'info, TokenAccount>,
-    /// CHECK: airdrop authority PDA — signs CPI transfers from airdrop_vault
-    #[account(seeds = [b"airdrop"], bump)]
-    pub airdrop_auth: AccountInfo<'info>,
-    pub user_signer: Signer<'info>,
-    pub token_program: Program<'info, Token>,
+// ============================================================
+// Vesting Accounts & Struct
+// ============================================================
+
+#[account]
+pub struct VestingAccount {
+    pub beneficiary: Pubkey,
+    pub total_amount: u64,
+    pub claimed_amount: u64,
+    pub start_time: i64,
+    pub bump: u8,
+}
+
+impl VestingAccount {
+    pub const SIZE: usize = 8 + 32 + 8 + 8 + 8 + 1;
 }
 
 #[derive(Accounts)]
-pub struct DrawHourly<'info> {
-    #[account(mut, seeds = [b"state"], bump = state.bump)] pub state: Account<'info, State>,
-    pub authority: Signer<'info>,
-    /// Token vault holding the hourly prize pool (authority must be state PDA)
-    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+pub struct InitVesting<'info> {
+    #[account(mut)]
+    pub funder: Signer<'info>,
+
+    /// CHECK: beneficiary can be any wallet
+    pub beneficiary: UncheckedAccount<'info>,
+
+    #[account(
+        init,
+        payer = funder,
+        space = VestingAccount::SIZE,
+        seeds = [b"vesting", beneficiary.key().as_ref()],
+        bump,
+    )]
+    pub vesting_account: Account<'info, VestingAccount>,
+
+    #[account(mut)]
+    pub funder_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub vesting_vault: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct DrawDaily<'info> {
-    #[account(mut, seeds = [b"state"], bump = state.bump)] pub state: Account<'info, State>,
-    pub authority: Signer<'info>,
-    /// Token vault holding the daily prize pool (authority must be state PDA)
-    #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
+pub struct ClaimVested<'info> {
+    #[account(mut)]
+    pub beneficiary: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"vesting", beneficiary.key().as_ref()],
+        bump = vesting_account.bump,
+        constraint = vesting_account.beneficiary == beneficiary.key(),
+    )]
+    pub vesting_account: Account<'info, VestingAccount>,
+
+    #[account(mut)]
+    pub vesting_vault: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub beneficiary_token_account: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
 }
 
-// ─── Staking Accounts (Anchor requires these at crate root) ─────────────────
+// ============================================================
+// Staking Accounts (Anchor requires #[derive(Accounts)] at crate root)
+// ============================================================
 
 #[derive(Accounts)]
 pub struct InitializeStaking<'info> {
-    #[account(mut, constraint = authority.key() == state.authority @ ErrorCode::Unauthorized)]
-    pub authority: Signer<'info>,
-    #[account(seeds = [b"state"], bump = state.bump)]
-    pub state: Account<'info, State>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
     #[account(
         init,
-        payer = authority,
+        payer = payer,
         space = 8 + staking::StakingState::SIZE,
         seeds = [b"staking_state"],
-        bump
+        bump,
     )]
     pub staking_state: Account<'info, staking::StakingState>,
     pub token_mint: Account<'info, Mint>,
@@ -243,11 +1056,13 @@ pub struct Stake<'info> {
         payer = user,
         space = 8 + staking::UserStake::SIZE,
         seeds = [b"user_stake", user.key().as_ref(), &stake_index.to_le_bytes()],
-        bump
+        bump,
     )]
     pub user_stake: Account<'info, staking::UserStake>,
-    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
-    #[account(mut)] pub staking_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub user_token: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub staking_vault: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
 }
@@ -263,31 +1078,33 @@ pub struct ReleaseStake<'info> {
         mut,
         seeds = [b"user_stake", user.key().as_ref(), &stake_index.to_le_bytes()],
         bump,
-        constraint = user_stake.owner == user.key()
+        constraint = user_stake.owner == user.key(),
     )]
     pub user_stake: Account<'info, staking::UserStake>,
-    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
-    #[account(mut)] pub staking_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub user_token: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub staking_vault: Account<'info, TokenAccount>,
     /// CHECK: staking authority PDA
     #[account(seeds = [b"staking"], bump)]
     pub staking_authority: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
 }
 
-// ─── Profit-Based Airdrop Accounts (Anchor requires these at crate root) ────
+// ============================================================
+// Profit Airdrop Accounts
+// ============================================================
 
 #[derive(Accounts)]
 pub struct InitializeAirdrop<'info> {
-    #[account(mut, constraint = authority.key() == state.authority @ ErrorCode::Unauthorized)]
-    pub authority: Signer<'info>,
-    #[account(seeds = [b"state"], bump = state.bump)]
-    pub state: Account<'info, State>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
     #[account(
         init,
-        payer = authority,
+        payer = payer,
         space = 8 + airdrop::AirdropState::SIZE,
         seeds = [b"airdrop_state"],
-        bump
+        bump,
     )]
     pub airdrop_state: Account<'info, airdrop::AirdropState>,
     pub token_mint: Account<'info, Mint>,
@@ -296,18 +1113,19 @@ pub struct InitializeAirdrop<'info> {
 
 #[derive(Accounts)]
 pub struct RecordProfit<'info> {
-    #[account(mut, constraint = authority.key() == airdrop_state.authority @ ErrorCode::Unauthorized)]
-    pub authority: Signer<'info>,
-    /// CHECK: beneficiary whose profit is being recorded; validated by PDA seed
+    /// Permissionless in no-admin design — anyone can record profit
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// CHECK: beneficiary whose profit is being recorded
     pub user: UncheckedAccount<'info>,
     #[account(mut, seeds = [b"airdrop_state"], bump = airdrop_state.bump)]
     pub airdrop_state: Account<'info, airdrop::AirdropState>,
     #[account(
         init_if_needed,
-        payer = authority,
+        payer = payer,
         space = 8 + airdrop::UserAirdrop::SIZE,
         seeds = [b"user_airdrop", user.key().as_ref()],
-        bump
+        bump,
     )]
     pub user_airdrop: Account<'info, airdrop::UserAirdrop>,
     pub system_program: Program<'info, System>,
@@ -323,767 +1141,15 @@ pub struct ClaimProfitAirdrop<'info> {
         mut,
         seeds = [b"user_airdrop", user.key().as_ref()],
         bump,
-        constraint = user_airdrop.owner == user.key()
+        constraint = user_airdrop.owner == user.key(),
     )]
     pub user_airdrop: Account<'info, airdrop::UserAirdrop>,
-    #[account(mut)] pub user_token: Account<'info, TokenAccount>,
-    #[account(mut)] pub airdrop_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub user_token: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub airdrop_vault: Account<'info, TokenAccount>,
     /// CHECK: airdrop authority PDA
     #[account(seeds = [b"airdrop"], bump)]
     pub airdrop_authority: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
-}
-
-// ─── Vesting Accounts ────────────────────────────────────────────────────────
-
-/// Admin creates a vesting record after draw and transfers prize to vesting_vault.
-#[derive(Accounts)]
-#[instruction(winner: Pubkey, amount: u64, vesting_id: u64)]
-pub struct InitVesting<'info> {
-    #[account(mut, seeds = [b"state"], bump = state.bump)]
-    pub state: Account<'info, State>,
-    #[account(mut)]
-    pub authority: Signer<'info>,
-    /// Prize source: the hourly or daily pool vault (authority = state PDA)
-    #[account(mut)]
-    pub pool_vault: Account<'info, TokenAccount>,
-    /// Vesting holding vault (authority = vesting_auth PDA [b"vesting_auth"])
-    #[account(mut)]
-    pub vesting_vault: Account<'info, TokenAccount>,
-    #[account(
-        init,
-        payer = authority,
-        space = 8 + VestingAccount::SIZE,
-        seeds = [b"vesting", winner.as_ref(), &vesting_id.to_le_bytes()],
-        bump,
-    )]
-    pub vesting_account: Account<'info, VestingAccount>,
-    pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
-}
-
-/// Winner claims unlocked vesting tokens.
-#[derive(Accounts)]
-#[instruction(vesting_id: u64)]
-pub struct ClaimVested<'info> {
-    pub winner: Signer<'info>,
-    #[account(
-        mut,
-        seeds = [b"vesting", winner.key().as_ref(), &vesting_id.to_le_bytes()],
-        bump = vesting_account.bump,
-        constraint = vesting_account.winner == winner.key() @ ErrorCode::Unauthorized,
-    )]
-    pub vesting_account: Account<'info, VestingAccount>,
-    #[account(mut)]
-    pub vesting_vault: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub user_token: Account<'info, TokenAccount>,
-    /// CHECK: vesting authority PDA — signs CPI transfers from vesting_vault
-    #[account(seeds = [b"vesting_auth"], bump)]
-    pub vesting_authority: AccountInfo<'info>,
-    pub token_program: Program<'info, Token>,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize)]
-pub struct InitializeParams {
-    pub pre_pool: u64,
-    pub referral_pool: u64,
-}
-
-/// Specifies a single winner and their prize amount for distribution at draw time.
-/// Authority computes winners off-chain (using VRF seed) and submits payouts on-chain.
-#[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct WinnerPayout {
-    pub winner: Pubkey,
-    pub amount: u64,
-}
-
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Debug)]
-pub enum PoolType {
-    Hourly,
-    Daily,
-}
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("Unauthorized")] Unauthorized,
-    #[msg("Contract is paused")] ContractPaused,
-    #[msg("Invalid amount")] InvalidAmount,
-    #[msg("Below minimum deposit")] BelowMinDeposit,
-    #[msg("Deposit too frequent")] DepositTooFrequent,
-    #[msg("Already claimed")] AlreadyClaimed,
-    #[msg("Exceed maximum deposit")] ExceedMaxDeposit,
-    #[msg("Pool is locked, draw in progress")] PoolLocked,
-    #[msg("Draw too early")] DrawTooEarly,
-    #[msg("Not enough participants")] NotEnoughParticipants,
-    #[msg("Insufficient pool balance")] InsufficientPoolBalance,
-    #[msg("Invalid referrer")] InvalidReferrer,
-    #[msg("Referrer has not participated in the game")] ReferrerNotParticipated,
-    #[msg("A pause is already scheduled")] PauseAlreadyScheduled,
-    #[msg("No pause has been scheduled")] NoPauseScheduled,
-    #[msg("Pause timelock has not expired yet")] PauseTimelockNotExpired,
-    #[msg("Nothing to claim yet")] NothingToClaim,
-    #[msg("All vesting already claimed")] VestingFullyClaimed,
-    #[msg("Free bet not available; call claim_free_airdrop first")] FreeBetNotAvailable,
-}
-
-#[program]
-pub mod royalpot {
-    use super::*;
-
-    pub fn initialize(ctx: Context<Initialize>, params: InitializeParams) -> Result<()> {
-        let state = &mut ctx.accounts.state;
-        state.authority = ctx.accounts.authority.key();
-        state.token_mint = ctx.accounts.token_mint.key();
-        state.platform_wallet = ctx.accounts.platform_wallet.key();
-        state.pre_pool = params.pre_pool;
-        state.referral_pool = params.referral_pool;
-        state.hourly_pool = 0;
-        state.hourly_players = 0;
-        state.daily_pool = 0;
-        state.daily_players = 0;
-        state.burned = 0;
-        state.paused = false;
-        state.bump = ctx.bumps.state;
-        state.last_hourly_draw = Clock::get()?.unix_timestamp;
-        state.last_daily_draw = Clock::get()?.unix_timestamp;
-        state.hourly_rollover = 0;
-        state.daily_rollover = 0;
-        state.pause_scheduled_at = 0;
-        Ok(())
-    }
-
-    /// Schedule a pause 48 hours in the future. Call execute_pause after the delay.
-    pub fn pause(ctx: Context<Pause>) -> Result<()> {
-        let state = &mut ctx.accounts.state;
-        require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
-        require!(state.pause_scheduled_at == 0, ErrorCode::PauseAlreadyScheduled);
-        let clock = Clock::get()?;
-        state.pause_scheduled_at = clock.unix_timestamp + PAUSE_TIMELOCK;
-        Ok(())
-    }
-
-    /// Execute the scheduled pause after the 48h timelock has elapsed.
-    pub fn execute_pause(ctx: Context<Pause>) -> Result<()> {
-        let state = &mut ctx.accounts.state;
-        require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
-        require!(state.pause_scheduled_at > 0, ErrorCode::NoPauseScheduled);
-        let clock = Clock::get()?;
-        require!(clock.unix_timestamp >= state.pause_scheduled_at, ErrorCode::PauseTimelockNotExpired);
-        state.paused = true;
-        state.pause_scheduled_at = 0;
-        Ok(())
-    }
-
-    /// Resume operation immediately and cancel any pending pause schedule.
-    pub fn resume(ctx: Context<Resume>) -> Result<()> {
-        let state = &mut ctx.accounts.state;
-        require!(ctx.accounts.authority.key() == state.authority, ErrorCode::Unauthorized);
-        state.paused = false;
-        state.pause_scheduled_at = 0;
-        Ok(())
-    }
-
-    pub fn withdraw_platform_fee(ctx: Context<WithdrawFee>, amount: u64) -> Result<()> {
-        require!(ctx.accounts.authority.key() == ctx.accounts.state.authority, ErrorCode::Unauthorized);
-        require!(!ctx.accounts.state.paused, ErrorCode::ContractPaused);
-        require!(amount > 0, ErrorCode::InvalidAmount);
-
-        let bump = ctx.accounts.state.bump;
-        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.vault.to_account_info(),
-                to: ctx.accounts.dest.to_account_info(),
-                authority: ctx.accounts.state.to_account_info(),
-            },
-            seeds,
-        );
-        token::transfer(cpi_ctx, amount)?;
-        Ok(())
-    }
-
-    pub fn deposit_hourly(ctx: Context<DepositHourly>, amount: u64) -> Result<()> {
-        let state = &mut ctx.accounts.state;
-        let user = &mut ctx.accounts.user;
-        let clock = Clock::get()?;
-        
-        require!(!state.paused, ErrorCode::ContractPaused);
-        require!(amount >= HOUR_MIN, ErrorCode::BelowMinDeposit);
-        require!(user.total_deposit + amount <= MAX_DEPOSIT, ErrorCode::ExceedMaxDeposit);
-        
-        let time_since_last_draw = clock.unix_timestamp - state.last_hourly_draw;
-        require!(time_since_last_draw < 3600 - LOCK_PERIOD || time_since_last_draw >= 3600, ErrorCode::PoolLocked);
-        
-        let pre_match = state.pre_pool.min(amount);
-        state.pre_pool = state.pre_pool.saturating_sub(pre_match);
-        
-        let burn_amount = amount * BURN / BASE;
-        let platform_amount = amount * PLAT / BASE;
-        let prize_amount = amount - burn_amount - platform_amount + pre_match;
-        
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.user_token.to_account_info(),
-                to: ctx.accounts.burn_vault.to_account_info(),
-                authority: ctx.accounts.signer.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, burn_amount)?;
-        
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.user_token.to_account_info(),
-                to: ctx.accounts.platform_vault.to_account_info(),
-                authority: ctx.accounts.signer.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, platform_amount)?;
-        
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.user_token.to_account_info(),
-                to: ctx.accounts.pool_vault.to_account_info(),
-                authority: ctx.accounts.signer.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, prize_amount)?;
-        
-        state.hourly_pool += prize_amount;
-        state.hourly_players += 1;
-        state.burned += burn_amount;
-        user.total_deposit += amount;
-        user.hourly_tickets += prize_amount / 1_000_000_000;
-        
-        Ok(())
-    }
-
-    pub fn deposit_daily(ctx: Context<DepositDaily>, amount: u64, referrer: Option<Pubkey>) -> Result<()> {
-        // Extract state AccountInfo before taking mutable borrow (same pattern as draw_hourly)
-        let state_account_info = ctx.accounts.state.to_account_info();
-        let state = &mut ctx.accounts.state;
-        let user = &mut ctx.accounts.user;
-        let clock = Clock::get()?;
-        
-        require!(!state.paused, ErrorCode::ContractPaused);
-        require!(amount >= DAY_MIN, ErrorCode::BelowMinDeposit);
-        require!(clock.unix_timestamp - user.last_time >= 60, ErrorCode::DepositTooFrequent);
-        require!(user.total_deposit + amount <= MAX_DEPOSIT, ErrorCode::ExceedMaxDeposit);
-        
-        let time_since_last_draw = clock.unix_timestamp - state.last_daily_draw;
-        require!(time_since_last_draw < 86400 - LOCK_PERIOD || time_since_last_draw >= 86400, ErrorCode::PoolLocked);
-        
-        if let Some(referrer_key) = referrer {
-            require!(referrer_key != ctx.accounts.signer.key(), ErrorCode::InvalidReferrer);
-
-            // MED-2: Verify referrer has a valid UserData account (has participated).
-            // Client must supply the referrer's UserData PDA as remaining_accounts[0].
-            require!(!ctx.remaining_accounts.is_empty(), ErrorCode::ReferrerNotParticipated);
-            let referrer_data_info = &ctx.remaining_accounts[0];
-
-            // Must be owned by this program
-            require!(
-                referrer_data_info.owner == &crate::ID,
-                ErrorCode::InvalidReferrer
-            );
-            // Must be initialised (non-empty data)
-            require!(
-                !referrer_data_info.data_is_empty(),
-                ErrorCode::ReferrerNotParticipated
-            );
-            // Must match the expected PDA seeds [b"user", referrer_key]
-            let (expected_pda, _) = Pubkey::find_program_address(
-                &[b"user", referrer_key.as_ref()],
-                &crate::ID,
-            );
-            require!(
-                *referrer_data_info.key == expected_pda,
-                ErrorCode::InvalidReferrer
-            );
-        }
-        
-        let pre_match = state.pre_pool.min(amount);
-        state.pre_pool = state.pre_pool.saturating_sub(pre_match);
-        
-        let burn_amount = amount * BURN / BASE;
-        let platform_amount = amount * PLAT / BASE;
-        let prize_amount = amount - burn_amount - platform_amount + pre_match;
-        
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.user_token.to_account_info(),
-                to: ctx.accounts.burn_vault.to_account_info(),
-                authority: ctx.accounts.signer.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, burn_amount)?;
-        
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.user_token.to_account_info(),
-                to: ctx.accounts.platform_vault.to_account_info(),
-                authority: ctx.accounts.signer.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, platform_amount)?;
-        
-        let cpi_ctx = CpiContext::new(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.user_token.to_account_info(),
-                to: ctx.accounts.pool_vault.to_account_info(),
-                authority: ctx.accounts.signer.to_account_info(),
-            },
-        );
-        token::transfer(cpi_ctx, prize_amount)?;
-        
-        if let Some(referrer_key) = referrer {
-            if referrer_key != ctx.accounts.signer.key() && state.referral_pool == 0 {
-                emit!(ReferralPoolExhausted {
-                    referrer: referrer_key,
-                    depositor: ctx.accounts.signer.key(),
-                    requested: amount * REF / BASE,
-                    available: 0,
-                    timestamp: clock.unix_timestamp,
-                });
-            } else if referrer_key != ctx.accounts.signer.key() && state.referral_pool > 0 {
-                let referral_reward = (amount * REF / BASE).min(state.referral_pool);
-                if referral_reward > 0 {
-                    let bump = state.bump;
-                    let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
-                    let cpi_ctx = CpiContext::new_with_signer(
-                        ctx.accounts.token_program.to_account_info(),
-                        Transfer {
-                            from: ctx.accounts.referral_vault.to_account_info(),
-                            to: ctx.accounts.referrer_token.to_account_info(),
-                            authority: state_account_info.clone(),
-                        },
-                        seeds,
-                    );
-                    token::transfer(cpi_ctx, referral_reward)?;
-                    state.referral_pool = state.referral_pool.saturating_sub(referral_reward);
-                }
-
-                if !user.has_ref_bonus {
-                    let referred_bonus = amount * REFERRED_BONUS / BASE;
-                    if referred_bonus > 0 {
-                        let bump = state.bump;
-                        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
-                        let cpi_ctx = CpiContext::new_with_signer(
-                            ctx.accounts.token_program.to_account_info(),
-                            Transfer {
-                                from: ctx.accounts.referral_vault.to_account_info(),
-                                to: ctx.accounts.user_referrer_bonus.to_account_info(),
-                                authority: state_account_info.clone(),
-                            },
-                            seeds,
-                        );
-                        token::transfer(cpi_ctx, referred_bonus)?;
-                        state.referral_pool = state.referral_pool.saturating_sub(referred_bonus);
-                    }
-                    user.has_ref_bonus = true;
-                    user.referrer = Some(referrer_key);
-                }
-            }
-        }
-        
-        state.daily_pool += prize_amount;
-        state.daily_players += 1;
-        state.burned += burn_amount;
-        user.total_deposit += amount;
-        user.daily_tickets += prize_amount / 1_000_000_000;
-        user.last_time = clock.unix_timestamp;
-        
-        Ok(())
-    }
-
-    /// Draw the hourly lottery. Authority provides winner payouts computed off-chain
-    /// using `draw_seed` as the randomness source. The seed (e.g. derived from a recent
-    /// slot hash) is emitted on-chain so anyone can audit the draw by replaying the
-    /// winner-selection algorithm with the same seed.
-    pub fn draw_hourly<'info>(
-        ctx: Context<'_, '_, '_, 'info, DrawHourly<'info>>,
-        payouts: Vec<WinnerPayout>,
-        draw_seed: [u8; 32],
-    ) -> Result<()> {
-        let clock = Clock::get()?;
-
-        require!(!ctx.accounts.state.paused, ErrorCode::ContractPaused);
-        require!(ctx.accounts.authority.key() == ctx.accounts.state.authority, ErrorCode::Unauthorized);
-        require!(ctx.accounts.state.hourly_players >= 3, ErrorCode::NotEnoughParticipants);
-
-        let time_since_last_draw = clock.unix_timestamp - ctx.accounts.state.last_hourly_draw;
-        require!(time_since_last_draw >= 3600 - TIME_TOLERANCE, ErrorCode::DrawTooEarly);
-
-        let total_pool = ctx.accounts.state.hourly_pool + ctx.accounts.state.hourly_rollover;
-        require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
-
-        let rollover = total_pool * ROLLOVER_RATE / BASE;
-        let distributable = total_pool - rollover;
-
-        // Validate total payouts do not exceed the distributable amount
-        let total_payout: u64 = payouts.iter().fold(0u64, |acc, p| acc.saturating_add(p.amount));
-        require!(total_payout <= distributable, ErrorCode::InsufficientPoolBalance);
-        require!(payouts.len() <= ctx.remaining_accounts.len(), ErrorCode::InvalidAmount);
-
-        // Extract AccountInfos before the loop to avoid lifetime conflicts
-        let bump = ctx.accounts.state.bump;
-        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
-        let token_program = ctx.accounts.token_program.to_account_info();
-        let pool_vault = ctx.accounts.pool_vault.to_account_info();
-        let state_authority = ctx.accounts.state.to_account_info();
-        let winner_accounts: Vec<AccountInfo> = ctx.remaining_accounts.iter()
-            .take(payouts.len())
-            .cloned()
-            .collect();
-
-        // Transfer prizes to each winner
-        for (i, payout) in payouts.iter().enumerate() {
-            if payout.amount == 0 {
-                continue;
-            }
-            token::transfer(
-                CpiContext::new_with_signer(
-                    token_program.clone(),
-                    Transfer {
-                        from: pool_vault.clone(),
-                        to: winner_accounts[i].clone(),
-                        authority: state_authority.clone(),
-                    },
-                    seeds,
-                ),
-                payout.amount,
-            )?;
-        }
-
-        // Reset pool state
-        let state = &mut ctx.accounts.state;
-        state.hourly_rollover = rollover;
-        state.hourly_pool = 0;
-        state.hourly_players = 0;
-        state.last_hourly_draw = clock.unix_timestamp;
-
-        // Validate draw_seed is not all-zeros (must be a real block hash)
-        require!(draw_seed != [0u8; 32], ErrorCode::InvalidAmount);
-
-        emit!(DrawCompleted {
-            pool_type: PoolType::Hourly,
-            total_pool,
-            distributed: total_payout,
-            rollover,
-            winner_count: payouts.len() as u32,
-            timestamp: clock.unix_timestamp,
-            draw_seed,
-        });
-
-        Ok(())
-    }
-
-    /// Draw the daily lottery. Authority provides winner payouts computed off-chain
-    /// using `draw_seed` as the randomness source. The seed (e.g. derived from a recent
-    /// slot hash) is emitted on-chain so anyone can audit the draw by replaying the
-    /// winner-selection algorithm with the same seed.
-    pub fn draw_daily<'info>(
-        ctx: Context<'_, '_, '_, 'info, DrawDaily<'info>>,
-        payouts: Vec<WinnerPayout>,
-        draw_seed: [u8; 32],
-    ) -> Result<()> {
-        let clock = Clock::get()?;
-
-        require!(!ctx.accounts.state.paused, ErrorCode::ContractPaused);
-        require!(ctx.accounts.authority.key() == ctx.accounts.state.authority, ErrorCode::Unauthorized);
-        require!(ctx.accounts.state.daily_players >= 5, ErrorCode::NotEnoughParticipants);
-
-        let time_since_last_draw = clock.unix_timestamp - ctx.accounts.state.last_daily_draw;
-        require!(time_since_last_draw >= 86400 - TIME_TOLERANCE, ErrorCode::DrawTooEarly);
-
-        let total_pool = ctx.accounts.state.daily_pool + ctx.accounts.state.daily_rollover;
-        require!(total_pool > 0, ErrorCode::InsufficientPoolBalance);
-
-        let rollover = total_pool * ROLLOVER_RATE / BASE;
-        let distributable = total_pool - rollover;
-
-        // Validate total payouts do not exceed the distributable amount
-        let total_payout: u64 = payouts.iter().fold(0u64, |acc, p| acc.saturating_add(p.amount));
-        require!(total_payout <= distributable, ErrorCode::InsufficientPoolBalance);
-        require!(payouts.len() <= ctx.remaining_accounts.len(), ErrorCode::InvalidAmount);
-
-        // Extract AccountInfos before the loop to avoid lifetime conflicts
-        let bump = ctx.accounts.state.bump;
-        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
-        let token_program = ctx.accounts.token_program.to_account_info();
-        let pool_vault = ctx.accounts.pool_vault.to_account_info();
-        let state_authority = ctx.accounts.state.to_account_info();
-        let winner_accounts: Vec<AccountInfo> = ctx.remaining_accounts.iter()
-            .take(payouts.len())
-            .cloned()
-            .collect();
-
-        // Transfer prizes to each winner
-        for (i, payout) in payouts.iter().enumerate() {
-            if payout.amount == 0 {
-                continue;
-            }
-            token::transfer(
-                CpiContext::new_with_signer(
-                    token_program.clone(),
-                    Transfer {
-                        from: pool_vault.clone(),
-                        to: winner_accounts[i].clone(),
-                        authority: state_authority.clone(),
-                    },
-                    seeds,
-                ),
-                payout.amount,
-            )?;
-        }
-
-        // Reset pool state
-        let state = &mut ctx.accounts.state;
-        state.daily_rollover = rollover;
-        state.daily_pool = 0;
-        state.daily_players = 0;
-        state.last_daily_draw = clock.unix_timestamp;
-
-        // Validate draw_seed is not all-zeros (must be a real block hash)
-        require!(draw_seed != [0u8; 32], ErrorCode::InvalidAmount);
-
-        emit!(DrawCompleted {
-            pool_type: PoolType::Daily,
-            total_pool,
-            distributed: total_payout,
-            rollover,
-            winner_count: payouts.len() as u32,
-            timestamp: clock.unix_timestamp,
-            draw_seed,
-        });
-
-        Ok(())
-    }
-
-    /// Register the caller for a free 100-TPOT daily-pool bet.
-    /// No tokens move here. Call use_free_bet_daily to place the bet.
-    pub fn claim_free_airdrop(ctx: Context<ClaimFreeAirdrop>) -> Result<()> {
-        let user = &mut ctx.accounts.user;
-        require!(!user.airdrop_claimed, ErrorCode::AlreadyClaimed);
-
-        // Initialise owner when account is newly created
-        if user.owner == Pubkey::default() {
-            user.owner = ctx.accounts.user_signer.key();
-        }
-
-        user.airdrop_claimed = true;
-        user.free_bet_available = true;
-        Ok(())
-    }
-
-    /// Place the free 100-TPOT bet into the daily pool on behalf of the user.
-    /// Transfers FREE_AIRDROP from airdrop_vault → daily_pool_vault and
-    /// credits 100 daily tickets to the user. Clears free_bet_available.
-    pub fn use_free_bet_daily(ctx: Context<UseFreeBetDaily>) -> Result<()> {
-        let clock = Clock::get()?;
-        let state = &mut ctx.accounts.state;
-        let user = &mut ctx.accounts.user;
-
-        require!(!state.paused, ErrorCode::ContractPaused);
-        require!(user.free_bet_available, ErrorCode::FreeBetNotAvailable);
-
-        // Respect the daily-pool lock window
-        let time_since_last_draw = clock.unix_timestamp - state.last_daily_draw;
-        require!(
-            time_since_last_draw < 86400 - LOCK_PERIOD || time_since_last_draw >= 86400,
-            ErrorCode::PoolLocked
-        );
-
-        // Transfer 100 TPOT: airdrop_vault → daily_pool_vault, signed by [b"airdrop"] PDA
-        let auth_bump = ctx.bumps.airdrop_auth;
-        let seeds: &[&[&[u8]]] = &[&[b"airdrop", &[auth_bump]]];
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.airdrop_vault.to_account_info(),
-                    to: ctx.accounts.daily_pool_vault.to_account_info(),
-                    authority: ctx.accounts.airdrop_auth.to_account_info(),
-                },
-                seeds,
-            ),
-            FREE_AIRDROP,
-        )?;
-
-        state.daily_pool = state.daily_pool.saturating_add(FREE_AIRDROP);
-        state.daily_players += 1;
-        user.daily_tickets += FREE_AIRDROP / 1_000_000_000; // 100 TPOT → 100 tickets
-        user.free_bet_available = false;
-
-        Ok(())
-    }
-
-    // ─── Staking Instructions ────────────────────────────────────────────────
-
-    pub fn initialize_staking(
-        ctx: Context<InitializeStaking>,
-        short_term_pool: u64,
-        long_term_pool: u64,
-    ) -> Result<()> {
-        staking::initialize_staking(ctx, short_term_pool, long_term_pool)
-    }
-
-    pub fn stake(
-        ctx: Context<Stake>,
-        stake_index: u64,
-        amount: u64,
-        stake_type: staking::StakeType,
-    ) -> Result<()> {
-        staking::stake(ctx, stake_index, amount, stake_type)
-    }
-
-    pub fn release_stake(
-        ctx: Context<ReleaseStake>,
-        stake_index: u64,
-    ) -> Result<()> {
-        staking::release_stake(ctx, stake_index)
-    }
-
-    pub fn early_withdraw(
-        ctx: Context<ReleaseStake>,
-        stake_index: u64,
-    ) -> Result<()> {
-        staking::early_withdraw(ctx, stake_index)
-    }
-
-    // ─── Profit-Based Airdrop Instructions ──────────────────────────────────
-
-    pub fn initialize_airdrop(
-        ctx: Context<InitializeAirdrop>,
-        total_airdrop: u64,
-    ) -> Result<()> {
-        airdrop::initialize_airdrop(ctx, total_airdrop)
-    }
-
-    pub fn record_profit(
-        ctx: Context<RecordProfit>,
-        profit_amount: u64,
-    ) -> Result<()> {
-        airdrop::record_profit(ctx, profit_amount)
-    }
-
-    pub fn claim_profit_airdrop(
-        ctx: Context<ClaimProfitAirdrop>,
-    ) -> Result<()> {
-        airdrop::claim_profit_airdrop(ctx)
-    }
-
-    // ─── Prize Vesting Instructions ──────────────────────────────────────────
-
-    /// Admin: lock a winner's prize in the vesting vault and create a vesting record.
-    /// Call this after draw_hourly/draw_daily for each winner instead of direct transfer.
-    /// `vesting_id` should be the draw timestamp (unique per draw per winner).
-    pub fn init_vesting(
-        ctx: Context<InitVesting>,
-        winner: Pubkey,
-        amount: u64,
-        vesting_id: u64,
-    ) -> Result<()> {
-        require!(
-            ctx.accounts.authority.key() == ctx.accounts.state.authority,
-            ErrorCode::Unauthorized
-        );
-        require!(amount > 0, ErrorCode::InvalidAmount);
-
-        let clock = Clock::get()?;
-        let bump = ctx.accounts.state.bump;
-        let seeds: &[&[&[u8]]] = &[&[b"state", &[bump]]];
-
-        // Transfer prize from pool_vault → vesting_vault (signed by state PDA)
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.pool_vault.to_account_info(),
-                    to: ctx.accounts.vesting_vault.to_account_info(),
-                    authority: ctx.accounts.state.to_account_info(),
-                },
-                seeds,
-            ),
-            amount,
-        )?;
-
-        let va = &mut ctx.accounts.vesting_account;
-        va.winner = winner;
-        va.total_amount = amount;
-        va.claimed_amount = 0;
-        va.start_time = clock.unix_timestamp;
-        va.vesting_id = vesting_id;
-        va.bump = ctx.bumps.vesting_account;
-
-        Ok(())
-    }
-
-    /// Winner: claim all currently unlocked vesting tokens.
-    /// 5% (500 bps) unlocks per day; fully vested after 20 days.
-    pub fn claim_vested(ctx: Context<ClaimVested>, _vesting_id: u64) -> Result<()> {
-        let clock = Clock::get()?;
-        let va = &mut ctx.accounts.vesting_account;
-
-        require!(va.claimed_amount < va.total_amount, ErrorCode::VestingFullyClaimed);
-
-        let elapsed_days = (clock.unix_timestamp - va.start_time) / 86400;
-        let unlocked_bps = (elapsed_days as u64)
-            .min(VESTING_DAYS)
-            .saturating_mul(VESTING_RELEASE_PER_DAY); // max = 20 * 500 = 10000
-        let unlocked_amount = va.total_amount * unlocked_bps / BASE;
-        let claimable = unlocked_amount.saturating_sub(va.claimed_amount);
-
-        require!(claimable > 0, ErrorCode::NothingToClaim);
-
-        // Transfer from vesting_vault → user_token (signed by vesting_auth PDA)
-        let auth_bump = ctx.bumps.vesting_authority;
-        let vesting_seeds: &[&[&[u8]]] = &[&[b"vesting_auth", &[auth_bump]]];
-        token::transfer(
-            CpiContext::new_with_signer(
-                ctx.accounts.token_program.to_account_info(),
-                Transfer {
-                    from: ctx.accounts.vesting_vault.to_account_info(),
-                    to: ctx.accounts.user_token.to_account_info(),
-                    authority: ctx.accounts.vesting_authority.to_account_info(),
-                },
-                vesting_seeds,
-            ),
-            claimable,
-        )?;
-
-        va.claimed_amount += claimable;
-        Ok(())
-    }
-}
-
-// ─── Events ────────────────────────────────────────────────────────────────
-
-#[event]
-pub struct DrawCompleted {
-    pub pool_type: PoolType,
-    pub total_pool: u64,
-    pub distributed: u64,
-    pub rollover: u64,
-    pub winner_count: u32,
-    pub timestamp: i64,
-    /// Verifiable randomness seed used to derive winner selection.
-    /// Publicly emitted so anyone can replay the draw algorithm and audit results.
-    pub draw_seed: [u8; 32],
-}
-
-#[event]
-pub struct ReferralPoolExhausted {
-    pub referrer: Pubkey,
-    pub depositor: Pubkey,
-    pub requested: u64,
-    pub available: u64,
-    pub timestamp: i64,
 }
