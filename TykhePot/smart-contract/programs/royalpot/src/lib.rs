@@ -215,8 +215,10 @@ pub struct DrawDaily<'info> {
 
 #[derive(Accounts)]
 pub struct InitializeStaking<'info> {
-    #[account(mut)]
+    #[account(mut, constraint = authority.key() == state.authority @ ErrorCode::Unauthorized)]
     pub authority: Signer<'info>,
+    #[account(seeds = [b"state"], bump = state.bump)]
+    pub state: Account<'info, State>,
     #[account(
         init,
         payer = authority,
@@ -276,8 +278,10 @@ pub struct ReleaseStake<'info> {
 
 #[derive(Accounts)]
 pub struct InitializeAirdrop<'info> {
-    #[account(mut)]
+    #[account(mut, constraint = authority.key() == state.authority @ ErrorCode::Unauthorized)]
     pub authority: Signer<'info>,
+    #[account(seeds = [b"state"], bump = state.bump)]
+    pub state: Account<'info, State>,
     #[account(
         init,
         payer = authority,
@@ -292,13 +296,15 @@ pub struct InitializeAirdrop<'info> {
 
 #[derive(Accounts)]
 pub struct RecordProfit<'info> {
-    #[account(mut)]
-    pub user: Signer<'info>,
+    #[account(mut, constraint = authority.key() == airdrop_state.authority @ ErrorCode::Unauthorized)]
+    pub authority: Signer<'info>,
+    /// CHECK: beneficiary whose profit is being recorded; validated by PDA seed
+    pub user: UncheckedAccount<'info>,
     #[account(mut, seeds = [b"airdrop_state"], bump = airdrop_state.bump)]
     pub airdrop_state: Account<'info, airdrop::AirdropState>,
     #[account(
         init_if_needed,
-        payer = user,
+        payer = authority,
         space = 8 + airdrop::UserAirdrop::SIZE,
         seeds = [b"user_airdrop", user.key().as_ref()],
         bump
