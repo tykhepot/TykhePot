@@ -147,8 +147,18 @@ const IDL = {
       name: "claimFreeAirdrop",
       accounts: [
         { name: "user", isMut: true, isSigner: false },
+        { name: "userSigner", isMut: true, isSigner: true },
+        { name: "systemProgram", isMut: false, isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "useFreeBetDaily",
+      accounts: [
+        { name: "state", isMut: true, isSigner: false },
+        { name: "user", isMut: true, isSigner: false },
         { name: "airdropVault", isMut: true, isSigner: false },
-        { name: "destToken", isMut: true, isSigner: false },
+        { name: "dailyPoolVault", isMut: true, isSigner: false },
         { name: "airdropAuth", isMut: false, isSigner: false },
         { name: "userSigner", isMut: false, isSigner: true },
         { name: "tokenProgram", isMut: false, isSigner: false },
@@ -316,6 +326,7 @@ const IDL = {
           { name: "hasRefBonus", type: "bool" },
           { name: "airdropClaimed", type: "bool" },
           { name: "totalDeposit", type: "u64" },
+          { name: "freeBetAvailable", type: "bool" },
         ],
       },
     },
@@ -917,20 +928,44 @@ class TykhePotSDK {
 
   // ─── Free Airdrop (100 TPOT) ───────────────────────────────────────────────
 
+  // Register for free bet. No tokens move — sets free_bet_available = true on-chain.
   async claimFreeAirdrop() {
     try {
-      this._requireVaults("airdropVault");
       const user = this.wallet.publicKey;
       const [userPDA] = findUserDataPDA(user, this.program.programId);
-      const [airdropAuth] = findAirdropAuthPDA(this.program.programId);
-      const destToken = await this.getTokenAccount(user);
 
       const tx = await this.program.methods
         .claimFreeAirdrop()
         .accounts({
           user: userPDA,
+          userSigner: user,
+          systemProgram: web3.SystemProgram.programId,
+        })
+        .rpc();
+
+      return { success: true, tx };
+    } catch (error) {
+      console.error("claimFreeAirdrop failed:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Place the free 100-TPOT bet directly into the daily pool.
+  async useFreeBetDaily() {
+    try {
+      this._requireVaults("airdropVault", "dailyPoolVault");
+      const user = this.wallet.publicKey;
+      const [statePDA] = findStatePDA(this.program.programId);
+      const [userPDA] = findUserDataPDA(user, this.program.programId);
+      const [airdropAuth] = findAirdropAuthPDA(this.program.programId);
+
+      const tx = await this.program.methods
+        .useFreeBetDaily()
+        .accounts({
+          state: statePDA,
+          user: userPDA,
           airdropVault: this.airdropVault,
-          destToken,
+          dailyPoolVault: this.dailyPoolVault,
           airdropAuth,
           userSigner: user,
           tokenProgram: TOKEN_PROGRAM_ID,
@@ -939,7 +974,7 @@ class TykhePotSDK {
 
       return { success: true, tx };
     } catch (error) {
-      console.error("claimFreeAirdrop failed:", error);
+      console.error("useFreeBetDaily failed:", error);
       return { success: false, error: error.message };
     }
   }

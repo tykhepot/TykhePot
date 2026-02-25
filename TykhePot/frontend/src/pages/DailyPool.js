@@ -6,12 +6,14 @@ const DailyPool = () => {
   const { stats, wallet, sdk, refreshStats, userTokenBalance } = useApp();
   const { t, language } = useTranslation();
   const [depositAmount, setDepositAmount] = useState('100');
-  const [useAirdrop, setUseAirdrop] = useState(false); // 是否使用免费投注
   const [referrer, setReferrer] = useState('');
   const [isDepositing, setIsDepositing] = useState(false);
+  const [isUsingFreeBet, setIsUsingFreeBet] = useState(false);
   const [txStatus, setTxStatus] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [countdown, setCountdown] = useState({ hours: '00', minutes: '00', seconds: '00' });
+  const [freeBetAvailable, setFreeBetAvailable] = useState(false);
+  const [freeBetChecked, setFreeBetChecked] = useState(false); // 是否已查询过
 
   // Update countdown every second
   useEffect(() => {
@@ -41,6 +43,47 @@ const DailyPool = () => {
     }
   };
 
+  // Fetch free_bet_available from chain whenever wallet or sdk changes
+  useEffect(() => {
+    if (!sdk || !wallet.publicKey) {
+      setFreeBetAvailable(false);
+      setFreeBetChecked(false);
+      return;
+    }
+    let cancelled = false;
+    sdk.getUserData(wallet.publicKey).then(data => {
+      if (!cancelled) {
+        setFreeBetAvailable(data?.freeBetAvailable === true);
+        setFreeBetChecked(true);
+      }
+    }).catch(() => {
+      if (!cancelled) setFreeBetChecked(true);
+    });
+    return () => { cancelled = true; };
+  }, [sdk, wallet.publicKey]);
+
+  const handleUseFreeBet = useCallback(async () => {
+    if (!wallet.publicKey || !sdk) return;
+    setIsUsingFreeBet(true);
+    setErrorMessage('');
+    try {
+      const result = await sdk.useFreeBetDaily();
+      if (result.success) {
+        setFreeBetAvailable(false);
+        alert(language === 'en'
+          ? `🎉 Free bet placed! Tx: ${result.tx.slice(0, 8)}... Good luck!`
+          : `🎉 免费投注成功！交易: ${result.tx.slice(0, 8)}... 祝你好运！`);
+        refreshStats();
+      } else {
+        setErrorMessage(result.error || (language === 'en' ? 'Free bet failed' : '免费投注失败'));
+      }
+    } catch (err) {
+      setErrorMessage(err.message || (language === 'en' ? 'Error' : '错误'));
+    } finally {
+      setIsUsingFreeBet(false);
+    }
+  }, [sdk, wallet.publicKey, language, refreshStats]);
+
   const handleDeposit = useCallback(async () => {
     if (!wallet.publicKey) {
       alert(t('walletNotConnected'));
@@ -59,34 +102,6 @@ const DailyPool = () => {
     }
     if (amount > 1_000_000) {
       setErrorMessage(language === 'en' ? 'Maximum deposit is 1,000,000 TPOT' : '最高投入 1,000,000 TPOT');
-      return;
-    }
-
-    // 如果选择免费投注
-    if (useAirdrop) {
-      setIsDepositing(true);
-      setTxStatus('pending');
-      setErrorMessage('');
-
-      try {
-        const result = await sdk.depositDailyFree();
-        
-        if (result.success) {
-          setTxStatus('success');
-          setUseAirdrop(false);
-          alert(language === 'en' 
-            ? '🎉 FREE BET placed! Good luck!' 
-            : '🎉 免费投注已下注！祝你好运！');
-          refreshStats();
-        } else {
-          setTxStatus('error');
-          setErrorMessage(result.error || (language === 'en' ? 'Failed' : '失败'));
-        }
-      } catch (error) {
-        setTxStatus('error');
-        setErrorMessage(error.message || (language === 'en' ? 'Error' : '错误'));
-      }
-      setIsDepositing(false);
       return;
     }
 
@@ -133,7 +148,7 @@ const DailyPool = () => {
     } finally {
       setIsDepositing(false);
     }
-  }, [wallet, depositAmount, referrer, stats.isPaused, userTokenBalance, language, sdk, refreshStats, t]);
+  }, [wallet, depositAmount, referrer, stats.isPaused, userTokenBalance, language, sdk, refreshStats, t, setErrorMessage]);
 
   const getButtonText = () => {
     if (isDepositing) return language === 'en' ? 'Processing...' : '处理中...';
@@ -204,23 +219,45 @@ const DailyPool = () => {
           {/* Deposit Card */}
           <div className="card card-glass">
             <h2 className="card-title-modern">🎰 {t('joinNowBtn')}</h2>
-            
-            {/* Airdrop Balance Option */}
-            <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(255, 215, 0, 0.1)', borderRadius: '8px', border: '1px solid rgba(255, 215, 0, 0.3)' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-                <input 
-                  type="checkbox" 
-                  checked={useAirdrop} 
-                  onChange={(e) => setUseAirdrop(e.target.checked)}
-                  style={{ width: '18px', height: '18px' }}
-                />
-                <span style={{ color: '#FFD700', fontWeight: '600', fontSize: '14px' }}>
-                  {language === 'en' 
-                    ? '🎁 FREE BET (100 TPOT) - Register at Airdrop page first!' 
-                    : '🎁 免费投注 (100 TPOT) - 需要先去空投页面注册！'}
-                </span>
-              </label>
-            </div>
+
+            {/* ── Free Bet Banner ────────────────────────────────────────── */}
+            {wallet.publicKey && freeBetChecked && (
+              freeBetAvailable ? (
+                <div className="free-bet-banner">
+                  <div className="free-bet-header">
+                    <span className="free-bet-icon">🎁</span>
+                    <div>
+                      <div className="free-bet-title">
+                        {language === 'en' ? 'Free Bet Available!' : '免费投注可用！'}
+                      </div>
+                      <div className="free-bet-desc">
+                        {language === 'en'
+                          ? '100 TPOT from Airdrop → Daily Pool (no cost to you)'
+                          : '100 TPOT 从空投库直接入池，无需花费'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    className="btn free-bet-btn"
+                    onClick={handleUseFreeBet}
+                    disabled={isUsingFreeBet || stats.isPaused}
+                  >
+                    {isUsingFreeBet
+                      ? (language === 'en' ? 'Placing...' : '投注中...')
+                      : (language === 'en' ? '🎰 Use Free Bet' : '🎰 使用免费投注')}
+                  </button>
+                </div>
+              ) : (
+                <div className="free-bet-used">
+                  <span>🎟️</span>
+                  <span>
+                    {language === 'en'
+                      ? 'Free bet used · Claim again at Airdrop page next time'
+                      : '免费投注已使用 · 下次可在空投页面重新领取'}
+                  </span>
+                </div>
+              )
+            )}
             
             <div className="form-group-modern">
               <label className="form-label-modern">{language === 'en' ? 'Amount (TPOT)' : '投入数量 (TPOT)'}</label>
@@ -536,6 +573,81 @@ const DailyPool = () => {
             grid-template-columns: 1fr;
           }
         }
+        .free-bet-banner {
+          background: linear-gradient(135deg, oklch(55% 0.15 45 / 0.15), oklch(55% 0.18 160 / 0.1));
+          border: 1px solid oklch(55% 0.15 45 / 0.5);
+          border-radius: var(--radius-lg);
+          padding: var(--space-4);
+          margin-bottom: var(--space-4);
+          animation: freeBetPulse 2.5s ease-in-out infinite;
+        }
+
+        @keyframes freeBetPulse {
+          0%, 100% { border-color: oklch(55% 0.15 45 / 0.5); }
+          50%       { border-color: oklch(65% 0.18 45 / 0.9); box-shadow: 0 0 12px oklch(55% 0.15 45 / 0.3); }
+        }
+
+        .free-bet-header {
+          display: flex;
+          align-items: flex-start;
+          gap: var(--space-3);
+          margin-bottom: var(--space-3);
+        }
+
+        .free-bet-icon {
+          font-size: 2rem;
+          line-height: 1;
+          flex-shrink: 0;
+        }
+
+        .free-bet-title {
+          font-weight: 700;
+          font-size: var(--text-base);
+          color: var(--color-gold);
+          margin-bottom: 2px;
+        }
+
+        .free-bet-desc {
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+          line-height: 1.4;
+        }
+
+        .free-bet-btn {
+          width: 100%;
+          background: linear-gradient(135deg, oklch(55% 0.18 45), oklch(50% 0.15 60));
+          color: oklch(10% 0.02 280);
+          font-weight: 700;
+          font-size: var(--text-base);
+          padding: var(--space-3) var(--space-4);
+          border-radius: var(--radius-md);
+          border: none;
+          cursor: pointer;
+          transition: opacity 0.2s;
+        }
+
+        .free-bet-btn:hover:not(:disabled) {
+          opacity: 0.88;
+        }
+
+        .free-bet-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .free-bet-used {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          padding: var(--space-3);
+          background: oklch(20% 0.01 280 / 0.5);
+          border: 1px solid oklch(40% 0.02 280 / 0.3);
+          border-radius: var(--radius-md);
+          margin-bottom: var(--space-4);
+          font-size: var(--text-sm);
+          color: var(--text-tertiary);
+        }
+
       `}</style>
     </div>
   );
