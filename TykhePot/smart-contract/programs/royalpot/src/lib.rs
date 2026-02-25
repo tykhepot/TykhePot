@@ -67,6 +67,12 @@ pub struct UserData {
     pub total_deposit: u64,
 }
 
+impl UserData {
+    // 32 (owner) + 8*3 (tickets,last_time,total_deposit) + 8 (daily_tickets) +
+    // 33 (Option<Pubkey>) + 1 (has_ref_bonus) + 1 (airdrop_claimed) = 99
+    pub const SIZE: usize = 32 + 8 + 8 + 8 + 33 + 1 + 1 + 8; // 99
+}
+
 /// Records a prize that vests linearly over VESTING_DAYS days (5% per day).
 /// Created by admin after each draw; winner claims daily via claim_vested.
 #[account]
@@ -118,14 +124,21 @@ pub struct WithdrawFee<'info> {
 #[derive(Accounts)]
 pub struct DepositHourly<'info> {
     #[account(mut)] pub state: Account<'info, State>,
-    #[account(mut, seeds = [b"user", signer.key().as_ref()], bump)] 
+    #[account(
+        init_if_needed,
+        payer = signer,
+        space = 8 + UserData::SIZE,
+        seeds = [b"user", signer.key().as_ref()],
+        bump
+    )]
     pub user: Account<'info, UserData>,
     #[account(mut)] pub user_token: Account<'info, TokenAccount>,
     #[account(mut)] pub burn_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub platform_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub pool_vault: Account<'info, TokenAccount>,
-    pub signer: Signer<'info>,
+    #[account(mut)] pub signer: Signer<'info>,
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
