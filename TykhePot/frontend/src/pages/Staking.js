@@ -1,41 +1,48 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
-import { useTykhePot } from '../hooks/useTykhePot';
 
 const Staking = () => {
-  const { wallet, userTokenBalance } = useApp();
+  const { wallet, userTokenBalance, sdk } = useApp();
   const { t, language } = useTranslation();
-  const { stake, isLoading } = useTykhePot();
   const [stakeAmount, setStakeAmount] = useState('');
   const [selectedOption, setSelectedOption] = useState('short');
   const [isStaking, setIsStaking] = useState(false);
   const [lastTx, setLastTx] = useState(null);
+  const [error, setError] = useState('');
 
   const calculateReward = (amount, days, apr) => {
     return (amount * apr * days) / 36500;
   };
 
   const handleStake = async () => {
-    if (!wallet.publicKey) {
-      alert(t('walletNotConnected'));
+    if (!wallet.publicKey || !sdk) { alert(t('walletNotConnected')); return; }
+    const amount = parseFloat(stakeAmount);
+    if (!amount || amount <= 0) {
+      setError(language === 'en' ? 'Please enter a valid amount' : '请输入有效数量');
       return;
     }
-    if (!stakeAmount || parseFloat(stakeAmount) <= 0) {
-      alert('Please enter a valid amount');
+    if (userTokenBalance < amount) {
+      setError(language === 'en' ? `Insufficient balance (${userTokenBalance.toFixed(2)} TPOT available)` : `余额不足（可用 ${userTokenBalance.toFixed(2)} TPOT）`);
       return;
     }
     setIsStaking(true);
-    const stakeType = selectedOption === 'long' ? 'LongTerm' : 'ShortTerm';
-    // stakeIndex: use current timestamp as unique index (simple approach)
-    const stakeIndex = Math.floor(Date.now() / 1000);
-    const result = await stake(stakeAmount, stakeType, stakeIndex);
-    setIsStaking(false);
-    if (result.success) {
-      setLastTx(result.tx);
-      alert(t('stakingSuccessful'));
-    } else {
-      alert(`Staking failed: ${result.error}`);
+    setError('');
+    try {
+      const stakeIndex = Math.floor(Date.now() / 1000);
+      const isLongTerm = selectedOption === 'long';
+      const result = await sdk.stake(stakeIndex, amount, isLongTerm);
+      if (result.success) {
+        setLastTx(result.tx);
+        setStakeAmount('');
+        alert(language === 'en' ? `✅ Staked successfully! Tx: ${result.tx.slice(0,8)}...` : `✅ 质押成功！Tx: ${result.tx.slice(0,8)}...`);
+      } else {
+        setError(result.error || (language === 'en' ? 'Staking failed' : '质押失败'));
+      }
+    } catch (err) {
+      setError(err.message || (language === 'en' ? 'Error' : '错误'));
+    } finally {
+      setIsStaking(false);
     }
   };
 
@@ -161,6 +168,12 @@ const Staking = () => {
               }
             </p>
           </div>
+
+          {error && (
+            <div style={{ color: '#ff4444', background: 'rgba(255,68,68,0.1)', border: '1px solid rgba(255,68,68,0.3)', borderRadius: '8px', padding: '12px', fontSize: '14px' }}>
+              ⚠️ {error}
+            </div>
+          )}
 
           <button
             onClick={handleStake}
@@ -433,19 +446,3 @@ const styles = {
 };
 
 export default Staking;
-
-// Modern CSS Styles Override
-const style = document.createElement('style');
-style.textContent = `
-  .staking-container { max-width: 1000px; margin: 0 auto; padding: 40px 20px; }
-  .staking-header { text-align: center; margin-bottom: 40px; }
-  .staking-title { font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #FFD700, #8B5CF6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 12px; }
-  .staking-subtitle { color: var(--text-secondary); font-size: 1.1rem; }
-  .staking-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-bottom: 24px; }
-  .staking-card { background: var(--gradient-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 24px; cursor: pointer; transition: all 0.2s; }
-  .staking-card:hover { transform: translateY(-4px); border-color: var(--color-gold); }
-  .staking-card.selected { border-color: var(--color-gold); background: linear-gradient(135deg, rgba(255,215,0,0.1), transparent); }
-  .stake-form { background: var(--gradient-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 24px; }
-  @media (max-width: 768px) { .staking-grid { grid-template-columns: 1fr; } }
-`;
-if (document.head) document.head.appendChild(style);

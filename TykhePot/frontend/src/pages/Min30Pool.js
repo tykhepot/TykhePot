@@ -1,45 +1,49 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
+import { POOL_TYPE } from '../config/contract';
+
+const MIN_DEPOSIT = 500; // TPOT
 
 const Min30Pool = () => {
   const { stats, wallet, userTokenBalance, sdk, refreshStats } = useApp();
   const { t, language } = useTranslation();
   const [depositAmount, setDepositAmount] = useState('500');
   const [isDepositing, setIsDepositing] = useState(false);
+  const [txStatus, setTxStatus] = useState(null);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleDeposit = async () => {
-    if (!wallet.publicKey) {
-      alert(t('walletNotConnected'));
+  const handleDeposit = useCallback(async () => {
+    if (!wallet.publicKey) { alert(t('walletNotConnected')); return; }
+
+    const amount = parseFloat(depositAmount);
+    if (isNaN(amount) || amount < MIN_DEPOSIT) {
+      setErrorMessage(language === 'en' ? `Minimum deposit is ${MIN_DEPOSIT} TPOT` : `最低投入 ${MIN_DEPOSIT} TPOT`);
       return;
     }
-    
-    const amount = parseInt(depositAmount);
-    if (isNaN(amount) || amount < 500) {
-      alert(language === 'en' ? 'Minimum deposit is 500 TPOT' : '最低投入500 TPOT');
+    if (userTokenBalance < amount) {
+      setErrorMessage(language === 'en' ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT` : `余额不足。您有 ${userTokenBalance.toFixed(2)} TPOT`);
       return;
     }
-    
-    // 检查用户余额
-    if (!userTokenBalance || userTokenBalance < amount) {
-      alert(language === 'en' ? 'Insufficient balance' : '余额不足');
-      return;
-    }
-    
-    setIsDepositing(true);
+
+    setIsDepositing(true); setTxStatus('pending'); setErrorMessage('');
     try {
-      const result = await sdk.depositMin30(amount);
+      const result = await sdk.deposit(POOL_TYPE.MIN30, amount);
       if (result.success) {
-        alert(language === 'en' ? 'Deposit successful!' : '存款成功！');
+        setTxStatus('success');
         refreshStats();
+        setDepositAmount('500');
       } else {
-        alert(language === 'en' ? `Deposit failed: ${result.error}` : `存款失败: ${result.error}`);
+        setTxStatus('error');
+        setErrorMessage(result.error || 'Transaction failed');
       }
-    } catch (error) {
-      alert(language === 'en' ? `Error: ${error.message}` : `错误: ${error.message}`);
+    } catch (err) {
+      setTxStatus('error');
+      setErrorMessage(err.message || 'Unknown error');
+    } finally {
+      setIsDepositing(false);
     }
-    setIsDepositing(false);
-  };
+  }, [wallet, depositAmount, userTokenBalance, language, sdk, refreshStats, t]);
 
   const formatTime = (timestamp) => {
     const diff = Math.max(0, timestamp - Date.now());
@@ -72,7 +76,7 @@ const Min30Pool = () => {
             
             <div className="pool-display-modern">
               <span className="pool-label-modern">{language === 'en' ? 'Current Pool' : '当前奖池'}</span>
-              <span className="pool-value-modern">🪙 {(stats.min30Pool / 1e9).toFixed(2)}M TPOT</span>
+              <span className="pool-value-modern">🪙 {(stats.min30Pool || 0).toFixed(2)} TPOT</span>
             </div>
             
             <div className="countdown-modern">
@@ -83,7 +87,7 @@ const Min30Pool = () => {
             <div className="info-grid-modern">
               <div className="info-item-modern">
                 <span className="info-label-modern">{language === 'en' ? 'Participants' : '参与人数'}</span>
-                <span className="info-value-modern">{stats.min30Participants || '--'}</span>
+                <span className="info-value-modern">{stats.min30Participants || 0} / 12</span>
               </div>
               <div className="info-item-modern">
                 <span className="info-label-modern">{language === 'en' ? 'Min Deposit' : '最低投入'}</span>
@@ -114,8 +118,8 @@ const Min30Pool = () => {
             
             <div className="quick-amount-grid">
               {['500', '1000', '5000', '10000'].map(amount => (
-                <button 
-                  key={amount} 
+                <button
+                  key={amount}
                   className={`quick-btn ${depositAmount === amount ? 'active' : ''}`}
                   onClick={() => setDepositAmount(amount)}
                 >
@@ -123,14 +127,40 @@ const Min30Pool = () => {
                 </button>
               ))}
             </div>
-            
-            <button 
+
+            {errorMessage && (
+              <div style={{
+                color: '#ff4444',
+                background: 'rgba(255,68,68,0.1)',
+                border: '1px solid rgba(255,68,68,0.3)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-3)',
+                fontSize: 'var(--text-sm)',
+                marginTop: 'var(--space-3)',
+              }}>
+                ⚠️ {errorMessage}
+              </div>
+            )}
+            {txStatus === 'success' && (
+              <div style={{
+                color: '#4CAF50',
+                background: 'rgba(76,175,80,0.1)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-3)',
+                fontSize: 'var(--text-sm)',
+                marginTop: 'var(--space-3)',
+              }}>
+                ✅ {language === 'en' ? 'Deposit successful!' : '存款成功！'}
+              </div>
+            )}
+
+            <button
               onClick={handleDeposit}
               disabled={isDepositing}
               className="btn btn-primary btn-lg"
               style={{ width: '100%', marginTop: 'var(--space-4)' }}
             >
-              {isDepositing ? (language === 'en' ? 'Processing...' : '处理中...') : `🎰 ${language === 'en' ? 'Join Now' : '参与抽奖'}`}
+              {isDepositing ? (language === 'en' ? '⏳ Processing...' : '⏳ 处理中...') : `🎰 ${language === 'en' ? 'Join Now' : '参与抽奖'}`}
             </button>
           </div>
         </div>
@@ -140,12 +170,9 @@ const Min30Pool = () => {
           <h2 className="card-title-modern">💰 {t('prizeDistribution')}</h2>
           <div className="prize-grid">
             {[
-              { name: '🥇 1st Prize', percent: '30% - 1人', color: '#FFD700' },
-              { name: '🥈 2nd Prize', percent: '20% - 2人(各10%)', color: '#C0C0C0' },
-              { name: '🥉 3rd Prize', percent: '15% - 3人(各5%)', color: '#CD7F32' },
-              { name: '🎁 Lucky Prize', percent: '10% - 5人(各2%)', color: '#8B5CF6' },
-              { name: '🌟 Universal Prize', percent: '20% - 全员', color: '#10B981' },
-              { name: '🔄 Roll Over', percent: '5%', color: '#6B7280' },
+              { name: language === 'en' ? '🥇 Winner' : '🥇 获胜者', percent: '95%', color: '#FFD700' },
+              { name: language === 'en' ? '🔥 Burn' : '🔥 销毁', percent: '3%', color: '#EF4444' },
+              { name: language === 'en' ? '🏛 Platform' : '🏛 平台', percent: '2%', color: '#3B82F6' },
             ].map((prize, idx) => (
               <div key={idx} className="prize-item-modern">
                 <span className="prize-name-modern">{prize.name}</span>
@@ -156,6 +183,11 @@ const Min30Pool = () => {
               </div>
             ))}
           </div>
+          <p style={{ marginTop: 'var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', textAlign: 'center' }}>
+            {language === 'en'
+              ? '⚖️ Equal probability per wallet — 1 lucky winner takes all!'
+              : '⚖️ 每个钱包中奖概率相同 — 1名幸运获胜者赢得全部！'}
+          </p>
         </div>
 
         {/* Fund Allocation */}

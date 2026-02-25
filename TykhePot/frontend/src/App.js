@@ -21,6 +21,7 @@ import Leaderboard from './pages/Leaderboard';
 import FAQ from './pages/FAQ';
 import ContractTest from './pages/ContractTest';
 import Whitepaper from './pages/Whitepaper';
+import DrawHistory from './pages/DrawHistory';
 
 import '@solana/wallet-adapter-react-ui/styles.css';
 import './styles.css';
@@ -155,6 +156,7 @@ function AppContentInner() {
           <Route path="/leaderboard" element={<PageWrapper><Leaderboard /></PageWrapper>} />
           <Route path="/faq" element={<PageWrapper><FAQ /></PageWrapper>} />
           <Route path="/whitepaper" element={<PageWrapper><Whitepaper /></PageWrapper>} />
+          <Route path="/draws" element={<PageWrapper><DrawHistory /></PageWrapper>} />
           <Route path="/test" element={<PageWrapper><ContractTest /></PageWrapper>} />
         </Routes>
       </Router>

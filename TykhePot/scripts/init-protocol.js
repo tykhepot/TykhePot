@@ -1,41 +1,50 @@
 /**
- * TykhePot Protocol Initializer
+ * TykhePot Protocol Initializer — New Architecture
  *
- * This script:
- *  1. Creates all vault token accounts with correct PDA authorities
- *  2. Calls the `initialize` instruction to create the on-chain State
- *  3. Funds vaults: airdrop_vault (100M TPOT), referral_vault (200M TPOT),
- *     staking_vault (350M TPOT)
- *  4. Prints all vault addresses so they can be pasted into contract.js
+ * Steps:
+ *  1. Derive all PDAs (GlobalState, PoolState × 3)
+ *  2. Create vault token accounts with PDA authorities
+ *  3. Call `initialize` → creates GlobalState on-chain
+ *  4. Call `initialize_pool` × 3 → creates PoolState PDAs on-chain
+ *  5. Create platform_fee_vault (authority = platform wallet)
+ *  6. Fund airdrop_vault with TPOT from admin wallet
+ *  7. Print all addresses → paste into frontend/src/config/contract.js
  *
- * Run: node scripts/init-protocol.js
+ * Run:
+ *   cd TykhePot/TykhePot
+ *   node scripts/init-protocol.js
+ *
+ * Requirements:
+ *   - Admin keypair at smart-contract/target/deploy/royalpot-keypair.json (or set ADMIN_KEYPAIR env)
+ *   - Program already deployed at PROGRAM_ID
+ *   - Admin wallet holds TPOT to fund the airdrop vault
  */
 
-const anchor = require("@coral-xyz/anchor");
+const anchor  = require("@coral-xyz/anchor");
 const { web3, BN } = anchor;
 const {
-  createAccount,
   TOKEN_PROGRAM_ID,
-  getAccount,
-  createAssociatedTokenAccount,
-  transfer: splTransfer,
   getOrCreateAssociatedTokenAccount,
+  transfer: splTransfer,
+  getMint,
 } = require("@solana/spl-token");
-const fs = require("fs");
+const fs   = require("fs");
 const path = require("path");
 
-// ─── Config ─────────────────────────────────────────────────────────────────
-const PROGRAM_ID = new web3.PublicKey("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
-const TOKEN_MINT = new web3.PublicKey("FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY");
-const RPC = "https://api.devnet.solana.com";
-const DECIMALS = 9;
+// ─── Config ──────────────────────────────────────────────────────────────────
+const PROGRAM_ID  = new web3.PublicKey("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
+const TOKEN_MINT  = new web3.PublicKey("FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY");
+const PLATFORM_FEE_WALLET = new web3.PublicKey("F4dQpEz69oQhhsYGiCASbPNAg3XaoGggbHAeuytqZtrm");
+const RPC         = process.env.RPC_URL || "https://api.devnet.solana.com";
+const DECIMALS    = 9;
 
-// Token amounts (in raw lamports, 9 decimals)
-const AIRDROP_FUND   = 100_000_000n * 10n ** BigInt(DECIMALS); // 100M TPOT
-const REFERRAL_FUND  = 200_000_000n * 10n ** BigInt(DECIMALS); // 200M TPOT
-const STAKING_FUND   = 350_000_000n * 10n ** BigInt(DECIMALS); // 350M TPOT
+// How much TPOT to put in the airdrop vault (100M TPOT)
+const AIRDROP_FUND = BigInt(100_000_000) * BigInt(10 ** DECIMALS);
 
-// ─── IDL (minimal, only initialize) ─────────────────────────────────────────
+// Pool types matching the contract
+const POOL_TYPES = { MIN30: 0, HOURLY: 1, DAILY: 2 };
+
+// ─── Minimal IDL (initialize + initialize_pool only) ─────────────────────────
 const IDL = {
   version: "0.1.0",
   name: "royalpot",
@@ -43,235 +52,215 @@ const IDL = {
     {
       name: "initialize",
       accounts: [
-        { name: "state",          isMut: true,  isSigner: false },
-        { name: "authority",      isMut: true,  isSigner: true  },
-        { name: "tokenMint",      isMut: false, isSigner: false },
-        { name: "platformWallet", isMut: false, isSigner: false },
-        { name: "systemProgram",  isMut: false, isSigner: false },
-        { name: "tokenProgram",   isMut: false, isSigner: false },
+        { name: "payer",         isMut: true,  isSigner: true  },
+        { name: "globalState",   isMut: true,  isSigner: false },
+        { name: "tokenMint",     isMut: false, isSigner: false },
+        { name: "airdropVault",  isMut: false, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
       ],
-      args: [{ name: "params", type: { defined: "InitializeParams" } }],
+      args: [],
+    },
+    {
+      name: "initializePool",
+      accounts: [
+        { name: "payer",         isMut: true,  isSigner: true  },
+        { name: "poolState",     isMut: true,  isSigner: false },
+        { name: "poolVault",     isMut: false, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "poolType", type: "u8" }],
     },
   ],
   accounts: [
-    {
-      name: "State",
-      type: {
-        kind: "struct",
-        fields: [
-          { name: "authority",         type: "publicKey" },
-          { name: "tokenMint",         type: "publicKey" },
-          { name: "platformWallet",    type: "publicKey" },
-          { name: "prePool",           type: "u64" },
-          { name: "referralPool",      type: "u64" },
-          { name: "hourlyPool",        type: "u64" },
-          { name: "hourlyPlayers",     type: "u32" },
-          { name: "dailyPool",         type: "u64" },
-          { name: "dailyPlayers",      type: "u32" },
-          { name: "burned",            type: "u64" },
-          { name: "paused",            type: "bool" },
-          { name: "bump",              type: "u8" },
-          { name: "lastHourlyDraw",    type: "i64" },
-          { name: "lastDailyDraw",     type: "i64" },
-          { name: "hourlyRollover",    type: "u64" },
-          { name: "dailyRollover",     type: "u64" },
-          { name: "pauseScheduledAt",  type: "i64" },
-        ],
-      },
-    },
-  ],
-  types: [
-    {
-      name: "InitializeParams",
-      type: {
-        kind: "struct",
-        fields: [
-          { name: "prePool",      type: "u64" },
-          { name: "referralPool", type: "u64" },
-        ],
-      },
-    },
+    { name: "GlobalState", type: { kind: "struct", fields: [] } },
+    { name: "PoolState",   type: { kind: "struct", fields: [] } },
   ],
   errors: [],
 };
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-async function createVaultAccount(connection, payer, mint, authority, label) {
-  const newKeypair = web3.Keypair.generate();
-  const lamports = await connection.getMinimumBalanceForRentExemption(165);
-
-  const tx = new web3.Transaction().add(
-    web3.SystemProgram.createAccount({
-      fromPubkey: payer.publicKey,
-      newAccountPubkey: newKeypair.publicKey,
-      space: 165,
-      lamports,
-      programId: TOKEN_PROGRAM_ID,
-    }),
-    // InitializeAccount3 (no rent sysvar needed in newer versions)
-    {
-      keys: [
-        { pubkey: newKeypair.publicKey, isSigner: false, isWritable: true },
-        { pubkey: mint,                 isSigner: false, isWritable: false },
-        { pubkey: authority,            isSigner: false, isWritable: false },
-      ],
-      programId: TOKEN_PROGRAM_ID,
-      data: Buffer.concat([
-        Buffer.from([18]), // InitializeAccount3 discriminator
-        authority.toBuffer(),
-      ]),
-    }
-  );
-
-  const sig = await web3.sendAndConfirmTransaction(connection, tx, [payer, newKeypair], {
-    commitment: "confirmed",
-  });
-
-  console.log(`  ✅ ${label}: ${newKeypair.publicKey.toBase58()} (authority: ${authority.toBase58().slice(0,8)}..., sig: ${sig.slice(0,12)}...)`);
-  return newKeypair.publicKey;
+// ─── PDA helpers ─────────────────────────────────────────────────────────────
+function getGlobalStatePda() {
+  return web3.PublicKey.findProgramAddressSync([Buffer.from("global_state")], PROGRAM_ID);
 }
 
-async function fundVault(connection, payer, payerTokenAccount, destVault, amount, label) {
-  const tx = new web3.Transaction().add(
-    {
-      keys: [
-        { pubkey: payerTokenAccount, isSigner: false, isWritable: true },
-        { pubkey: destVault,         isSigner: false, isWritable: true },
-        { pubkey: payer.publicKey,   isSigner: true,  isWritable: false },
-      ],
-      programId: TOKEN_PROGRAM_ID,
-      data: (() => {
-        const buf = Buffer.alloc(9);
-        buf.writeUInt8(3, 0); // Transfer instruction
-        buf.writeBigUInt64LE(amount, 1);
-        return buf;
-      })(),
-    }
+function getPoolStatePda(poolType) {
+  return web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("pool"), Buffer.from([poolType])],
+    PROGRAM_ID
   );
-  const sig = await web3.sendAndConfirmTransaction(connection, tx, [payer], { commitment: "confirmed" });
-  const humanAmount = Number(amount) / 10 ** DECIMALS;
-  console.log(`  💰 Funded ${label} with ${humanAmount.toLocaleString()} TPOT (sig: ${sig.slice(0,12)}...)`);
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
-
 async function main() {
-  console.log("\n🚀 TykhePot Protocol Initializer\n");
-
-  // Load keypair
-  const keypairPath = process.env.SOLANA_KEYPAIR || "/home/guo5feng5/.config/solana/id.json";
-  const secret = JSON.parse(fs.readFileSync(keypairPath));
-  const adminKeypair = web3.Keypair.fromSecretKey(Uint8Array.from(secret));
-  console.log(`Admin wallet: ${adminKeypair.publicKey.toBase58()}`);
-
-  const connection = new web3.Connection(RPC, "confirmed");
-  const balance = await connection.getBalance(adminKeypair.publicKey);
-  console.log(`SOL balance: ${(balance / 1e9).toFixed(4)} SOL`);
-
-  // Derive PDAs
-  const [statePDA, stateBump] = web3.PublicKey.findProgramAddressSync([Buffer.from("state")], PROGRAM_ID);
-  const [airdropPDA]          = web3.PublicKey.findProgramAddressSync([Buffer.from("airdrop")], PROGRAM_ID);
-  const [stakingPDA]          = web3.PublicKey.findProgramAddressSync([Buffer.from("staking")], PROGRAM_ID);
-  const [vestingAuthPDA]      = web3.PublicKey.findProgramAddressSync([Buffer.from("vesting_auth")], PROGRAM_ID);
-
-  console.log(`\nPDAs:`);
-  console.log(`  state PDA:       ${statePDA.toBase58()}`);
-  console.log(`  airdrop PDA:     ${airdropPDA.toBase58()}`);
-  console.log(`  staking PDA:     ${stakingPDA.toBase58()}`);
-  console.log(`  vestingAuth PDA: ${vestingAuthPDA.toBase58()}`);
-
-  // Check if already initialized
-  const stateInfo = await connection.getAccountInfo(statePDA);
-  if (stateInfo) {
-    console.log("\n⚠️  State PDA already exists — protocol already initialized!");
-    process.exit(0);
-  }
-
-  // Find admin's TPOT token account
-  const { getAssociatedTokenAddressSync } = require("@solana/spl-token");
-  const adminTokenAccount = getAssociatedTokenAddressSync(TOKEN_MINT, adminKeypair.publicKey);
-  const adminTokenInfo = await connection.getTokenAccountBalance(adminTokenAccount);
-  console.log(`\nAdmin TPOT balance: ${Number(adminTokenInfo.value.amount) / 10 ** DECIMALS} TPOT`);
-
-  // ── Step 1: Create all vault token accounts ──────────────────────────────
-  console.log("\n📦 Step 1: Creating vault token accounts...");
-
-  const burnVault        = await createVaultAccount(connection, adminKeypair, TOKEN_MINT, statePDA,       "BURN_VAULT");
-  const platformVault    = await createVaultAccount(connection, adminKeypair, TOKEN_MINT, statePDA,       "PLATFORM_VAULT");
-  const hourlyPoolVault  = await createVaultAccount(connection, adminKeypair, TOKEN_MINT, statePDA,       "HOURLY_POOL_VAULT");
-  const dailyPoolVault   = await createVaultAccount(connection, adminKeypair, TOKEN_MINT, statePDA,       "DAILY_POOL_VAULT");
-  const referralVault    = await createVaultAccount(connection, adminKeypair, TOKEN_MINT, statePDA,       "REFERRAL_VAULT");
-  const airdropVault     = await createVaultAccount(connection, adminKeypair, TOKEN_MINT, airdropPDA,     "AIRDROP_VAULT");
-  const stakingVault     = await createVaultAccount(connection, adminKeypair, TOKEN_MINT, stakingPDA,     "STAKING_VAULT");
-  const vestingVault     = await createVaultAccount(connection, adminKeypair, TOKEN_MINT, vestingAuthPDA, "VESTING_VAULT");
-
-  // ── Step 2: Initialize protocol ──────────────────────────────────────────
-  console.log("\n⚙️  Step 2: Calling initialize instruction...");
-
-  const provider = new anchor.AnchorProvider(
-    connection,
-    new anchor.Wallet(adminKeypair),
-    { commitment: "confirmed" }
+  // Load admin keypair
+  const keypairPath = process.env.ADMIN_KEYPAIR
+    || path.join(__dirname, "../smart-contract/target/deploy/royalpot-keypair.json");
+  const adminKp = web3.Keypair.fromSecretKey(
+    Buffer.from(JSON.parse(fs.readFileSync(keypairPath, "utf8")))
   );
-  const program = new anchor.Program(IDL, PROGRAM_ID, provider);
+  console.log("Admin wallet:", adminKp.publicKey.toBase58());
 
-  const initTx = await program.methods
-    .initialize({
-      prePool:      new BN(0),                         // start with no pre-match
-      referralPool: new BN("200000000000000000"),       // 200M TPOT in raw
-    })
-    .accounts({
-      state:          statePDA,
-      authority:      adminKeypair.publicKey,
-      tokenMint:      TOKEN_MINT,
-      platformWallet: adminKeypair.publicKey,          // admin wallet receives platform fees
-      systemProgram:  web3.SystemProgram.programId,
-      tokenProgram:   TOKEN_PROGRAM_ID,
-    })
-    .signers([adminKeypair])
-    .rpc();
+  // Setup Anchor provider
+  const connection = new web3.Connection(RPC, "confirmed");
+  const wallet     = new anchor.Wallet(adminKp);
+  const provider   = new anchor.AnchorProvider(connection, wallet, { commitment: "confirmed" });
+  anchor.setProvider(provider);
+  const program    = new anchor.Program(IDL, PROGRAM_ID, provider);
 
-  console.log(`  ✅ Protocol initialized! tx: ${initTx}`);
-
-  // ── Step 3: Fund vaults ────────────────────────────────────────────────
-  console.log("\n💸 Step 3: Funding vaults...");
-
-  await fundVault(connection, adminKeypair, adminTokenAccount, airdropVault,  AIRDROP_FUND,  "airdropVault");
-  await fundVault(connection, adminKeypair, adminTokenAccount, referralVault, REFERRAL_FUND, "referralVault");
-  await fundVault(connection, adminKeypair, adminTokenAccount, stakingVault,  STAKING_FUND,  "stakingVault");
-
-  // ── Step 4: Print results ──────────────────────────────────────────────
-  console.log("\n✅ Initialization complete! Update config/contract.js:\n");
-  const result = {
-    BURN_VAULT:         burnVault.toBase58(),
-    PLATFORM_VAULT:     platformVault.toBase58(),
-    HOURLY_POOL_VAULT:  hourlyPoolVault.toBase58(),
-    DAILY_POOL_VAULT:   dailyPoolVault.toBase58(),
-    REFERRAL_VAULT:     referralVault.toBase58(),
-    AIRDROP_VAULT:      airdropVault.toBase58(),
-    STAKING_VAULT:      stakingVault.toBase58(),
-    VESTING_VAULT:      vestingVault.toBase58(),
-  };
-
-  for (const [k, v] of Object.entries(result)) {
-    console.log(`export const ${k} = "${v}";`);
+  // Check balance
+  const balance = await connection.getBalance(adminKp.publicKey);
+  console.log(`Admin SOL balance: ${(balance / 1e9).toFixed(3)} SOL`);
+  if (balance < 0.5e9) {
+    console.error("❌ Insufficient SOL. Need at least 0.5 SOL.");
+    process.exit(1);
   }
 
-  // Auto-update contract.js
-  const contractPath = path.join(__dirname, "../frontend/src/config/contract.js");
-  let src = fs.readFileSync(contractPath, "utf8");
-  for (const [k, v] of Object.entries(result)) {
-    src = src.replace(
-      new RegExp(`export const ${k} = ".*?";`),
-      `export const ${k} = "${v}";`
+  // ── Step 1: Derive PDAs ────────────────────────────────────────────────────
+  const [globalStatePda, globalStateBump] = getGlobalStatePda();
+  console.log("\n📍 PDAs derived:");
+  console.log("  GlobalState:", globalStatePda.toBase58());
+
+  const poolPdas = {};
+  for (const [name, poolType] of Object.entries(POOL_TYPES)) {
+    const [pda] = getPoolStatePda(poolType);
+    poolPdas[poolType] = pda;
+    console.log(`  PoolState[${poolType}] (${name}):`, pda.toBase58());
+  }
+
+  // ── Step 2: Create vault token accounts ───────────────────────────────────
+  console.log("\n🏦 Creating vault token accounts...");
+
+  // airdrop_vault — authority = GlobalState PDA
+  console.log("  Creating airdrop_vault (authority = GlobalState PDA)...");
+  const airdropVaultAcc = await getOrCreateAssociatedTokenAccount(
+    connection, adminKp, TOKEN_MINT, globalStatePda, true /* allowOwnerOffCurve */
+  );
+  console.log("  airdrop_vault:", airdropVaultAcc.address.toBase58());
+
+  // pool vaults — authority = PoolState PDA for each pool
+  const poolVaults = {};
+  for (const [poolType, pda] of Object.entries(poolPdas)) {
+    const ptNum = Number(poolType);
+    console.log(`  Creating pool_vault[${ptNum}] (authority = PoolState[${ptNum}] PDA)...`);
+    const vaultAcc = await getOrCreateAssociatedTokenAccount(
+      connection, adminKp, TOKEN_MINT, pda, true
     );
+    poolVaults[ptNum] = vaultAcc.address;
+    console.log(`  pool_vault[${ptNum}]:`, vaultAcc.address.toBase58());
   }
-  fs.writeFileSync(contractPath, src);
-  console.log(`\n📝 contract.js has been auto-updated: ${contractPath}`);
+
+  // platform_fee_vault — authority = platform wallet (regular signer)
+  console.log("  Creating platform_fee_vault (authority = platform wallet)...");
+  const platformVaultAcc = await getOrCreateAssociatedTokenAccount(
+    connection, adminKp, TOKEN_MINT, PLATFORM_FEE_WALLET
+  );
+  console.log("  platform_fee_vault:", platformVaultAcc.address.toBase58());
+
+  // ── Step 3: Call initialize ────────────────────────────────────────────────
+  console.log("\n🚀 Calling initialize...");
+  try {
+    const txInit = await program.methods
+      .initialize()
+      .accounts({
+        payer:         adminKp.publicKey,
+        globalState:   globalStatePda,
+        tokenMint:     TOKEN_MINT,
+        airdropVault:  airdropVaultAcc.address,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .signers([adminKp])
+      .rpc();
+    console.log("  ✅ initialize:", txInit);
+  } catch (err) {
+    if (err.message?.includes("already in use") || err.logs?.some(l => l.includes("already in use"))) {
+      console.log("  ⚠️  GlobalState already initialized, skipping.");
+    } else {
+      console.error("  ❌ initialize failed:", err.message);
+      throw err;
+    }
+  }
+
+  // ── Step 4: initialize_pool × 3 ───────────────────────────────────────────
+  for (const [name, poolType] of Object.entries(POOL_TYPES)) {
+    console.log(`\n🚀 Calling initialize_pool(${poolType}) [${name}]...`);
+    try {
+      const txPool = await program.methods
+        .initializePool(poolType)
+        .accounts({
+          payer:         adminKp.publicKey,
+          poolState:     poolPdas[poolType],
+          poolVault:     poolVaults[poolType],
+          systemProgram: web3.SystemProgram.programId,
+        })
+        .signers([adminKp])
+        .rpc();
+      console.log(`  ✅ initialize_pool(${poolType}):`, txPool);
+    } catch (err) {
+      if (err.message?.includes("already in use") || err.logs?.some(l => l.includes("already in use"))) {
+        console.log(`  ⚠️  PoolState[${poolType}] already initialized, skipping.`);
+      } else {
+        console.error(`  ❌ initialize_pool(${poolType}) failed:`, err.message);
+        throw err;
+      }
+    }
+  }
+
+  // ── Step 5: Fund airdrop vault ────────────────────────────────────────────
+  console.log("\n💰 Funding airdrop vault...");
+  try {
+    // Find admin's token account
+    const adminAta = await getOrCreateAssociatedTokenAccount(
+      connection, adminKp, TOKEN_MINT, adminKp.publicKey
+    );
+    const adminBalance = BigInt(adminAta.amount);
+    console.log(`  Admin TPOT balance: ${adminBalance / BigInt(10**DECIMALS)} TPOT`);
+
+    if (adminBalance < AIRDROP_FUND) {
+      console.warn(`  ⚠️  Insufficient TPOT to fund airdrop vault (need ${AIRDROP_FUND / BigInt(10**DECIMALS)} TPOT). Skipping funding.`);
+    } else {
+      // Check current airdrop vault balance
+      const vaultInfo = await connection.getTokenAccountBalance(airdropVaultAcc.address);
+      const vaultBalance = BigInt(vaultInfo.value.amount);
+
+      if (vaultBalance >= AIRDROP_FUND) {
+        console.log(`  ⚠️  Airdrop vault already has ${vaultBalance / BigInt(10**DECIMALS)} TPOT, skipping funding.`);
+      } else {
+        const toFund = AIRDROP_FUND - vaultBalance;
+        console.log(`  Transferring ${toFund / BigInt(10**DECIMALS)} TPOT to airdrop vault...`);
+        const txFund = await splTransfer(
+          connection,
+          adminKp,
+          adminAta.address,
+          airdropVaultAcc.address,
+          adminKp,
+          toFund
+        );
+        console.log("  ✅ Funded airdrop vault:", txFund);
+      }
+    }
+  } catch (err) {
+    console.warn("  ⚠️  Could not fund airdrop vault:", err.message);
+  }
+
+  // ── Step 6: Print summary ─────────────────────────────────────────────────
+  console.log("\n" + "=".repeat(70));
+  console.log("✅  INITIALIZATION COMPLETE");
+  console.log("=".repeat(70));
+  console.log("\nPaste these values into frontend/src/config/contract.js:\n");
+  console.log(`export const POOL_30MIN_VAULT  = "${poolVaults[POOL_TYPES.MIN30].toBase58()}";`);
+  console.log(`export const POOL_HOURLY_VAULT = "${poolVaults[POOL_TYPES.HOURLY].toBase58()}";`);
+  console.log(`export const POOL_DAILY_VAULT  = "${poolVaults[POOL_TYPES.DAILY].toBase58()}";`);
+  console.log(`export const AIRDROP_VAULT     = "${airdropVaultAcc.address.toBase58()}";`);
+  console.log(`export const PLATFORM_FEE_VAULT= "${platformVaultAcc.address.toBase58()}";`);
+  console.log("\nPDA addresses (for reference):");
+  console.log(`  GlobalState : ${globalStatePda.toBase58()}`);
+  console.log(`  PoolState[0]: ${poolPdas[POOL_TYPES.MIN30].toBase58()}`);
+  console.log(`  PoolState[1]: ${poolPdas[POOL_TYPES.HOURLY].toBase58()}`);
+  console.log(`  PoolState[2]: ${poolPdas[POOL_TYPES.DAILY].toBase58()}`);
+  console.log("=".repeat(70));
 }
 
-main().catch((err) => {
-  console.error("\n❌ Error:", err.message || err);
+main().catch(err => {
+  console.error("\n❌ Fatal error:", err);
   process.exit(1);
 });

@@ -1,19 +1,21 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
+import { POOL_TYPE } from '../config/contract';
+
+const MIN_DEPOSIT = 100; // TPOT
 
 const DailyPool = () => {
-  const { stats, wallet, sdk, refreshStats, userTokenBalance } = useApp();
+  const { stats, wallet, sdk, refreshStats, userTokenBalance, userStatus } = useApp();
   const { t, language } = useTranslation();
   const [depositAmount, setDepositAmount] = useState('100');
-  const [referrer, setReferrer] = useState('');
   const [isDepositing, setIsDepositing] = useState(false);
   const [isUsingFreeBet, setIsUsingFreeBet] = useState(false);
   const [txStatus, setTxStatus] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [countdown, setCountdown] = useState({ hours: '00', minutes: '00', seconds: '00' });
-  const [freeBetAvailable, setFreeBetAvailable] = useState(false);
-  const [freeBetChecked, setFreeBetChecked] = useState(false); // 是否已查询过
+
+  const freeBetActive = userStatus?.pools?.[POOL_TYPE.DAILY]?.freeBetActive ?? false;
 
   // Update countdown every second
   useEffect(() => {
@@ -34,42 +36,13 @@ const DailyPool = () => {
     return () => clearInterval(interval);
   }, [stats.dailyNextDraw]);
 
-  const isValidReferrer = (address) => {
-    if (!address) return true;
-    try {
-      return address.length >= 32 && address.length <= 44;
-    } catch {
-      return false;
-    }
-  };
-
-  // Fetch free_bet_available from chain whenever wallet or sdk changes
-  useEffect(() => {
-    if (!sdk || !wallet.publicKey) {
-      setFreeBetAvailable(false);
-      setFreeBetChecked(false);
-      return;
-    }
-    let cancelled = false;
-    sdk.getUserData(wallet.publicKey).then(data => {
-      if (!cancelled) {
-        setFreeBetAvailable(data?.freeBetAvailable === true);
-        setFreeBetChecked(true);
-      }
-    }).catch(() => {
-      if (!cancelled) setFreeBetChecked(true);
-    });
-    return () => { cancelled = true; };
-  }, [sdk, wallet.publicKey]);
-
   const handleUseFreeBet = useCallback(async () => {
     if (!wallet.publicKey || !sdk) return;
     setIsUsingFreeBet(true);
     setErrorMessage('');
     try {
-      const result = await sdk.useFreeBetDaily();
+      const result = await sdk.useFreeBet(POOL_TYPE.DAILY);
       if (result.success) {
-        setFreeBetAvailable(false);
         alert(language === 'en'
           ? `🎉 Free bet placed! Tx: ${result.tx.slice(0, 8)}... Good luck!`
           : `🎉 免费投注成功！交易: ${result.tx.slice(0, 8)}... 祝你好运！`);
@@ -85,27 +58,13 @@ const DailyPool = () => {
   }, [sdk, wallet.publicKey, language, refreshStats]);
 
   const handleDeposit = useCallback(async () => {
-    if (!wallet.publicKey) {
-      alert(t('walletNotConnected'));
-      return;
-    }
-
-    if (stats.isPaused) {
-      alert(t('contractPaused'));
-      return;
-    }
+    if (!wallet.publicKey) { alert(t('walletNotConnected')); return; }
 
     const amount = parseFloat(depositAmount);
-    if (isNaN(amount) || amount < 100) {
-      setErrorMessage(language === 'en' ? 'Minimum deposit is 100 TPOT' : '最低投入 100 TPOT');
+    if (isNaN(amount) || amount < MIN_DEPOSIT) {
+      setErrorMessage(language === 'en' ? `Minimum deposit is ${MIN_DEPOSIT} TPOT` : `最低投入 ${MIN_DEPOSIT} TPOT`);
       return;
     }
-    if (amount > 1_000_000) {
-      setErrorMessage(language === 'en' ? 'Maximum deposit is 1,000,000 TPOT' : '最高投入 1,000,000 TPOT');
-      return;
-    }
-
-    // 普通存款
     if (userTokenBalance < amount) {
       setErrorMessage(language === 'en'
         ? `Insufficient balance. You have ${userTokenBalance.toFixed(2)} TPOT`
@@ -113,31 +72,13 @@ const DailyPool = () => {
       return;
     }
 
-    if (referrer && !isValidReferrer(referrer)) {
-      setErrorMessage(language === 'en' ? 'Invalid referrer address' : '推荐人地址无效');
-      return;
-    }
-
-    if (referrer === wallet.publicKey.toString()) {
-      setErrorMessage(language === 'en' ? 'Cannot use your own address as referrer' : '不能使用自己的地址作为推荐人');
-      return;
-    }
-
-    setIsDepositing(true);
-    setTxStatus('pending');
-    setErrorMessage('');
-
+    setIsDepositing(true); setTxStatus('pending'); setErrorMessage('');
     try {
-      const result = await sdk.depositDaily(amount, referrer || null);
-      
+      const result = await sdk.deposit(POOL_TYPE.DAILY, amount);
       if (result.success) {
         setTxStatus('success');
-        alert(language === 'en' 
-          ? `Success! Transaction: ${result.tx.slice(0, 8)}...` 
-          : `成功！交易: ${result.tx.slice(0, 8)}...`);
         refreshStats();
         setDepositAmount('100');
-        setReferrer('');
       } else {
         setTxStatus('error');
         setErrorMessage(result.error || 'Transaction failed');
@@ -148,13 +89,7 @@ const DailyPool = () => {
     } finally {
       setIsDepositing(false);
     }
-  }, [wallet, depositAmount, referrer, stats.isPaused, userTokenBalance, language, sdk, refreshStats, t, setErrorMessage]);
-
-  const getButtonText = () => {
-    if (isDepositing) return language === 'en' ? 'Processing...' : '处理中...';
-    if (stats.isPaused) return language === 'en' ? 'Paused' : '已暂停';
-    return language === 'en' ? 'Join Now' : '立即参与';
-  };
+  }, [wallet, depositAmount, userTokenBalance, language, sdk, refreshStats, t]);
 
   return (
     <div className="page-container">
@@ -173,8 +108,8 @@ const DailyPool = () => {
 
         {/* Features Tags */}
         <div style={{ display: 'flex', justifyContent: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-6)', flexWrap: 'wrap' }}>
-          <span className="feature-tag">🎁 {language === 'en' ? 'Referral 8%' : '推广奖励 8%'}</span>
-          <span className="feature-tag">⚡ {language === 'en' ? '1:1 Reserve' : '储备1:1配比'}</span>
+          <span className="feature-tag">🎁 {language === 'en' ? 'Free Bet' : '免费投注'}</span>
+          <span className="feature-tag">⚖️ {language === 'en' ? 'Equal Probability' : '等概率中奖'}</span>
           <span className="feature-tag">💎 {language === 'en' ? 'Daily 00:00 Draw' : '每日0点开奖'}</span>
         </div>
 
@@ -186,7 +121,7 @@ const DailyPool = () => {
             
             <div className="pool-display-modern">
               <span className="pool-label-modern">{language === 'en' ? 'Current Pool' : '当前奖池'}</span>
-              <span className="pool-value-modern">🪙 {(stats.dailyPool / 1e9).toFixed(2)}M TPOT</span>
+              <span className="pool-value-modern">🪙 {(stats.dailyPool || 0).toFixed(2)} TPOT</span>
             </div>
             
             <div className="countdown-modern">
@@ -203,7 +138,7 @@ const DailyPool = () => {
             <div className="info-grid-modern">
               <div className="info-item-modern">
                 <span className="info-label-modern">{language === 'en' ? 'Participants' : '参与人数'}</span>
-                <span className="info-value-modern">{stats.dailyParticipants || '--'}</span>
+                <span className="info-value-modern">{stats.dailyParticipants || 0} / 12</span>
               </div>
               <div className="info-item-modern">
                 <span className="info-label-modern">{language === 'en' ? 'Min Deposit' : '最低投入'}</span>
@@ -221,8 +156,8 @@ const DailyPool = () => {
             <h2 className="card-title-modern">🎰 {t('joinNowBtn')}</h2>
 
             {/* ── Free Bet Banner ────────────────────────────────────────── */}
-            {wallet.publicKey && freeBetChecked && (
-              freeBetAvailable ? (
+            {wallet.publicKey && (
+              freeBetActive ? (
                 <div className="free-bet-banner">
                   <div className="free-bet-header">
                     <span className="free-bet-icon">🎁</span>
@@ -240,7 +175,7 @@ const DailyPool = () => {
                   <button
                     className="btn free-bet-btn"
                     onClick={handleUseFreeBet}
-                    disabled={isUsingFreeBet || stats.isPaused}
+                    disabled={isUsingFreeBet}
                   >
                     {isUsingFreeBet
                       ? (language === 'en' ? 'Placing...' : '投注中...')
@@ -273,8 +208,8 @@ const DailyPool = () => {
             
             <div className="quick-amount-grid">
               {['100', '500', '1000', '10000'].map(amount => (
-                <button 
-                  key={amount} 
+                <button
+                  key={amount}
                   className={`quick-btn ${depositAmount === amount ? 'active' : ''}`}
                   onClick={() => setDepositAmount(amount)}
                 >
@@ -283,77 +218,51 @@ const DailyPool = () => {
               ))}
             </div>
 
-            <div className="form-group-modern" style={{ marginTop: 'var(--space-4)' }}>
-              <label className="form-label-modern">{language === 'en' ? 'Referrer (Optional)' : '邀请人地址 (可选)'}</label>
-              <input
-                type="text"
-                value={referrer}
-                onChange={(e) => setReferrer(e.target.value)}
-                className="input-modern"
-                placeholder={language === 'en' ? 'Enter referrer wallet address' : '输入邀请人钱包地址'}
-              />
-            </div>
-
-            <p className="referral-note">
-              🎁 {language === 'en' ? 'Referrer gets 8% reward' : '使用邀请码，邀请人可获得 8% 奖励'}
-            </p>
-
             {errorMessage && (
-              <div className="error-message">
-                ❌ {errorMessage}
+              <div style={{
+                color: '#ff4444',
+                background: 'rgba(255,68,68,0.1)',
+                border: '1px solid rgba(255,68,68,0.3)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-3)',
+                fontSize: 'var(--text-sm)',
+                marginTop: 'var(--space-3)',
+              }}>
+                ⚠️ {errorMessage}
+              </div>
+            )}
+            {txStatus === 'success' && (
+              <div style={{
+                color: '#4CAF50',
+                background: 'rgba(76,175,80,0.1)',
+                borderRadius: 'var(--radius-md)',
+                padding: 'var(--space-3)',
+                fontSize: 'var(--text-sm)',
+                marginTop: 'var(--space-3)',
+              }}>
+                ✅ {language === 'en' ? 'Deposit successful!' : '存款成功！'}
               </div>
             )}
 
-            <button 
+            <button
               onClick={handleDeposit}
-              disabled={isDepositing || stats.isPaused}
+              disabled={isDepositing}
               className="btn btn-primary btn-lg"
               style={{ width: '100%', marginTop: 'var(--space-4)' }}
             >
-              {isDepositing ? (language === 'en' ? 'Processing...' : '处理中...') : (stats.isPaused ? (language === 'en' ? 'Paused' : '已暂停') : `🎰 ${language === 'en' ? 'Join Now' : '参与抽奖'}`)}
+              {isDepositing ? (language === 'en' ? '⏳ Processing...' : '⏳ 处理中...') : `🎰 ${language === 'en' ? 'Join Now' : '参与抽奖'}`}
             </button>
           </div>
         </div>
 
-        {/* Reserve Matching */}
-        <div className="card card-glass">
-          <h2 className="card-title-modern">⚡ {language === 'en' ? 'Reserve Matching' : '储备配比机制'}</h2>
-          <div className="reserve-visual">
-            <div className="reserve-box">
-              <span className="reserve-label">{language === 'en' ? 'Your Deposit' : '您的投入'}</span>
-              <span className="reserve-arrow">→</span>
-              <span className="reserve-value">100 TPOT</span>
-            </div>
-            <span className="reserve-plus">+</span>
-            <div className="reserve-box">
-              <span className="reserve-label">{language === 'en' ? 'Reserve Match' : '储备配比'}</span>
-              <span className="reserve-arrow">→</span>
-              <span className="reserve-value">100 TPOT</span>
-            </div>
-            <span className="reserve-equals">=</span>
-            <div className="reserve-box-total">
-              <span className="reserve-label">{language === 'en' ? 'Total in Pool' : '实际入池'}</span>
-              <span className="reserve-value-total">200 TPOT</span>
-            </div>
-          </div>
-          <p className="reserve-desc">
-            {language === 'en' 
-              ? 'Every deposit gets 1:1 matched from reserve pool, doubling your winning chance!' 
-              : '您的每笔投入都将获得储备池 1:1 配比，翻倍您的中奖机会！'}
-          </p>
-        </div>
-
         {/* Prize Distribution */}
-        <div className="card card-glass" style={{ marginTop: 'var(--space-6)' }}>
+        <div className="card card-glass">
           <h2 className="card-title-modern">💰 {t('prizeDistribution')}</h2>
           <div className="prize-grid">
             {[
-              { name: language === 'en' ? '🥇 1st Prize' : '🥇 头奖', percent: '30% - 1人', color: '#FFD700' },
-              { name: language === 'en' ? '🥈 2nd Prize' : '🥈 二奖', percent: '20% - 2人(各10%)', color: '#C0C0C0' },
-              { name: language === 'en' ? '🥉 3rd Prize' : '🥉 三奖', percent: '15% - 3人(各5%)', color: '#CD7F32' },
-              { name: language === 'en' ? '🎁 Lucky Prize' : '🎁 幸运奖', percent: '10% - 5人(各2%)', color: '#8B5CF6' },
-              { name: language === 'en' ? '🌟 Universal Prize' : '🌟 普惠奖', percent: '20% - 全员', color: '#10B981' },
-              { name: language === 'en' ? '🔄 Roll Over' : '🔄 回流', percent: '5%', color: '#6B7280' },
+              { name: language === 'en' ? '🥇 Winner' : '🥇 获胜者', percent: '95%', color: '#FFD700' },
+              { name: language === 'en' ? '🔥 Burn' : '🔥 销毁', percent: '3%', color: '#EF4444' },
+              { name: language === 'en' ? '🏛 Platform' : '🏛 平台', percent: '2%', color: '#3B82F6' },
             ].map((prize, idx) => (
               <div key={idx} className="prize-item-modern">
                 <span className="prize-name-modern">{prize.name}</span>
@@ -364,6 +273,11 @@ const DailyPool = () => {
               </div>
             ))}
           </div>
+          <p style={{ marginTop: 'var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', textAlign: 'center' }}>
+            {language === 'en'
+              ? '⚖️ Equal probability per wallet — 1 lucky winner takes all!'
+              : '⚖️ 每个钱包中奖概率相同 — 1名幸运获胜者赢得全部！'}
+          </p>
         </div>
 
         {/* Fund Allocation */}
@@ -377,7 +291,7 @@ const DailyPool = () => {
             ].map((fund, idx) => (
               <div key={idx} className="fund-item-modern">
                 <span className="fund-label-modern">{fund.label}</span>
-                <div className="fund-bar">
+                <div className="fund-progress">
                   <div style={{ width: fund.percent, background: fund.color }}></div>
                 </div>
                 <span className="fund-percent-modern">{fund.percent}</span>
@@ -421,70 +335,6 @@ const DailyPool = () => {
           color: var(--text-tertiary);
         }
         
-        .reserve-visual {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: var(--space-4);
-          flex-wrap: wrap;
-          margin-bottom: var(--space-4);
-        }
-        
-        .reserve-box, .reserve-box-total {
-          background: oklch(15% 0.02 280);
-          padding: var(--space-4);
-          border-radius: var(--radius-lg);
-          text-align: center;
-          min-width: 120px;
-        }
-        
-        .reserve-box-total {
-          background: oklch(55% 0.15 45 / 0.2);
-          border: 1px solid oklch(55% 0.15 45 / 0.3);
-        }
-        
-        .reserve-label {
-          display: block;
-          font-size: var(--text-xs);
-          color: var(--text-tertiary);
-          margin-bottom: var(--space-2);
-        }
-        
-        .reserve-value, .reserve-value-total {
-          display: block;
-          font-size: var(--text-lg);
-          font-weight: 700;
-          color: var(--color-gold);
-        }
-        
-        .reserve-plus, .reserve-equals {
-          font-size: var(--text-2xl);
-          font-weight: 700;
-          color: var(--color-gold);
-        }
-        
-        .reserve-desc {
-          text-align: center;
-          color: var(--text-secondary);
-          font-size: var(--text-sm);
-          line-height: 1.6;
-        }
-        
-        .referral-note {
-          font-size: var(--text-sm);
-          color: var(--text-tertiary);
-          margin-top: var(--space-2);
-        }
-        
-        .error-message {
-          background: oklch(60% 0.18 25 / 0.15);
-          border: 1px solid oklch(60% 0.18 25 / 0.3);
-          border-radius: var(--radius-md);
-          padding: var(--space-3);
-          margin-top: var(--space-3);
-          color: var(--color-error);
-          font-size: var(--text-sm);
-        }
         
         .prize-grid {
           display: flex;
@@ -541,15 +391,15 @@ const DailyPool = () => {
           color: var(--text-secondary);
         }
         
-        .fund-bar {
+        .fund-progress {
           width: 100%;
           height: 8px;
           background: oklch(20% 0.02 280);
           border-radius: var(--radius-full);
           overflow: hidden;
         }
-        
-        .fund-bar div {
+
+        .fund-progress div {
           height: 100%;
           border-radius: var(--radius-full);
         }
@@ -560,18 +410,9 @@ const DailyPool = () => {
         }
         
         @media (max-width: 768px) {
-          .reserve-visual {
-            flex-direction: column;
-          }
-          .reserve-plus, .reserve-equals {
-            transform: rotate(90deg);
-          }
-          .fund-grid {
-            grid-template-columns: 1fr;
-          }
-          .prize-item-modern {
-            grid-template-columns: 1fr;
-          }
+          .grid-cols-2 { grid-template-columns: 1fr !important; }
+          .fund-grid { grid-template-columns: 1fr; }
+          .prize-item-modern { grid-template-columns: 1fr; }
         }
         .free-bet-banner {
           background: linear-gradient(135deg, oklch(55% 0.15 45 / 0.15), oklch(55% 0.18 160 / 0.1));

@@ -23,6 +23,7 @@ const Layout = ({ children }) => {
     { path: '/daily', label: t('dailyPool'), icon: '🌙' },
     { path: '/staking', label: t('staking'), icon: '💎' },
     { path: '/airdrop', label: t('airdrop'), icon: '🎁' },
+    { path: '/draws', label: t('drawHistory'), icon: '📋' },
     { path: '/leaderboard', label: t('leaderboard'), icon: '🏆' },
     { path: '/faq', label: t('faq'), icon: '❓' },
   ];

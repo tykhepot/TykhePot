@@ -1,38 +1,50 @@
-// ─── 合约基础配置 ─────────────────────────────────────────────────────────────
-export const PROGRAM_ID = "5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b";
-export const TOKEN_MINT = "FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY";
-export const NETWORK = "devnet";
+// ─── Program Config ───────────────────────────────────────────────────────────
+export const PROGRAM_ID  = "5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b";
+export const TOKEN_MINT  = "FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY";
+export const NETWORK     = "devnet";
 export const RPC_ENDPOINT = "https://api.devnet.solana.com";
 
-// ─── PDA（程序自动推导，部署后保持固定）────────────────────────────────────────
-// state PDA: seeds = ["state"]
-export const STATE_PDA = "61d5xwLqPCAKS3FoEW3crpKnCAx3S5V8jM35NPrjEFbP";
+// ─── Pool Types ───────────────────────────────────────────────────────────────
+export const POOL_TYPE = { MIN30: 0, HOURLY: 1, DAILY: 2 };
 
-// ─── Vault Token Accounts（部署时创建，需手动填写地址）────────────────────────
-// 所有 vault 必须以 state PDA 为 authority（draw 指令使用 PDA 签名转账）
-// staking_vault 以 staking authority PDA [b"staking"] 为 authority
+// ─── PDAs (derived deterministically, no deploy-time update needed) ──────────
+// GlobalState:  seeds = [b"global_state"]
+// PoolState:    seeds = [b"pool", &[pool_type]]  (pool_type = 0/1/2)
+// AirdropState: seeds = [b"airdrop_state"]
+// StakingState: seeds = [b"staking_state"]
 
-// 销毁账户（TPOT token account，持有并销毁 burn 份额）
-export const BURN_VAULT = "";
+// ─── Vault Token Accounts (created at initialize_pool / initialize time) ──────
+// All pool vaults: authority = PoolState PDA
+// airdrop_vault:   authority = GlobalState PDA  [b"global_state"]
+// staking_vault:   authority = staking auth PDA [b"staking"]
+// vesting_vault:   authority = vesting PDA      [b"vesting", beneficiary]
 
-// 平台收益账户（TPOT token account）
-export const PLATFORM_VAULT = "";
+// Pool Vaults — fill in after deploy
+export const POOL_30MIN_VAULT  = ""; // authority = PoolState[0] PDA
+export const POOL_HOURLY_VAULT = ""; // authority = PoolState[1] PDA
+export const POOL_DAILY_VAULT  = ""; // authority = PoolState[2] PDA
 
-// 小时池奖金账户（authority = state PDA）
-export const HOURLY_POOL_VAULT = "";
+// Airdrop source vault (funds free bets; authority = GlobalState PDA)
+export const AIRDROP_VAULT     = "";
 
-// 日池奖金账户（authority = state PDA）
-export const DAILY_POOL_VAULT = "";
+// Platform fee destination (plain wallet token account, no PDA)
+// Wallet: F4dQpEz69oQhhsYGiCASbPNAg3XaoGggbHAeuytqZtrm
+export const PLATFORM_FEE_VAULT = "";
 
-// 推荐奖励池账户（authority = state PDA）
-export const REFERRAL_VAULT = "";
+// Staking / vesting vaults (unchanged from old deploy)
+export const STAKING_VAULT = "5CAwNZje1nyPRAKiLfPhsUAjNQu52Ymvzdo1iXBfatNt";
+export const VESTING_VAULT = "939dBwYK6epmmUTAmYAco9cnCp3Vxa8MV27HBDmd3JYR";
 
-// 免费空投账户，100 TPOT/人（authority = airdrop PDA [b"airdrop"]）
-export const AIRDROP_VAULT = "";
+// Platform fee wallet (controls PLATFORM_FEE_VAULT)
+export const PLATFORM_FEE_WALLET = "F4dQpEz69oQhhsYGiCASbPNAg3XaoGggbHAeuytqZtrm";
 
-// 质押金库账户（authority = staking PDA [b"staking"]）
-export const STAKING_VAULT = "";
-
-// 归属奖金金库（authority = vesting_auth PDA [b"vesting_auth"]）
-// 用于 init_vesting 锁定奖金，由 claim_vested 按天解锁
-export const VESTING_VAULT = "";
+// ─── Pool Params ──────────────────────────────────────────────────────────────
+export const POOL_CONFIG = {
+  [POOL_TYPE.MIN30]:  { label: "30 Min",  duration: 1800,  minDeposit: 500  },
+  [POOL_TYPE.HOURLY]: { label: "1 Hour",  duration: 3600,  minDeposit: 200  },
+  [POOL_TYPE.DAILY]:  { label: "1 Day",   duration: 86400, minDeposit: 100  },
+};
+export const MIN_PARTICIPANTS = 12;
+export const FREE_BET_AMOUNT  = 100; // TPOT
+export const TPOT_DECIMALS    = 9;
+export const TPOT_UNIT        = 1_000_000_000n; // 1 TPOT in raw

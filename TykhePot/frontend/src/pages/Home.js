@@ -60,22 +60,20 @@ const Home = () => {
           <div className="hero-stats animate-slide-up delay-5">
             <div className="stat-item">
               <span className="stat-value">
-                {isLoading ? '...' : `${(stats.totalPool / 1e9).toFixed(2)}M`}
+                {isLoading ? '...' : `${(stats.totalPool || 0).toFixed(2)}`}
               </span>
-              <span className="stat-label">{t('totalPool')}</span>
+              <span className="stat-label">{t('totalPool')} (TPOT)</span>
             </div>
             <div className="stat-divider"></div>
             <div className="stat-item">
-              <span className="stat-value">
-                {isLoading ? '...' : `${(stats.totalBurned / 1e9).toFixed(2)}M`}
-              </span>
-              <span className="stat-label">{t('totalBurned')}</span>
+              <span className="stat-value">12</span>
+              <span className="stat-label">{language === 'en' ? 'Min to Draw' : '最低开奖人数'}</span>
             </div>
             <div className="stat-divider"></div>
             <div className="stat-item">
               <span className="stat-value stat-live">
                 <span className="live-dot"></span>
-                {stats.onlinePlayers || '--'}
+                {isLoading ? '...' : (stats.onlinePlayers || 0)}
               </span>
               <span className="stat-label">{t('onlinePlayers')}</span>
             </div>
