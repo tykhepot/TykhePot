@@ -163,7 +163,9 @@ pub struct ClaimFreeAirdrop<'info> {
     pub user: Account<'info, UserData>,
     #[account(mut)] pub airdrop_vault: Account<'info, TokenAccount>,
     #[account(mut)] pub dest_token: Account<'info, TokenAccount>,
-    pub airdrop_auth: UncheckedAccount<'info>,
+    /// CHECK: airdrop authority PDA — signs CPI transfers from airdrop_vault
+    #[account(seeds = [b"airdrop"], bump)]
+    pub airdrop_auth: AccountInfo<'info>,
     pub user_signer: Signer<'info>,
     pub token_program: Program<'info, Token>,
 }
@@ -839,7 +841,8 @@ pub mod royalpot {
         let user = &mut ctx.accounts.user;
         require!(!user.airdrop_claimed, ErrorCode::AlreadyClaimed);
         
-        let seeds: &[&[&[u8]]] = &[&[b"airdrop"]];
+        let auth_bump = ctx.bumps.airdrop_auth;
+        let seeds: &[&[&[u8]]] = &[&[b"airdrop", &[auth_bump]]];
         let cpi_ctx = CpiContext::new_with_signer(
             ctx.accounts.token_program.to_account_info(),
             Transfer {

@@ -81,8 +81,8 @@ pub fn record_profit(
         airdrop_state.participant_count += 1;
     }
     
-    // 更新总盈利
-    user_airdrop.total_profit += profit_amount;
+    // 更新总盈利（saturating_add 防止溢出 abort）
+    user_airdrop.total_profit = user_airdrop.total_profit.saturating_add(profit_amount);
     
     // 计算可领取空投（10倍盈利，最高10000 TPOT）
     let calculated_airdrop = user_airdrop.total_profit
