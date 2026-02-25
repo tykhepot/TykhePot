@@ -65,12 +65,15 @@ pub struct UserData {
     pub has_ref_bonus: bool,
     pub airdrop_claimed: bool,
     pub total_deposit: u64,
+    /// Set to true after claim_free_airdrop; cleared after use_free_bet_daily.
+    pub free_bet_available: bool,
 }
 
 impl UserData {
-    // 32 (owner) + 8*3 (tickets,last_time,total_deposit) + 8 (daily_tickets) +
-    // 33 (Option<Pubkey>) + 1 (has_ref_bonus) + 1 (airdrop_claimed) = 99
-    pub const SIZE: usize = 32 + 8 + 8 + 8 + 33 + 1 + 1 + 8; // 99
+    // 32 (owner) + 8 (hourly_tickets) + 8 (daily_tickets) + 8 (last_time) +
+    // 33 (Option<Pubkey>) + 1 (has_ref_bonus) + 1 (airdrop_claimed) + 8 (total_deposit) +
+    // 1 (free_bet_available) = 100
+    pub const SIZE: usize = 32 + 8 + 8 + 8 + 33 + 1 + 1 + 8 + 1; // 100
 }
 
 /// Records a prize that vests linearly over VESTING_DAYS days (5% per day).
@@ -157,12 +160,32 @@ pub struct DepositDaily<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+/// Registers the user for a free 100-TPOT bet. No tokens move here.
+/// Call use_free_bet_daily afterwards to place the bet into the daily pool.
 #[derive(Accounts)]
 pub struct ClaimFreeAirdrop<'info> {
+    #[account(
+        init_if_needed,
+        payer = user_signer,
+        space = 8 + UserData::SIZE,
+        seeds = [b"user", user_signer.key().as_ref()],
+        bump
+    )]
+    pub user: Account<'info, UserData>,
+    #[account(mut)] pub user_signer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Use the free 100-TPOT bet: transfers from airdrop_vault directly to daily_pool_vault.
+/// Requires free_bet_available == true (set by claim_free_airdrop).
+#[derive(Accounts)]
+pub struct UseFreeBetDaily<'info> {
+    #[account(mut, seeds = [b"state"], bump = state.bump)]
+    pub state: Account<'info, State>,
     #[account(mut, seeds = [b"user", user_signer.key().as_ref()], bump)]
     pub user: Account<'info, UserData>,
     #[account(mut)] pub airdrop_vault: Account<'info, TokenAccount>,
-    #[account(mut)] pub dest_token: Account<'info, TokenAccount>,
+    #[account(mut)] pub daily_pool_vault: Account<'info, TokenAccount>,
     /// CHECK: airdrop authority PDA — signs CPI transfers from airdrop_vault
     #[account(seeds = [b"airdrop"], bump)]
     pub airdrop_auth: AccountInfo<'info>,
@@ -395,6 +418,7 @@ pub enum ErrorCode {
     #[msg("Pause timelock has not expired yet")] PauseTimelockNotExpired,
     #[msg("Nothing to claim yet")] NothingToClaim,
     #[msg("All vesting already claimed")] VestingFullyClaimed,
+    #[msg("Free bet not available; call claim_free_airdrop first")] FreeBetNotAvailable,
 }
 
 #[program]
@@ -837,24 +861,61 @@ pub mod royalpot {
         Ok(())
     }
 
+    /// Register the caller for a free 100-TPOT daily-pool bet.
+    /// No tokens move here. Call use_free_bet_daily to place the bet.
     pub fn claim_free_airdrop(ctx: Context<ClaimFreeAirdrop>) -> Result<()> {
         let user = &mut ctx.accounts.user;
         require!(!user.airdrop_claimed, ErrorCode::AlreadyClaimed);
-        
+
+        // Initialise owner when account is newly created
+        if user.owner == Pubkey::default() {
+            user.owner = ctx.accounts.user_signer.key();
+        }
+
+        user.airdrop_claimed = true;
+        user.free_bet_available = true;
+        Ok(())
+    }
+
+    /// Place the free 100-TPOT bet into the daily pool on behalf of the user.
+    /// Transfers FREE_AIRDROP from airdrop_vault → daily_pool_vault and
+    /// credits 100 daily tickets to the user. Clears free_bet_available.
+    pub fn use_free_bet_daily(ctx: Context<UseFreeBetDaily>) -> Result<()> {
+        let clock = Clock::get()?;
+        let state = &mut ctx.accounts.state;
+        let user = &mut ctx.accounts.user;
+
+        require!(!state.paused, ErrorCode::ContractPaused);
+        require!(user.free_bet_available, ErrorCode::FreeBetNotAvailable);
+
+        // Respect the daily-pool lock window
+        let time_since_last_draw = clock.unix_timestamp - state.last_daily_draw;
+        require!(
+            time_since_last_draw < 86400 - LOCK_PERIOD || time_since_last_draw >= 86400,
+            ErrorCode::PoolLocked
+        );
+
+        // Transfer 100 TPOT: airdrop_vault → daily_pool_vault, signed by [b"airdrop"] PDA
         let auth_bump = ctx.bumps.airdrop_auth;
         let seeds: &[&[&[u8]]] = &[&[b"airdrop", &[auth_bump]]];
-        let cpi_ctx = CpiContext::new_with_signer(
-            ctx.accounts.token_program.to_account_info(),
-            Transfer {
-                from: ctx.accounts.airdrop_vault.to_account_info(),
-                to: ctx.accounts.dest_token.to_account_info(),
-                authority: ctx.accounts.airdrop_auth.to_account_info(),
-            },
-            seeds,
-        );
-        token::transfer(cpi_ctx, FREE_AIRDROP)?;
-        
-        user.airdrop_claimed = true;
+        token::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.airdrop_vault.to_account_info(),
+                    to: ctx.accounts.daily_pool_vault.to_account_info(),
+                    authority: ctx.accounts.airdrop_auth.to_account_info(),
+                },
+                seeds,
+            ),
+            FREE_AIRDROP,
+        )?;
+
+        state.daily_pool = state.daily_pool.saturating_add(FREE_AIRDROP);
+        state.daily_players += 1;
+        user.daily_tickets += FREE_AIRDROP / 1_000_000_000; // 100 TPOT → 100 tickets
+        user.free_bet_available = false;
+
         Ok(())
     }
 
