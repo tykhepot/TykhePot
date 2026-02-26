@@ -1,9 +1,13 @@
 /**
- * TykhePot SDK v2 — No-admin, permissionless architecture
+ * TykhePot SDK v3 — No-admin, permissionless multi-winner architecture
  *
  * Pool types: 0 = 30min, 1 = hourly, 2 = daily
  * All draws are permissionless (anyone can trigger after round_end_time).
- * Winner selected by equal probability: seed % participant_count.
+ * Winner selection via partial Fisher-Yates (11 distinct winners from N participants).
+ * Top prizes (1st/2nd/3rd) vest over 20 days at 5%/day via claim_prize_vesting.
+ * Lucky (×5) and Universal prizes paid immediately on draw.
+ * Free bet: DAILY POOL ONLY. Reserve matching: DAILY POOL ONLY (1:1).
+ * Referral: 8% from referral_vault when referrer token account passed in remaining_accounts.
  */
 
 import * as anchor from "@coral-xyz/anchor";
@@ -23,12 +27,15 @@ import {
   POOL_DAILY_VAULT,
   AIRDROP_VAULT,
   PLATFORM_FEE_VAULT,
+  REFERRAL_VAULT,
+  RESERVE_VAULT,
+  PRIZE_ESCROW_VAULT,
   TPOT_DECIMALS,
 } from "../config/contract";
 
 // ─── IDL ─────────────────────────────────────────────────────────────────────
 const IDL = {
-  version: "0.1.0",
+  version: "0.2.0",
   name: "royalpot",
   instructions: [
     {
@@ -40,7 +47,12 @@ const IDL = {
         { name: "airdropVault", isMut: false, isSigner: false },
         { name: "systemProgram",isMut: false, isSigner: false },
       ],
-      args: [{ name: "platformFeeVault", type: "publicKey" }],
+      args: [
+        { name: "platformFeeVault", type: "publicKey" },
+        { name: "referralVault",    type: "publicKey" },
+        { name: "reserveVault",     type: "publicKey" },
+        { name: "prizeEscrowVault", type: "publicKey" },
+      ],
     },
     {
       name: "initializePool",
@@ -63,9 +75,13 @@ const IDL = {
         { name: "userDeposit",       isMut: true,  isSigner: false },
         { name: "userTokenAccount",  isMut: true,  isSigner: false },
         { name: "poolVault",         isMut: true,  isSigner: false },
+        { name: "globalState",       isMut: false, isSigner: false },
+        { name: "reserveVault",      isMut: true,  isSigner: false },
+        { name: "referralVault",     isMut: true,  isSigner: false },
         { name: "tokenProgram",      isMut: false, isSigner: false },
         { name: "systemProgram",     isMut: false, isSigner: false },
       ],
+      // remaining_accounts[0] (optional, mut): referrer's token account
       args: [{ name: "amount", type: "u64" }],
     },
     {
@@ -86,15 +102,43 @@ const IDL = {
     {
       name: "executeDraw",
       accounts: [
-        { name: "caller",         isMut: true,  isSigner: true  },
-        { name: "poolState",      isMut: true,  isSigner: false },
-        { name: "poolVault",      isMut: true,  isSigner: false },
-        { name: "tokenMint",      isMut: true,  isSigner: false },
-        { name: "platformVault",  isMut: true,  isSigner: false },
-        { name: "globalState",    isMut: false, isSigner: false },
-        { name: "tokenProgram",   isMut: false, isSigner: false },
+        { name: "caller",            isMut: true,  isSigner: true  },
+        { name: "poolState",         isMut: true,  isSigner: false },
+        { name: "poolVault",         isMut: true,  isSigner: false },
+        { name: "tokenMint",         isMut: true,  isSigner: false },
+        { name: "platformVault",     isMut: true,  isSigner: false },
+        { name: "prizeEscrowVault",  isMut: true,  isSigner: false },
+        { name: "globalState",       isMut: false, isSigner: false },
+        { name: "drawResult",        isMut: true,  isSigner: false },
+        { name: "tokenProgram",      isMut: false, isSigner: false },
+        { name: "systemProgram",     isMut: false, isSigner: false },
       ],
+      // remaining_accounts: (user_deposit_pda, user_token_account) × regular_count
+      //                   + (free_deposit_pda, user_token_account)  × free_count
       args: [{ name: "drawSeed", type: { array: ["u8", 32] } }],
+    },
+    {
+      name: "executeRefund",
+      accounts: [
+        { name: "caller",       isMut: false, isSigner: true  },
+        { name: "poolState",    isMut: true,  isSigner: false },
+        { name: "poolVault",    isMut: true,  isSigner: false },
+        { name: "tokenProgram", isMut: false, isSigner: false },
+      ],
+      // remaining_accounts: (user_deposit_pda, user_token_account) × regular_count
+      args: [],
+    },
+    {
+      name: "claimPrizeVesting",
+      accounts: [
+        { name: "caller",              isMut: false, isSigner: true  },
+        { name: "drawResult",          isMut: true,  isSigner: false },
+        { name: "globalState",         isMut: false, isSigner: false },
+        { name: "prizeEscrowVault",    isMut: true,  isSigner: false },
+        { name: "winnerTokenAccount",  isMut: true,  isSigner: false },
+        { name: "tokenProgram",        isMut: false, isSigner: false },
+      ],
+      args: [{ name: "winnerIndex", type: "u8" }],
     },
     {
       name: "claimFreeAirdrop",
@@ -204,10 +248,13 @@ const IDL = {
       type: {
         kind: "struct",
         fields: [
-          { name: "tokenMint",       type: "publicKey" },
-          { name: "platformFeeVault",type: "publicKey" },
-          { name: "airdropVault",    type: "publicKey" },
-          { name: "bump",            type: "u8"        },
+          { name: "tokenMint",        type: "publicKey" },
+          { name: "platformFeeVault", type: "publicKey" },
+          { name: "airdropVault",     type: "publicKey" },
+          { name: "referralVault",    type: "publicKey" },
+          { name: "reserveVault",     type: "publicKey" },
+          { name: "prizeEscrowVault", type: "publicKey" },
+          { name: "bump",             type: "u8"        },
         ],
       },
     },
@@ -216,16 +263,17 @@ const IDL = {
       type: {
         kind: "struct",
         fields: [
-          { name: "poolType",      type: "u8"  },
-          { name: "roundNumber",   type: "u64" },
-          { name: "roundStartTime",type: "i64" },
-          { name: "roundEndTime",  type: "i64" },
-          { name: "totalDeposited",type: "u64" },
-          { name: "freeBetTotal",  type: "u64" },
-          { name: "regularCount",  type: "u32" },
-          { name: "freeCount",     type: "u32" },
-          { name: "vault",         type: "publicKey" },
-          { name: "bump",          type: "u8"  },
+          { name: "poolType",       type: "u8"  },
+          { name: "roundNumber",    type: "u64" },
+          { name: "roundStartTime", type: "i64" },
+          { name: "roundEndTime",   type: "i64" },
+          { name: "totalDeposited", type: "u64" },
+          { name: "freeBetTotal",   type: "u64" },
+          { name: "regularCount",   type: "u32" },
+          { name: "freeCount",      type: "u32" },
+          { name: "vault",          type: "publicKey" },
+          { name: "rollover",       type: "u64" },
+          { name: "bump",           type: "u8"  },
         ],
       },
     },
@@ -260,9 +308,28 @@ const IDL = {
       type: {
         kind: "struct",
         fields: [
-          { name: "user",              type: "publicKey" },
-          { name: "freeBetAvailable",  type: "bool"      },
-          { name: "bump",              type: "u8"        },
+          { name: "user",             type: "publicKey" },
+          { name: "freeBetAvailable", type: "bool"      },
+          { name: "bump",             type: "u8"        },
+        ],
+      },
+    },
+    {
+      // Created during execute_draw. Tracks top-prize vesting for one round.
+      // top_winners[0]    = 1st prize (30%)
+      // top_winners[1..2] = 2nd prize (10% each)
+      // top_winners[3..5] = 3rd prize (5% each)
+      name: "DrawResult",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "poolType",      type: "u8"  },
+          { name: "roundNumber",   type: "u64" },
+          { name: "topWinners",    type: { array: ["publicKey", 6] } },
+          { name: "topAmounts",    type: { array: ["u64", 6] } },
+          { name: "topClaimed",    type: { array: ["u64", 6] } },
+          { name: "drawTimestamp", type: "i64" },
+          { name: "bump",         type: "u8"  },
         ],
       },
     },
@@ -295,21 +362,36 @@ const IDL = {
     { code: 6012, name: "PlatformVaultMismatch"    },
     { code: 6013, name: "AirdropVaultMismatch"     },
     { code: 6014, name: "MintMismatch"             },
+    { code: 6015, name: "ShouldUseDraw"            },
+    { code: 6016, name: "ShouldUseRefund"          },
+    { code: 6017, name: "FreeBetDailyOnly"         },
+    { code: 6018, name: "PrizeEscrowMismatch"      },
+    { code: 6019, name: "ReferralVaultMismatch"    },
+    { code: 6020, name: "ReserveVaultMismatch"     },
+    { code: 6021, name: "AlreadyFullyClaimed"      },
+    { code: 6022, name: "InvalidWinnerIndex"       },
+    { code: 6023, name: "WinnerTokenMismatch"      },
   ],
   events: [
     {
+      // Multi-winner draw event
       name: "DrawExecuted",
       fields: [
-        { name: "poolType",        type: "u8",          index: false },
-        { name: "roundNumber",     type: "u64",         index: false },
-        { name: "winner",          type: "publicKey",   index: false },
-        { name: "prizeAmount",     type: "u64",         index: false },
-        { name: "burnAmount",      type: "u64",         index: false },
-        { name: "platformAmount",  type: "u64",         index: false },
-        { name: "totalPool",       type: "u64",         index: false },
-        { name: "participantCount",type: "u32",         index: false },
-        { name: "drawSeed",        type: { array: ["u8", 32] }, index: false },
-        { name: "timestamp",       type: "i64",         index: false },
+        { name: "poolType",            type: "u8",                    index: false },
+        { name: "roundNumber",         type: "u64",                   index: false },
+        { name: "totalPool",           type: "u64",                   index: false },
+        { name: "participantCount",    type: "u32",                   index: false },
+        { name: "topWinners",          type: { array: ["publicKey", 6] }, index: false },
+        { name: "topAmounts",          type: { array: ["u64", 6] },   index: false },
+        { name: "luckyWinners",        type: { array: ["publicKey", 5] }, index: false },
+        { name: "luckyAmountEach",     type: "u64",                   index: false },
+        { name: "universalCount",      type: "u32",                   index: false },
+        { name: "universalAmountEach", type: "u64",                   index: false },
+        { name: "burnAmount",          type: "u64",                   index: false },
+        { name: "platformAmount",      type: "u64",                   index: false },
+        { name: "rolloverAmount",      type: "u64",                   index: false },
+        { name: "drawSeed",            type: { array: ["u8", 32] },   index: false },
+        { name: "timestamp",           type: "i64",                   index: false },
       ],
     },
     {
@@ -321,6 +403,38 @@ const IDL = {
         { name: "freeCarriedOver", type: "u32", index: false },
         { name: "totalRefunded",   type: "u64", index: false },
         { name: "timestamp",       type: "i64", index: false },
+      ],
+    },
+    {
+      name: "Deposited",
+      fields: [
+        { name: "poolType",    type: "u8",        index: false },
+        { name: "roundNumber", type: "u64",        index: false },
+        { name: "user",        type: "publicKey",  index: false },
+        { name: "amount",      type: "u64",        index: false },
+        { name: "matched",     type: "u64",        index: false }, // reserve match (0 if non-daily)
+        { name: "timestamp",   type: "i64",        index: false },
+      ],
+    },
+    {
+      name: "FreeBetActivated",
+      fields: [
+        { name: "poolType",  type: "u8",       index: false },
+        { name: "user",      type: "publicKey", index: false },
+        { name: "timestamp", type: "i64",       index: false },
+      ],
+    },
+    {
+      name: "PrizeVestingClaimed",
+      fields: [
+        { name: "poolType",     type: "u8",       index: false },
+        { name: "roundNumber",  type: "u64",       index: false },
+        { name: "winnerIndex",  type: "u8",        index: false },
+        { name: "winner",       type: "publicKey", index: false },
+        { name: "claimedAmount",type: "u64",       index: false },
+        { name: "totalClaimed", type: "u64",       index: false },
+        { name: "totalPrize",   type: "u64",       index: false },
+        { name: "timestamp",    type: "i64",       index: false },
       ],
     },
   ],
@@ -364,6 +478,15 @@ export function getFreeDepositPda(poolType, userPubkey) {
 export function getAirdropClaimPda(userPubkey) {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("airdrop_claim"), userPubkey.toBuffer()],
+    PROGRAM
+  );
+}
+
+export function getDrawResultPda(poolType, roundNumber) {
+  const rnBuf = Buffer.alloc(8);
+  rnBuf.writeBigUInt64LE(BigInt(roundNumber));
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("draw_result"), Buffer.from([poolType]), rnBuf],
     PROGRAM
   );
 }
@@ -460,6 +583,15 @@ export default class TykhePotSDK {
     }
   }
 
+  async getDrawResult(poolType, roundNumber) {
+    const [pda] = getDrawResultPda(poolType, roundNumber);
+    try {
+      return await this.program.account.drawResult.fetch(pda);
+    } catch {
+      return null;
+    }
+  }
+
   // ── Pool statistics (used by AppContext) ────────────────────────────────────
 
   async getAllPoolStats() {
@@ -472,13 +604,18 @@ export default class TykhePotSDK {
     const fmt = (s) =>
       s
         ? {
-            roundNumber:    s.roundNumber.toNumber(),
-            roundEndTime:   s.roundEndTime.toNumber() * 1000, // ms for JS Date
-            totalDeposited: toTpot(s.totalDeposited.toNumber()),
-            freeBetTotal:   toTpot(s.freeBetTotal.toNumber()),
-            totalPool:      toTpot(s.totalDeposited.toNumber() + s.freeBetTotal.toNumber()),
-            regularCount:   s.regularCount,
-            freeCount:      s.freeCount,
+            roundNumber:      s.roundNumber.toNumber(),
+            roundEndTime:     s.roundEndTime.toNumber() * 1000, // ms for JS Date
+            totalDeposited:   toTpot(s.totalDeposited.toNumber()),
+            freeBetTotal:     toTpot(s.freeBetTotal.toNumber()),
+            rollover:         toTpot(s.rollover.toNumber()),
+            totalPool:        toTpot(
+                                s.totalDeposited.toNumber() +
+                                s.freeBetTotal.toNumber() +
+                                s.rollover.toNumber()
+                              ),
+            regularCount:     s.regularCount,
+            freeCount:        s.freeCount,
             participantCount: s.regularCount + s.freeCount,
           }
         : null;
@@ -525,21 +662,30 @@ export default class TykhePotSDK {
   }
 
   // ── Write: deposit ───────────────────────────────────────────────────────────
+  //
+  // referrerTokenAccount (optional PublicKey): when provided, 8% of deposit
+  // amount is paid from referral_vault to this address.
 
-  async deposit(poolType, amountTpot) {
+  async deposit(poolType, amountTpot, referrerTokenAccount = null) {
     const user = this.wallet.publicKey;
     if (!user) throw new Error("Wallet not connected");
 
     const pool = await this.getPoolState(poolType);
     if (!pool) throw new Error("Pool not initialized");
 
-    const [poolStatePda]  = getPoolStatePda(poolType);
+    const [poolStatePda]   = getPoolStatePda(poolType);
+    const [globalState]    = getGlobalStatePda();
     const [userDepositPda] = getUserDepositPda(poolType, user, pool.roundNumber.toNumber());
     const userTokenAccount = await getAssociatedTokenAddress(
       new PublicKey(TOKEN_MINT), user
     );
     const poolVaultPubkey = new PublicKey(vaultForPool(poolType));
     const amountBN = toBN(amountTpot);
+
+    // Optional: referrer token account in remaining_accounts triggers 8% bonus
+    const remainingAccounts = referrerTokenAccount
+      ? [{ pubkey: referrerTokenAccount, isWritable: true, isSigner: false }]
+      : [];
 
     const tx = await this.program.methods
       .deposit(amountBN)
@@ -549,9 +695,13 @@ export default class TykhePotSDK {
         userDeposit:      userDepositPda,
         userTokenAccount,
         poolVault:        poolVaultPubkey,
+        globalState,
+        reserveVault:     new PublicKey(RESERVE_VAULT),
+        referralVault:    new PublicKey(REFERRAL_VAULT),
         tokenProgram:     TOKEN_PROGRAM_ID,
         systemProgram:    SystemProgram.programId,
       })
+      .remainingAccounts(remainingAccounts)
       .rpc();
 
     return { success: true, tx };
@@ -577,11 +727,14 @@ export default class TykhePotSDK {
     return { success: true, tx };
   }
 
-  // ── Write: useFreeBet ───────────────────────────────────────────────────────
+  // ── Write: useFreeBet (DAILY POOL ONLY) ─────────────────────────────────────
 
-  async useFreeBet(poolType) {
+  async useFreeBet() {
     const user = this.wallet.publicKey;
     if (!user) throw new Error("Wallet not connected");
+
+    // Free bet enforced to daily pool on-chain
+    const poolType = POOL_TYPE.DAILY;
 
     const [globalState]   = getGlobalStatePda();
     const [poolStatePda]  = getPoolStatePda(poolType);
@@ -607,7 +760,7 @@ export default class TykhePotSDK {
     return { success: true, tx };
   }
 
-  // ── Write: executeDraw (permissionless crank) ────────────────────────────────
+  // ── Write: executeDraw (permissionless crank, ≥12 participants) ──────────────
 
   async executeDraw(poolType) {
     const caller = this.wallet.publicKey;
@@ -621,16 +774,17 @@ export default class TykhePotSDK {
       throw new Error(`Draw time not reached. Wait ${pool.roundEndTime.toNumber() - now}s`);
     }
 
-    const [poolStatePda] = getPoolStatePda(poolType);
-    const [globalState]  = getGlobalStatePda();
+    const roundNumber = pool.roundNumber.toNumber();
+
+    const [poolStatePda]  = getPoolStatePda(poolType);
+    const [globalState]   = getGlobalStatePda();
+    const [drawResult]    = getDrawResultPda(poolType, roundNumber);
     const poolVaultPubkey = new PublicKey(vaultForPool(poolType));
 
-    // ── Build remaining_accounts from on-chain program accounts ────────────
-    // Filter UserDeposit accounts: pool_type matches + round_number matches
-    // Filter FreeDeposit accounts: pool_type matches + is_active = true
+    // Build remaining_accounts from on-chain program accounts
     const remainingAccounts = await this._buildParticipantAccounts(
       poolType,
-      pool.roundNumber.toNumber(),
+      roundNumber,
       pool.regularCount,
       pool.freeCount
     );
@@ -641,12 +795,15 @@ export default class TykhePotSDK {
       .executeDraw(drawSeed)
       .accounts({
         caller,
-        poolState:      poolStatePda,
-        poolVault:      poolVaultPubkey,
-        tokenMint:      new PublicKey(TOKEN_MINT),
-        platformVault:  new PublicKey(PLATFORM_FEE_VAULT),
+        poolState:        poolStatePda,
+        poolVault:        poolVaultPubkey,
+        tokenMint:        new PublicKey(TOKEN_MINT),
+        platformVault:    new PublicKey(PLATFORM_FEE_VAULT),
+        prizeEscrowVault: new PublicKey(PRIZE_ESCROW_VAULT),
         globalState,
-        tokenProgram:   TOKEN_PROGRAM_ID,
+        drawResult,
+        tokenProgram:     TOKEN_PROGRAM_ID,
+        systemProgram:    SystemProgram.programId,
       })
       .remainingAccounts(remainingAccounts)
       .rpc();
@@ -654,17 +811,81 @@ export default class TykhePotSDK {
     return { success: true, tx };
   }
 
-  // ── Build remaining_accounts for executeDraw ─────────────────────────────
+  // ── Write: executeRefund (permissionless crank, <12 participants) ─────────────
+
+  async executeRefund(poolType) {
+    const caller = this.wallet.publicKey;
+    if (!caller) throw new Error("Wallet not connected");
+
+    const pool = await this.getPoolState(poolType);
+    if (!pool) throw new Error("Pool not initialized");
+
+    const now = Math.floor(Date.now() / 1000);
+    if (now < pool.roundEndTime.toNumber()) {
+      throw new Error(`Refund time not reached. Wait ${pool.roundEndTime.toNumber() - now}s`);
+    }
+
+    const [poolStatePda]  = getPoolStatePda(poolType);
+    const poolVaultPubkey = new PublicKey(vaultForPool(poolType));
+
+    // Refund only needs regular depositors (free bets carry over automatically)
+    const remainingAccounts = await this._buildParticipantAccounts(
+      poolType,
+      pool.roundNumber.toNumber(),
+      pool.regularCount,
+      0 // no free accounts needed for refund
+    );
+
+    const tx = await this.program.methods
+      .executeRefund()
+      .accounts({
+        caller,
+        poolState:    poolStatePda,
+        poolVault:    poolVaultPubkey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .remainingAccounts(remainingAccounts)
+      .rpc();
+
+    return { success: true, tx };
+  }
+
+  // ── Write: claimPrizeVesting (permissionless — call daily for each top winner) ─
+
+  async claimPrizeVesting(poolType, roundNumber, winnerIndex, winnerTokenAccountPubkey) {
+    const caller = this.wallet.publicKey;
+    if (!caller) throw new Error("Wallet not connected");
+
+    const [drawResult]  = getDrawResultPda(poolType, roundNumber);
+    const [globalState] = getGlobalStatePda();
+
+    const tx = await this.program.methods
+      .claimPrizeVesting(winnerIndex)
+      .accounts({
+        caller,
+        drawResult,
+        globalState,
+        prizeEscrowVault: new PublicKey(PRIZE_ESCROW_VAULT),
+        winnerTokenAccount: winnerTokenAccountPubkey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    return { success: true, tx };
+  }
+
+  // ── Build remaining_accounts for executeDraw / executeRefund ─────────────────
 
   async _buildParticipantAccounts(poolType, roundNumber, regularCount, freeCount) {
     const remaining = [];
 
     if (regularCount > 0) {
       // Fetch all UserDeposit PDAs for this pool+round
+      // UserDeposit layout: disc(8) + user(32) + pool_type(1) + round_number(8) + amount(8) + bump(1) + pad(7) = 65
       const accounts = await this.connection.getProgramAccounts(PROGRAM, {
         commitment: "confirmed",
         filters: [
-          { dataSize: 8 + 32 + 1 + 8 + 8 + 1 + 7 }, // UserDeposit size
+          { dataSize: 8 + 32 + 1 + 8 + 8 + 1 + 7 }, // 65 bytes
           // pool_type at offset 40 (8 disc + 32 user)
           { memcmp: { offset: 40, bytes: Buffer.from([poolType]).toString("base64") } },
         ],
@@ -675,7 +896,7 @@ export default class TykhePotSDK {
 
       for (const { pubkey, account } of accounts) {
         const data = account.data;
-        // roundNumber starts at offset 41 (8 disc + 32 user + 1 pool_type)
+        // round_number at offset 41 (8 disc + 32 user + 1 pool_type)
         const roundInAccount = data.readBigUInt64LE(41);
         if (roundInAccount !== BigInt(roundNumber)) continue;
 
@@ -692,10 +913,11 @@ export default class TykhePotSDK {
 
     if (freeCount > 0) {
       // Fetch all active FreeDeposit PDAs for this pool
+      // FreeDeposit layout: disc(8) + user(32) + pool_type(1) + is_active(1) + amount(8) + bump(1) + pad(7) = 58
       const accounts = await this.connection.getProgramAccounts(PROGRAM, {
         commitment: "confirmed",
         filters: [
-          { dataSize: 8 + 32 + 1 + 1 + 8 + 1 + 7 }, // FreeDeposit size
+          { dataSize: 8 + 32 + 1 + 1 + 8 + 1 + 7 }, // 58 bytes
           { memcmp: { offset: 40, bytes: Buffer.from([poolType]).toString("base64") } },
           // is_active at offset 41 = 0x01
           { memcmp: { offset: 41, bytes: Buffer.from([1]).toString("base64") } },

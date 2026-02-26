@@ -31,6 +31,15 @@ export const AIRDROP_VAULT     = "";
 // Wallet: F4dQpEz69oQhhsYGiCASbPNAg3XaoGggbHAeuytqZtrm
 export const PLATFORM_FEE_VAULT = "";
 
+// Referral rewards source (authority = GlobalState PDA)
+export const REFERRAL_VAULT = "";
+
+// Daily 1:1 deposit matching source (authority = GlobalState PDA)
+export const RESERVE_VAULT = "";
+
+// Top-prize escrow — holds 1st/2nd/3rd prizes until vested (authority = GlobalState PDA)
+export const PRIZE_ESCROW_VAULT = "";
+
 // Staking / vesting vaults (unchanged from old deploy)
 export const STAKING_VAULT = "5CAwNZje1nyPRAKiLfPhsUAjNQu52Ymvzdo1iXBfatNt";
 export const VESTING_VAULT = "939dBwYK6epmmUTAmYAco9cnCp3Vxa8MV27HBDmd3JYR";
