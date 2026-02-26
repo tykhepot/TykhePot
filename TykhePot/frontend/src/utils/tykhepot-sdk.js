@@ -7,7 +7,10 @@
  * Top prizes (1st/2nd/3rd) vest over 20 days at 5%/day via claim_prize_vesting.
  * Lucky (×5) and Universal prizes paid immediately on draw.
  * Free bet: DAILY POOL ONLY. Reserve matching: DAILY POOL ONLY (1:1).
- * Referral: 8% from referral_vault when referrer token account passed in remaining_accounts.
+ * Referral: 8% from referral_vault, paid AFTER successful draw via claim_referral().
+ *   - On deposit: referrer's token account pubkey is stored in UserDeposit.referrer.
+ *   - On draw: cron calls claimReferral() for each deposit with a non-default referrer.
+ *   - On refund: no referral paid (referrer field remains set but no DrawResult exists).
  */
 
 import * as anchor from "@coral-xyz/anchor";
@@ -77,11 +80,11 @@ const IDL = {
         { name: "poolVault",         isMut: true,  isSigner: false },
         { name: "globalState",       isMut: false, isSigner: false },
         { name: "reserveVault",      isMut: true,  isSigner: false },
-        { name: "referralVault",     isMut: true,  isSigner: false },
         { name: "tokenProgram",      isMut: false, isSigner: false },
         { name: "systemProgram",     isMut: false, isSigner: false },
       ],
-      // remaining_accounts[0] (optional, mut): referrer's token account
+      // remaining_accounts[0] (optional, read-only): referrer's token account pubkey.
+      // Stored in UserDeposit.referrer for deferred 8% payout via claimReferral().
       args: [{ name: "amount", type: "u64" }],
     },
     {
@@ -148,6 +151,25 @@ const IDL = {
         { name: "systemProgram", isMut: false, isSigner: false },
       ],
       args: [],
+    },
+    {
+      // Permissionless — cron calls this after successful draw for each deposit with a referrer.
+      // Pays 8% of deposit.amount from referral_vault to the stored referrer token account.
+      // Clears deposit.referrer to prevent double-claim.
+      name: "claimReferral",
+      accounts: [
+        { name: "caller",                isMut: false, isSigner: true  },
+        { name: "drawResult",            isMut: false, isSigner: false },
+        { name: "userDeposit",           isMut: true,  isSigner: false },
+        { name: "globalState",           isMut: false, isSigner: false },
+        { name: "referralVault",         isMut: true,  isSigner: false },
+        { name: "referrerTokenAccount",  isMut: true,  isSigner: false },
+        { name: "tokenProgram",          isMut: false, isSigner: false },
+      ],
+      args: [
+        { name: "poolType",    type: "u8"  },
+        { name: "roundNumber", type: "u64" },
+      ],
     },
     // ── Staking ──────────────────────────────────────────────────────────────
     {
@@ -286,6 +308,8 @@ const IDL = {
           { name: "poolType",    type: "u8"        },
           { name: "roundNumber", type: "u64"       },
           { name: "amount",      type: "u64"       },
+          // Pubkey::default() = no referrer. Cleared after claimReferral() pays out.
+          { name: "referrer",    type: "publicKey" },
           { name: "bump",        type: "u8"        },
         ],
       },
@@ -299,6 +323,8 @@ const IDL = {
           { name: "poolType", type: "u8"        },
           { name: "isActive", type: "bool"      },
           { name: "amount",   type: "u64"       },
+          // Always Pubkey::default() — free bets carry no referral obligation.
+          { name: "referrer", type: "publicKey" },
           { name: "bump",     type: "u8"        },
         ],
       },
@@ -371,6 +397,8 @@ const IDL = {
     { code: 6021, name: "AlreadyFullyClaimed"      },
     { code: 6022, name: "InvalidWinnerIndex"       },
     { code: 6023, name: "WinnerTokenMismatch"      },
+    { code: 6024, name: "NoReferral"               },
+    { code: 6025, name: "ReferrerMismatch"         },
   ],
   events: [
     {
@@ -663,8 +691,9 @@ export default class TykhePotSDK {
 
   // ── Write: deposit ───────────────────────────────────────────────────────────
   //
-  // referrerTokenAccount (optional PublicKey): when provided, 8% of deposit
-  // amount is paid from referral_vault to this address.
+  // referrerTokenAccount (optional PublicKey): when provided, stored in
+  // UserDeposit.referrer. The 8% referral is paid AFTER a successful draw
+  // via claimReferral() — NOT at deposit time.
 
   async deposit(poolType, amountTpot, referrerTokenAccount = null) {
     const user = this.wallet.publicKey;
@@ -682,9 +711,9 @@ export default class TykhePotSDK {
     const poolVaultPubkey = new PublicKey(vaultForPool(poolType));
     const amountBN = toBN(amountTpot);
 
-    // Optional: referrer token account in remaining_accounts triggers 8% bonus
+    // Optional: referrer's token account pubkey is stored on-chain for deferred payout
     const remainingAccounts = referrerTokenAccount
-      ? [{ pubkey: referrerTokenAccount, isWritable: true, isSigner: false }]
+      ? [{ pubkey: referrerTokenAccount, isWritable: false, isSigner: false }]
       : [];
 
     const tx = await this.program.methods
@@ -697,7 +726,6 @@ export default class TykhePotSDK {
         poolVault:        poolVaultPubkey,
         globalState,
         reserveVault:     new PublicKey(RESERVE_VAULT),
-        referralVault:    new PublicKey(REFERRAL_VAULT),
         tokenProgram:     TOKEN_PROGRAM_ID,
         systemProgram:    SystemProgram.programId,
       })
@@ -874,6 +902,36 @@ export default class TykhePotSDK {
     return { success: true, tx };
   }
 
+  // ── Write: claimReferral (permissionless — call after executeDraw for each referral) ─
+  //
+  // poolType      — pool type of the round
+  // roundNumber   — round that was successfully drawn
+  // userDepositPubkey — the UserDeposit PDA address for the participant
+  // referrerTokenAccountPubkey — must match the pubkey stored in UserDeposit.referrer
+
+  async claimReferral(poolType, roundNumber, userDepositPubkey, referrerTokenAccountPubkey) {
+    const caller = this.wallet.publicKey;
+    if (!caller) throw new Error("Wallet not connected");
+
+    const [drawResult]  = getDrawResultPda(poolType, roundNumber);
+    const [globalState] = getGlobalStatePda();
+
+    const tx = await this.program.methods
+      .claimReferral(poolType, new BN(roundNumber))
+      .accounts({
+        caller,
+        drawResult,
+        userDeposit:          userDepositPubkey,
+        globalState,
+        referralVault:        new PublicKey(REFERRAL_VAULT),
+        referrerTokenAccount: referrerTokenAccountPubkey,
+        tokenProgram:         TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    return { success: true, tx };
+  }
+
   // ── Build remaining_accounts for executeDraw / executeRefund ─────────────────
 
   async _buildParticipantAccounts(poolType, roundNumber, regularCount, freeCount) {
@@ -881,11 +939,11 @@ export default class TykhePotSDK {
 
     if (regularCount > 0) {
       // Fetch all UserDeposit PDAs for this pool+round
-      // UserDeposit layout: disc(8) + user(32) + pool_type(1) + round_number(8) + amount(8) + bump(1) + pad(7) = 65
+      // UserDeposit layout: disc(8)+user(32)+pool_type(1)+round(8)+amount(8)+referrer(32)+bump(1)+pad(6) = 96
       const accounts = await this.connection.getProgramAccounts(PROGRAM, {
         commitment: "confirmed",
         filters: [
-          { dataSize: 8 + 32 + 1 + 8 + 8 + 1 + 7 }, // 65 bytes
+          { dataSize: 8 + 32 + 1 + 8 + 8 + 32 + 1 + 6 }, // 96 bytes
           // pool_type at offset 40 (8 disc + 32 user)
           { memcmp: { offset: 40, bytes: Buffer.from([poolType]).toString("base64") } },
         ],
@@ -913,11 +971,11 @@ export default class TykhePotSDK {
 
     if (freeCount > 0) {
       // Fetch all active FreeDeposit PDAs for this pool
-      // FreeDeposit layout: disc(8) + user(32) + pool_type(1) + is_active(1) + amount(8) + bump(1) + pad(7) = 58
+      // FreeDeposit layout: disc(8)+user(32)+pool_type(1)+is_active(1)+amount(8)+referrer(32)+bump(1)+pad(7) = 90
       const accounts = await this.connection.getProgramAccounts(PROGRAM, {
         commitment: "confirmed",
         filters: [
-          { dataSize: 8 + 32 + 1 + 1 + 8 + 1 + 7 }, // 58 bytes
+          { dataSize: 8 + 32 + 1 + 1 + 8 + 32 + 1 + 7 }, // 90 bytes
           { memcmp: { offset: 40, bytes: Buffer.from([poolType]).toString("base64") } },
           // is_active at offset 41 = 0x01
           { memcmp: { offset: 41, bytes: Buffer.from([1]).toString("base64") } },

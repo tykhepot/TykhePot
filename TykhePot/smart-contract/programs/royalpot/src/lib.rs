@@ -50,8 +50,10 @@ pub const GLOBAL_STATE_SIZE: usize = 8 + 192 + 1 + 7;
 // PoolState: disc(8)+pool_type(1)+round_number(8)+start(8)+end(8)+deposited(8)+
 //            free_bet_total(8)+regular_count(4)+free_count(4)+vault(32)+rollover(8)+bump(1)+pad(7)=105
 pub const POOL_STATE_SIZE: usize = 8 + 1 + 8 + 8 + 8 + 8 + 8 + 4 + 4 + 32 + 8 + 1 + 7;
-pub const USER_DEPOSIT_SIZE: usize = 8 + 32 + 1 + 8 + 8 + 1 + 8;
-pub const FREE_DEPOSIT_SIZE: usize = 8 + 32 + 1 + 1 + 8 + 1 + 7;
+// UserDeposit: disc(8)+user(32)+pool_type(1)+round(8)+amount(8)+referrer(32)+bump(1)+pad(6) = 96
+pub const USER_DEPOSIT_SIZE: usize = 8 + 32 + 1 + 8 + 8 + 32 + 1 + 6;
+// FreeDeposit: disc(8)+user(32)+pool_type(1)+is_active(1)+amount(8)+referrer(32)+bump(1)+pad(7) = 90
+pub const FREE_DEPOSIT_SIZE: usize = 8 + 32 + 1 + 1 + 8 + 32 + 1 + 7;
 pub const AIRDROP_CLAIM_SIZE: usize = 8 + 32 + 1 + 1 + 6;
 // DrawResult: disc(8)+pool_type(1)+round(8)+top_winners(192)+top_amounts(48)+
 //             top_claimed(48)+draw_timestamp(8)+bump(1) = 314
@@ -147,17 +149,23 @@ pub struct UserDeposit {
     pub pool_type:    u8,
     pub round_number: u64,
     pub amount:       u64,
+    /// Referrer's token account (Pubkey::default = no referrer).
+    /// Cleared to default once referral has been paid via claim_referral().
+    pub referrer:     Pubkey,
     pub bump:         u8,
-    pub _padding:     [u8; 7],
+    pub _padding:     [u8; 6],
 }
 
 /// Free-bet entry. Persists across refunded rounds (is_active stays true).
+/// is_active byte offset: disc(8)+user(32)+pool_type(1) = 41
 #[account]
 pub struct FreeDeposit {
     pub user:      Pubkey,
     pub pool_type: u8,
     pub is_active: bool,
     pub amount:    u64,
+    /// Always Pubkey::default() — free bets carry no referral obligation.
+    pub referrer:  Pubkey,
     pub bump:      u8,
     pub _padding:  [u8; 7],
 }
@@ -243,6 +251,10 @@ pub enum ErrorCode {
     InvalidWinnerIndex,
     #[msg("Winner token account does not match draw record")]
     WinnerTokenMismatch,
+    #[msg("No referral recorded for this deposit")]
+    NoReferral,
+    #[msg("Referrer token account does not match stored referrer")]
+    ReferrerMismatch,
 }
 
 // ============================================================
@@ -396,7 +408,9 @@ pub mod royalpot {
     /// Regular deposit into a pool for the current round.
     ///
     /// remaining_accounts (optional):
-    ///   [0] referrer's token account (mut) — triggers 8% referral from referral_vault
+    ///   [0] referrer's token account — pubkey is stored in UserDeposit.referrer.
+    ///       Referral (8%) is paid ONLY after a successful draw via claim_referral().
+    ///       No transfer happens at deposit time.
     pub fn deposit<'info>(
         ctx: Context<'_, '_, '_, 'info, Deposit<'info>>,
         amount: u64,
@@ -417,8 +431,15 @@ pub mod royalpot {
         dep.pool_type    = pool.pool_type;
         dep.round_number = pool.round_number;
         dep.amount       = amount;
+        // Store referrer's token account for deferred payout via claim_referral().
+        // Referral is only paid after a successful draw — never on deposit or refund.
+        dep.referrer     = if !ctx.remaining_accounts.is_empty() {
+            ctx.remaining_accounts[0].key()
+        } else {
+            Pubkey::default()
+        };
         dep.bump         = ctx.bumps.user_deposit;
-        dep._padding     = [0u8; 7];
+        dep._padding     = [0u8; 6];
 
         // User → pool vault
         token::transfer(
@@ -466,34 +487,6 @@ pub mod royalpot {
             }
         }
 
-        // ---------------------------------------------------
-        // Referral: 8% to referrer if remaining_accounts supplied
-        // ---------------------------------------------------
-        if !ctx.remaining_accounts.is_empty() {
-            let referrer_tok_acc = &ctx.remaining_accounts[0];
-            let referral_amount = amount
-                .checked_mul(REFERRER_BP).ok_or(ErrorCode::MathOverflow)?
-                .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
-
-            if referral_amount > 0 && ctx.accounts.referral_vault.amount >= referral_amount {
-                let gs_bump = ctx.accounts.global_state.bump;
-                let gs_seeds: &[&[u8]] = &[b"global_state", &[gs_bump]];
-                let signer = &[gs_seeds];
-                token::transfer(
-                    CpiContext::new_with_signer(
-                        ctx.accounts.token_program.to_account_info(),
-                        Transfer {
-                            from:      ctx.accounts.referral_vault.to_account_info(),
-                            to:        referrer_tok_acc.to_account_info(),
-                            authority: ctx.accounts.global_state.to_account_info(),
-                        },
-                        signer,
-                    ),
-                    referral_amount,
-                )?;
-            }
-        }
-
         emit!(Deposited {
             pool_type:    pool.pool_type,
             round_number: pool.round_number,
@@ -528,6 +521,7 @@ pub mod royalpot {
         free_dep.pool_type = pool_type;
         free_dep.is_active = true;
         free_dep.amount    = FREE_BET_AMOUNT;
+        free_dep.referrer  = Pubkey::default(); // free bets carry no referral
         free_dep.bump      = ctx.bumps.free_deposit;
         free_dep._padding  = [0u8; 7];
 
@@ -570,6 +564,9 @@ pub mod royalpot {
     ///     pairs (user_deposit_pda, user_token_account) for regular depositors
     ///   [regular_count*2 .. (regular_count+free_count)*2 - 1]:
     ///     pairs (free_deposit_pda, user_token_account) for free-bet holders
+    ///
+    /// Referral payouts are NOT done here. After a successful draw, the cron
+    /// calls claim_referral() for each deposit that has a non-default referrer.
     ///
     /// Prize flow:
     ///   3% burn · 2% platform · 5% rollover (stays in vault)
@@ -1023,6 +1020,69 @@ pub mod royalpot {
         Ok(())
     }
 
+    /// Pay 8% referral reward to the referrer stored in a deposit PDA.
+    ///
+    /// Permissionless — the protocol cron calls this after every successful draw
+    /// for each deposit that has a non-default referrer.
+    ///
+    /// Security invariants:
+    ///   - draw_result PDA for (pool_type, round_number) must exist (draw was successful)
+    ///   - dep.referrer must be non-default (there is a referrer)
+    ///   - referrer_token_account.key() must match dep.referrer (no spoofing)
+    ///   - dep.referrer is cleared to Pubkey::default() after payment (no double-claim)
+    pub fn claim_referral(
+        ctx: Context<ClaimReferral>,
+        pool_type: u8,
+        round_number: u64,
+    ) -> Result<()> {
+        // Verify draw_result matches the claimed pool/round (draw was successful, not refunded)
+        require!(
+            ctx.accounts.draw_result.pool_type == pool_type,
+            ErrorCode::InvalidParticipant
+        );
+        require!(
+            ctx.accounts.draw_result.round_number == round_number,
+            ErrorCode::WrongRoundNumber
+        );
+
+        let dep = &mut ctx.accounts.user_deposit;
+        require!(dep.pool_type == pool_type, ErrorCode::InvalidParticipant);
+        require!(dep.round_number == round_number, ErrorCode::WrongRoundNumber);
+        require!(dep.referrer != Pubkey::default(), ErrorCode::NoReferral);
+        require!(
+            ctx.accounts.referrer_token_account.key() == dep.referrer,
+            ErrorCode::ReferrerMismatch
+        );
+
+        let referral_amount = dep.amount
+            .checked_mul(REFERRER_BP).ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+
+        if referral_amount > 0
+            && ctx.accounts.referral_vault.amount >= referral_amount
+        {
+            let gs_bump = ctx.accounts.global_state.bump;
+            let gs_seeds: &[&[u8]] = &[b"global_state", &[gs_bump]];
+            let signer = &[gs_seeds];
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from:      ctx.accounts.referral_vault.to_account_info(),
+                        to:        ctx.accounts.referrer_token_account.to_account_info(),
+                        authority: ctx.accounts.global_state.to_account_info(),
+                    },
+                    signer,
+                ),
+                referral_amount,
+            )?;
+        }
+
+        // Clear referrer to prevent double-claim
+        dep.referrer = Pubkey::default();
+        Ok(())
+    }
+
     // ----------------------------------------------------------
     // Staking (delegated)
     // ----------------------------------------------------------
@@ -1249,16 +1309,10 @@ pub struct Deposit<'info> {
     )]
     pub reserve_vault: Account<'info, TokenAccount>,
 
-    /// Referral rewards source. Authority = global_state PDA.
-    #[account(
-        mut,
-        constraint = referral_vault.key() == global_state.referral_vault @ ErrorCode::ReferralVaultMismatch,
-    )]
-    pub referral_vault: Account<'info, TokenAccount>,
-
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
-    // remaining_accounts[0] (optional, mut): referrer's token account
+    // remaining_accounts[0] (optional, read-only): referrer's token account pubkey stored in PDA.
+    // No transfer happens at deposit time — referral is deferred to claim_referral().
 }
 
 #[derive(Accounts)]
@@ -1437,6 +1491,41 @@ pub struct ClaimPrizeVesting<'info> {
     /// Winner's TPOT token account — verified in instruction body
     #[account(mut)]
     pub winner_token_account: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+/// Context for claim_referral().
+/// Permissionless — cron (or anyone) calls this after a successful draw.
+#[derive(Accounts)]
+pub struct ClaimReferral<'info> {
+    pub caller: Signer<'info>,
+
+    /// Proves the round was a successful draw (not a refund).
+    /// Seeds are validated inside the instruction body against pool_type/round_number args.
+    pub draw_result: Account<'info, DrawResult>,
+
+    /// The deposit whose referrer should be paid.
+    /// Validated in instruction body: pool_type, round_number, referrer key.
+    #[account(mut)]
+    pub user_deposit: Account<'info, UserDeposit>,
+
+    #[account(
+        seeds = [b"global_state"],
+        bump = global_state.bump,
+    )]
+    pub global_state: Account<'info, GlobalState>,
+
+    /// Referral rewards vault. Authority = global_state PDA.
+    #[account(
+        mut,
+        constraint = referral_vault.key() == global_state.referral_vault @ ErrorCode::ReferralVaultMismatch,
+    )]
+    pub referral_vault: Account<'info, TokenAccount>,
+
+    /// Must match user_deposit.referrer — verified in instruction body.
+    #[account(mut)]
+    pub referrer_token_account: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
 }
