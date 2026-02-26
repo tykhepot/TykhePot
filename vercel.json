@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "buildCommand": "cd TykhePot/frontend && npm run build",
+  "outputDirectory": "TykhePot/frontend/build",
+  "installCommand": "cd TykhePot/frontend && npm install",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
