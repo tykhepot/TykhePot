@@ -167,44 +167,47 @@ const HourlyPool = () => {
         {/* Prize Distribution */}
         <div className="card card-glass">
           <h2 className="card-title-modern">💰 {t('prizeDistribution')}</h2>
-          <div className="prize-grid">
+
+          {/* Deductions row */}
+          <div className="prize-deductions">
             {[
-              { name: '🥇 1st Prize', percent: '30%', color: '#FFD700' },
-              { name: '🥈 2nd Prize', percent: '20%', color: '#C0C0C0' },
-              { name: '🥉 3rd Prize', percent: '15%', color: '#CD7F32' },
-              { name: '🎁 Lucky Prize', percent: '10%', color: '#8B5CF6' },
-              { name: '🌟 Universal Prize', percent: '20%', color: '#10B981' },
-              { name: '🔄 Roll Over', percent: '5%', color: '#6B7280' },
+              { label: language === 'en' ? '🔥 Burn'    : '🔥 销毁',    pct: '3%', color: '#EF4444' },
+              { label: language === 'en' ? '🏛 Platform' : '🏛 平台',    pct: '2%', color: '#3B82F6' },
+              { label: language === 'en' ? '🔄 Rollover' : '🔄 结转下期', pct: '5%', color: '#8B5CF6' },
+            ].map((d, i) => (
+              <div key={i} className="prize-deduct-chip" style={{ borderColor: d.color + '66', color: d.color }}>
+                {d.label} <strong>{d.pct}</strong>
+              </div>
+            ))}
+          </div>
+
+          {/* Prize rows (% of 90% distribution pool) */}
+          <div className="prize-grid" style={{ marginTop: 'var(--space-4)' }}>
+            {[
+              { name: language === 'en' ? '🥇 1st Prize ×1'         : '🥇 头奖 ×1',        pct: '30%', sub: language === 'en' ? 'vested 20 days'    : '20天归属', color: '#FFD700' },
+              { name: language === 'en' ? '🥈 2nd Prize ×2'         : '🥈 二等奖 ×2',       pct: '10%', sub: language === 'en' ? 'each · vested 20d' : '各10%·20天归属', color: '#C0C0C0' },
+              { name: language === 'en' ? '🥉 3rd Prize ×3'         : '🥉 三等奖 ×3',       pct: '5%',  sub: language === 'en' ? 'each · vested 20d' : '各5%·20天归属',  color: '#CD7F32' },
+              { name: language === 'en' ? '🍀 Lucky ×5'             : '🍀 幸运奖 ×5',       pct: '2%',  sub: language === 'en' ? 'each · instant'    : '各2%·即时到账',  color: '#4ADE80' },
+              { name: language === 'en' ? '🎁 Universal (÷ others)' : '🎁 普惠奖 ÷ 未中奖者', pct: '20%', sub: language === 'en' ? 'instant'           : '即时到账',       color: '#60A5FA' },
             ].map((prize, idx) => (
               <div key={idx} className="prize-item-modern">
-                <span className="prize-name-modern">{prize.name}</span>
+                <div className="prize-name-block">
+                  <span className="prize-name-modern">{prize.name}</span>
+                  <span className="prize-sub">{prize.sub}</span>
+                </div>
                 <div className="prize-bar">
-                  <div style={{ width: prize.percent, background: prize.color }}></div>
+                  <div style={{ width: prize.pct, background: prize.color }}></div>
                 </div>
-                <span className="prize-percent-modern">{prize.percent}</span>
+                <span className="prize-percent-modern" style={{ color: prize.color }}>{prize.pct}</span>
               </div>
             ))}
           </div>
-        </div>
 
-        {/* Fund Allocation */}
-        <div className="card card-glass" style={{ marginTop: 'var(--space-6)' }}>
-          <h2 className="card-title-modern">📊 {t('fundAllocation')}</h2>
-          <div className="fund-grid">
-            {[
-              { label: language === 'en' ? 'Burn' : '销毁', percent: '3%', color: '#EF4444' },
-              { label: language === 'en' ? 'Platform' : '平台', percent: '2%', color: '#3B82F6' },
-              { label: language === 'en' ? 'Pool' : '奖池', percent: '95%', color: '#FFD700' },
-            ].map((fund, idx) => (
-              <div key={idx} className="fund-item-modern">
-                <span className="fund-label-modern">{fund.label}</span>
-                <div className="fund-progress">
-                  <div style={{ width: fund.percent, background: fund.color }}></div>
-                </div>
-                <span className="fund-percent-modern">{fund.percent}</span>
-              </div>
-            ))}
-          </div>
+          <p style={{ marginTop: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', textAlign: 'center' }}>
+            {language === 'en'
+              ? '⚖️ Equal probability per wallet · percentages of the 90% distribution pool'
+              : '⚖️ 每个钱包等概率中奖 · 百分比基于90%分配池'}
+          </p>
         </div>
       </div>
 
@@ -372,78 +375,66 @@ const HourlyPool = () => {
           gap: var(--space-3);
         }
         
+        .prize-deductions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: var(--space-2);
+          margin-bottom: var(--space-2);
+        }
+
+        .prize-deduct-chip {
+          font-size: var(--text-xs);
+          border: 1px solid;
+          border-radius: var(--radius-full);
+          padding: 3px 10px;
+          background: oklch(15% 0.02 280 / 0.5);
+        }
+
         .prize-item-modern {
           display: grid;
-          grid-template-columns: 120px 1fr 50px;
+          grid-template-columns: 160px 1fr 44px;
           align-items: center;
           gap: var(--space-3);
         }
-        
+
+        .prize-name-block {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+        }
+
         .prize-name-modern {
           font-size: var(--text-sm);
-          color: var(--text-secondary);
+          color: var(--text-primary);
         }
-        
+
+        .prize-sub {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+        }
+
         .prize-bar {
           height: 8px;
           background: oklch(20% 0.02 280);
           border-radius: var(--radius-full);
           overflow: hidden;
         }
-        
+
         .prize-bar div {
           height: 100%;
           border-radius: var(--radius-full);
         }
-        
+
         .prize-percent-modern {
           font-size: var(--text-sm);
           font-weight: 600;
-          color: var(--text-primary);
           text-align: right;
         }
-        
-        .fund-grid {
-          display: flex;
-          flex-direction: column;
-          gap: var(--space-4);
-        }
-        
-        .fund-item-modern {
-          display: grid;
-          grid-template-columns: 100px 1fr 50px;
-          align-items: center;
-          gap: var(--space-3);
-        }
-        
-        .fund-label-modern {
-          font-size: var(--text-sm);
-          color: var(--text-secondary);
-        }
-        
-        .fund-progress {
-          height: 12px;
-          background: oklch(20% 0.02 280);
-          border-radius: var(--radius-full);
-          overflow: hidden;
-        }
-        
-        .fund-progress div {
-          height: 100%;
-          border-radius: var(--radius-full);
-        }
-        
-        .fund-percent-modern {
-          font-size: var(--text-base);
-          font-weight: 600;
-          color: var(--text-primary);
-        }
-        
+
         @media (max-width: 768px) {
           .grid-cols-2 { grid-template-columns: 1fr !important; }
           .info-grid-modern { grid-template-columns: 1fr !important; }
           .prize-item-modern { grid-template-columns: 1fr !important; gap: var(--space-2); }
-          .fund-item-modern { grid-template-columns: 1fr !important; gap: var(--space-2); }
         }
       `}</style>
     </div>
