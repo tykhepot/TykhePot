@@ -1366,6 +1366,8 @@ pub struct UseFreeBet<'info> {
     pub system_program: Program<'info, System>,
 }
 
+// Box<Account<...>> keeps large accounts on the heap to stay within the
+// 4096-byte BPF stack frame limit in try_accounts().
 #[derive(Accounts)]
 pub struct ExecuteDraw<'info> {
     #[account(mut)]
@@ -1376,13 +1378,13 @@ pub struct ExecuteDraw<'info> {
         seeds = [b"pool".as_ref(), &[pool_state.pool_type]],
         bump = pool_state.bump,
     )]
-    pub pool_state: Account<'info, PoolState>,
+    pub pool_state: Box<Account<'info, PoolState>>,
 
     #[account(
         mut,
         constraint = pool_vault.key() == pool_state.vault @ ErrorCode::VaultMismatch,
     )]
-    pub pool_vault: Account<'info, TokenAccount>,
+    pub pool_vault: Box<Account<'info, TokenAccount>>,
 
     #[account(mut)]
     pub token_mint: Account<'info, Mint>,
@@ -1391,19 +1393,19 @@ pub struct ExecuteDraw<'info> {
         mut,
         constraint = platform_vault.key() == global_state.platform_fee_vault @ ErrorCode::PlatformVaultMismatch,
     )]
-    pub platform_vault: Account<'info, TokenAccount>,
+    pub platform_vault: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         constraint = prize_escrow_vault.key() == global_state.prize_escrow_vault @ ErrorCode::PrizeEscrowMismatch,
     )]
-    pub prize_escrow_vault: Account<'info, TokenAccount>,
+    pub prize_escrow_vault: Box<Account<'info, TokenAccount>>,
 
     #[account(
         seeds = [b"global_state"],
         bump = global_state.bump,
     )]
-    pub global_state: Account<'info, GlobalState>,
+    pub global_state: Box<Account<'info, GlobalState>>,
 
     /// DrawResult PDA — created during this draw, records top-prize vesting data.
     #[account(
@@ -1417,7 +1419,7 @@ pub struct ExecuteDraw<'info> {
         ],
         bump,
     )]
-    pub draw_result: Account<'info, DrawResult>,
+    pub draw_result: Box<Account<'info, DrawResult>>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

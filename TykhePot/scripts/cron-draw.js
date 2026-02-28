@@ -36,14 +36,17 @@
  *   REFERRAL_VAULT      — referral rewards vault address
  */
 
+// Allow running from any directory — resolve deps from smart-contract/node_modules
+const path = require("path");
+module.paths.push(path.join(__dirname, "..", "smart-contract", "node_modules"));
+
 const anchor = require("@coral-xyz/anchor");
 const { web3, BN } = anchor;
 const {
   TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
 } = require("@solana/spl-token");
-const fs   = require("fs");
-const path = require("path");
+const fs = require("fs");
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const PROGRAM_ID  = new web3.PublicKey("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
