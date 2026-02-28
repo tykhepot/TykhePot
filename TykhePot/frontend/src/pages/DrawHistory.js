@@ -69,10 +69,20 @@ async function fetchDrawHistory(connection, sdk, poolType) {
             signature:        sigInfo.signature,
             blockTime:        sigInfo.blockTime,
             roundNumber:      event.data.roundNumber.toNumber(),
-            winner:           event.data.winner.toBase58(),
-            prizeAmount:      fmtTpot(event.data.prizeAmount),
             totalPool:        fmtTpot(event.data.totalPool),
             participantCount: event.data.participantCount,
+            // Top prizes [1st, 2nd_a, 2nd_b, 3rd_a, 3rd_b, 3rd_c] — vested 20 days
+            topWinners:       event.data.topWinners.map(pk => pk.toBase58()),
+            topAmounts:       event.data.topAmounts.map(a => fmtTpot(a)),
+            // Lucky winners × 5 — immediate
+            luckyWinners:     event.data.luckyWinners.map(pk => pk.toBase58()),
+            luckyAmountEach:  fmtTpot(event.data.luckyAmountEach),
+            // Universal prize — all non-prize-winners
+            universalCount:      event.data.universalCount,
+            universalAmountEach: fmtTpot(event.data.universalAmountEach),
+            // Misc
+            burnAmount:       fmtTpot(event.data.burnAmount),
+            rolloverAmount:   fmtTpot(event.data.rolloverAmount),
           });
           break;
         }
@@ -232,22 +242,72 @@ const DrawHistory = () => {
                         </div>
                         <div className="dh-cell">
                           <span className="dh-cell-label">
-                            {language === 'en' ? 'Prize (95%)' : '奖金(95%)'}
+                            {language === 'en' ? 'Burn' : '销毁'}
                           </span>
-                          <span className="dh-cell-value dh-gold">{draw.prizeAmount} TPOT</span>
+                          <span className="dh-cell-value">{draw.burnAmount} TPOT</span>
                         </div>
-                        <div className="dh-cell dh-cell-wide">
+                        <div className="dh-cell">
                           <span className="dh-cell-label">
-                            {language === 'en' ? 'Winner' : '获奖者'}
+                            {language === 'en' ? 'Rollover' : '结转'}
                           </span>
-                          <a
-                            className="dh-cell-value dh-winner"
-                            href={`https://solscan.io/account/${draw.winner}?cluster=devnet`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {shortAddr(draw.winner)}
-                          </a>
+                          <span className="dh-cell-value">{draw.rolloverAmount} TPOT</span>
+                        </div>
+
+                        {/* Top prizes */}
+                        <div className="dh-cell dh-cell-full">
+                          <span className="dh-cell-label" style={{ marginBottom: 6 }}>
+                            {language === 'en' ? 'Top Prizes (vested 20 days)' : '头奖 (20天归属)'}
+                          </span>
+                          <div className="dh-prize-list">
+                            {/* 1st prize */}
+                            <div className="dh-prize-row">
+                              <span className="dh-prize-badge dh-1st">🥇</span>
+                              <a className="dh-cell-value dh-winner"
+                                href={`https://solscan.io/account/${draw.topWinners[0]}?cluster=devnet`}
+                                target="_blank" rel="noopener noreferrer">
+                                {shortAddr(draw.topWinners[0])}
+                              </a>
+                              <span className="dh-prize-amt dh-gold">{draw.topAmounts[0]} TPOT</span>
+                            </div>
+                            {/* 2nd prizes */}
+                            {[1, 2].map(i => (
+                              <div key={i} className="dh-prize-row">
+                                <span className="dh-prize-badge dh-2nd">🥈</span>
+                                <a className="dh-cell-value dh-winner"
+                                  href={`https://solscan.io/account/${draw.topWinners[i]}?cluster=devnet`}
+                                  target="_blank" rel="noopener noreferrer">
+                                  {shortAddr(draw.topWinners[i])}
+                                </a>
+                                <span className="dh-prize-amt">{draw.topAmounts[i]} TPOT</span>
+                              </div>
+                            ))}
+                            {/* 3rd prizes */}
+                            {[3, 4, 5].map(i => (
+                              <div key={i} className="dh-prize-row">
+                                <span className="dh-prize-badge dh-3rd">🥉</span>
+                                <a className="dh-cell-value dh-winner"
+                                  href={`https://solscan.io/account/${draw.topWinners[i]}?cluster=devnet`}
+                                  target="_blank" rel="noopener noreferrer">
+                                  {shortAddr(draw.topWinners[i])}
+                                </a>
+                                <span className="dh-prize-amt">{draw.topAmounts[i]} TPOT</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Lucky + Universal */}
+                        <div className="dh-cell dh-cell-half">
+                          <span className="dh-cell-label">
+                            🍀 {language === 'en' ? 'Lucky ×5 (instant)' : '幸运×5 (即时)'}
+                          </span>
+                          <span className="dh-cell-value">{draw.luckyAmountEach} TPOT {language === 'en' ? 'each' : '×5'}</span>
+                        </div>
+                        <div className="dh-cell dh-cell-half">
+                          <span className="dh-cell-label">
+                            🎁 {language === 'en' ? `Universal ×${draw.universalCount} (instant)` : `普惠×${draw.universalCount} (即时)`}
+                          </span>
+                          <span className="dh-cell-value">{draw.universalAmountEach} TPOT {language === 'en' ? 'each' : '每人'}</span>
                         </div>
                       </>
                     ) : (
@@ -298,9 +358,19 @@ const DrawHistory = () => {
                 zh: '等概率 — 每个钱包中奖概率相同，与投注金额无关',
               },
               {
-                icon: '🔥',
-                en: 'On success: 95% to winner · 3% burned · 2% platform',
-                zh: '开奖成功：95% 归获胜者 · 3% 销毁 · 2% 平台',
+                icon: '🏆',
+                en: '11 fixed winners every draw: 🥇 1st (30%) · 🥈 2nd×2 (10% each) · 🥉 3rd×3 (5% each) · 🍀 Lucky×5 (2% each, instant) — all vested over 20 days except lucky',
+                zh: '每期11个固定奖位：🥇 头奖30% · 🥈 二等×2各10% · 🥉 三等×3各5% · 🍀 幸运×5各2%（即时）— 除幸运奖外均20天线性归属',
+              },
+              {
+                icon: '🎁',
+                en: 'Universal prize: remaining 20% split equally among all non-prize-winners (instant)',
+                zh: '普惠奖：剩余20%平分给所有未中奖者（即时到账）',
+              },
+              {
+                icon: '🔄',
+                en: '5% rolls over to the next round; 3% burned; 2% platform fee',
+                zh: '5%结转下一期；3%销毁；2%平台费',
               },
               {
                 icon: '♻️',
@@ -531,6 +601,42 @@ const DrawHistory = () => {
 
         .dh-winner:hover, .dh-tx:hover {
           text-decoration: underline;
+        }
+
+        .dh-cell-full {
+          grid-column: 1 / -1;
+        }
+
+        .dh-cell-half {
+          grid-column: span 1;
+        }
+
+        .dh-prize-list {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .dh-prize-row {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          font-size: var(--text-xs);
+          line-height: 1.4;
+        }
+
+        .dh-prize-badge {
+          font-size: 0.9rem;
+          flex-shrink: 0;
+          width: 20px;
+          text-align: center;
+        }
+
+        .dh-prize-amt {
+          margin-left: auto;
+          font-size: var(--text-xs);
+          color: var(--text-secondary);
+          white-space: nowrap;
         }
 
         .dh-explainer {
