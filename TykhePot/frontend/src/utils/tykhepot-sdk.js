@@ -359,6 +359,39 @@ const IDL = {
         ],
       },
     },
+    {
+      name: "StakingState",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "authority",          type: "publicKey" },
+          { name: "tokenMint",          type: "publicKey" },
+          { name: "shortTermPool",      type: "u64" },
+          { name: "longTermPool",       type: "u64" },
+          { name: "totalStakedShort",   type: "u64" },
+          { name: "totalStakedLong",    type: "u64" },
+          { name: "shortTermReleased",  type: "u64" },
+          { name: "longTermReleased",   type: "u64" },
+          { name: "bump",               type: "u8"  },
+        ],
+      },
+    },
+    {
+      name: "UserStake",
+      type: {
+        kind: "struct",
+        fields: [
+          { name: "owner",      type: "publicKey" },
+          { name: "amount",     type: "u64" },
+          { name: "reward",     type: "u64" },
+          { name: "startTime",  type: "i64" },
+          { name: "endTime",    type: "i64" },
+          { name: "stakeType",  type: { defined: "StakeType" } },
+          { name: "claimed",    type: "bool" },
+          { name: "stakeIndex", type: "u64" },
+        ],
+      },
+    },
   ],
   types: [
     {
@@ -1079,6 +1112,56 @@ export default class TykhePotSDK {
       .rpc();
 
     return { success: true, tx };
+  }
+
+  // Returns all UserStake accounts belonging to the connected wallet.
+  // Each item: { stakeIndex, amount, reward, startTime, endTime, stakeType, claimed, pubkey }
+  async getUserStakes(userPubkey) {
+    const user = userPubkey ?? this.wallet?.publicKey;
+    if (!user) return [];
+    try {
+      const accounts = await this.program.account.userStake.all([
+        {
+          memcmp: {
+            offset: 8,   // skip 8-byte Anchor discriminator, owner Pubkey is first field
+            bytes: user.toBase58(),
+          },
+        },
+      ]);
+      return accounts
+        .filter(a => !a.account.claimed)
+        .map(a => ({
+          pubkey:     a.publicKey,
+          stakeIndex: a.account.stakeIndex.toNumber(),
+          amount:     a.account.amount.toNumber() / 1e6,
+          reward:     a.account.reward.toNumber() / 1e6,
+          startTime:  a.account.startTime.toNumber(),
+          endTime:    a.account.endTime.toNumber(),
+          stakeType:  a.account.stakeType.longTerm !== undefined ? 'long' : 'short',
+          claimed:    a.account.claimed,
+        }))
+        .sort((a, b) => a.startTime - b.startTime);
+    } catch {
+      return [];
+    }
+  }
+
+  // Returns global StakingState (remaining pool capacity etc.)
+  async getStakingState() {
+    try {
+      const [stakingState] = PublicKey.findProgramAddressSync(
+        [Buffer.from("staking_state")], PROGRAM
+      );
+      const s = await this.program.account.stakingState.fetch(stakingState);
+      return {
+        shortTermPool:    s.shortTermPool.toNumber() / 1e6,
+        longTermPool:     s.longTermPool.toNumber() / 1e6,
+        totalStakedShort: s.totalStakedShort.toNumber() / 1e6,
+        totalStakedLong:  s.totalStakedLong.toNumber() / 1e6,
+      };
+    } catch {
+      return null;
+    }
   }
 
   // ── Claim profit airdrop ────────────────────────────────────────────────────
