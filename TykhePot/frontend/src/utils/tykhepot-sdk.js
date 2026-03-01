@@ -597,6 +597,28 @@ export default class TykhePotSDK {
     this.provider = provider;
   }
 
+  // ── Transaction helper ──────────────────────────────────────────────────────
+  // Use wallet.sendTransaction (native wallet adapter API) instead of Anchor's
+  // signTransaction → serialize → send chain, which has compatibility issues
+  // with some browser wallets (Phantom account switching, WalletConnect, etc.).
+
+  async _sendTx(methodCall, additionalSigners = []) {
+    const { blockhash, lastValidBlockHeight } =
+      await this.connection.getLatestBlockhash("confirmed");
+    const tx = await methodCall.transaction();
+    tx.recentBlockhash = blockhash;
+    // feePayer is intentionally left unset here so the wallet adapter sets it
+    // to the currently active account, avoiding the stale-key issue.
+    const sig = await this.wallet.sendTransaction(tx, this.connection, {
+      signers: additionalSigners,
+    });
+    await this.connection.confirmTransaction(
+      { signature: sig, blockhash, lastValidBlockHeight },
+      "confirmed"
+    );
+    return sig;
+  }
+
   // ── Read helpers ────────────────────────────────────────────────────────────
 
   async getGlobalState() {
@@ -749,23 +771,24 @@ export default class TykhePotSDK {
       ? [{ pubkey: referrerTokenAccount, isWritable: false, isSigner: false }]
       : [];
 
-    const tx = await this.program.methods
-      .deposit(amountBN)
-      .accounts({
-        user,
-        poolState:        poolStatePda,
-        userDeposit:      userDepositPda,
-        userTokenAccount,
-        poolVault:        poolVaultPubkey,
-        globalState,
-        reserveVault:     new PublicKey(RESERVE_VAULT),
-        tokenProgram:     TOKEN_PROGRAM_ID,
-        systemProgram:    SystemProgram.programId,
-      })
-      .remainingAccounts(remainingAccounts)
-      .rpc();
+    const sig = await this._sendTx(
+      this.program.methods
+        .deposit(amountBN)
+        .accounts({
+          user,
+          poolState:        poolStatePda,
+          userDeposit:      userDepositPda,
+          userTokenAccount,
+          poolVault:        poolVaultPubkey,
+          globalState,
+          reserveVault:     new PublicKey(RESERVE_VAULT),
+          tokenProgram:     TOKEN_PROGRAM_ID,
+          systemProgram:    SystemProgram.programId,
+        })
+        .remainingAccounts(remainingAccounts)
+    );
 
-    return { success: true, tx };
+    return { success: true, tx: sig };
   }
 
   // ── Write: claimFreeAirdrop ─────────────────────────────────────────────────
@@ -776,16 +799,17 @@ export default class TykhePotSDK {
 
     const [airdropClaim] = getAirdropClaimPda(user);
 
-    const tx = await this.program.methods
-      .claimFreeAirdrop()
-      .accounts({
-        user,
-        airdropClaim,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+    const sig = await this._sendTx(
+      this.program.methods
+        .claimFreeAirdrop()
+        .accounts({
+          user,
+          airdropClaim,
+          systemProgram: SystemProgram.programId,
+        })
+    );
 
-    return { success: true, tx };
+    return { success: true, tx: sig };
   }
 
   // ── Write: useFreeBet (DAILY POOL ONLY) ─────────────────────────────────────
@@ -803,22 +827,23 @@ export default class TykhePotSDK {
     const [freeDeposit]   = getFreeDepositPda(poolType, user);
     const poolVaultPubkey = new PublicKey(vaultForPool(poolType));
 
-    const tx = await this.program.methods
-      .useFreeBet(poolType)
-      .accounts({
-        user,
-        globalState,
-        poolState:    poolStatePda,
-        airdropClaim,
-        freeDeposit,
-        airdropVault: new PublicKey(AIRDROP_VAULT),
-        poolVault:    poolVaultPubkey,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+    const sig = await this._sendTx(
+      this.program.methods
+        .useFreeBet(poolType)
+        .accounts({
+          user,
+          globalState,
+          poolState:    poolStatePda,
+          airdropClaim,
+          freeDeposit,
+          airdropVault: new PublicKey(AIRDROP_VAULT),
+          poolVault:    poolVaultPubkey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+    );
 
-    return { success: true, tx };
+    return { success: true, tx: sig };
   }
 
   // ── Write: executeDraw (permissionless crank, ≥12 participants) ──────────────
@@ -852,24 +877,25 @@ export default class TykhePotSDK {
 
     const drawSeed = await generateDrawSeed(this.connection);
 
-    const tx = await this.program.methods
-      .executeDraw(drawSeed)
-      .accounts({
-        caller,
-        poolState:        poolStatePda,
-        poolVault:        poolVaultPubkey,
-        tokenMint:        new PublicKey(TOKEN_MINT),
-        platformVault:    new PublicKey(PLATFORM_FEE_VAULT),
-        prizeEscrowVault: new PublicKey(PRIZE_ESCROW_VAULT),
-        globalState,
-        drawResult,
-        tokenProgram:     TOKEN_PROGRAM_ID,
-        systemProgram:    SystemProgram.programId,
-      })
-      .remainingAccounts(remainingAccounts)
-      .rpc();
+    const sig = await this._sendTx(
+      this.program.methods
+        .executeDraw(drawSeed)
+        .accounts({
+          caller,
+          poolState:        poolStatePda,
+          poolVault:        poolVaultPubkey,
+          tokenMint:        new PublicKey(TOKEN_MINT),
+          platformVault:    new PublicKey(PLATFORM_FEE_VAULT),
+          prizeEscrowVault: new PublicKey(PRIZE_ESCROW_VAULT),
+          globalState,
+          drawResult,
+          tokenProgram:     TOKEN_PROGRAM_ID,
+          systemProgram:    SystemProgram.programId,
+        })
+        .remainingAccounts(remainingAccounts)
+    );
 
-    return { success: true, tx };
+    return { success: true, tx: sig };
   }
 
   // ── Write: executeRefund (permissionless crank, <12 participants) ─────────────
@@ -897,18 +923,19 @@ export default class TykhePotSDK {
       0 // no free accounts needed for refund
     );
 
-    const tx = await this.program.methods
-      .executeRefund()
-      .accounts({
-        caller,
-        poolState:    poolStatePda,
-        poolVault:    poolVaultPubkey,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .remainingAccounts(remainingAccounts)
-      .rpc();
+    const sig = await this._sendTx(
+      this.program.methods
+        .executeRefund()
+        .accounts({
+          caller,
+          poolState:    poolStatePda,
+          poolVault:    poolVaultPubkey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .remainingAccounts(remainingAccounts)
+    );
 
-    return { success: true, tx };
+    return { success: true, tx: sig };
   }
 
   // ── Write: claimPrizeVesting (permissionless — call daily for each top winner) ─
@@ -920,19 +947,20 @@ export default class TykhePotSDK {
     const [drawResult]  = getDrawResultPda(poolType, roundNumber);
     const [globalState] = getGlobalStatePda();
 
-    const tx = await this.program.methods
-      .claimPrizeVesting(winnerIndex)
-      .accounts({
-        caller,
-        drawResult,
-        globalState,
-        prizeEscrowVault: new PublicKey(PRIZE_ESCROW_VAULT),
-        winnerTokenAccount: winnerTokenAccountPubkey,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .rpc();
+    const sig = await this._sendTx(
+      this.program.methods
+        .claimPrizeVesting(winnerIndex)
+        .accounts({
+          caller,
+          drawResult,
+          globalState,
+          prizeEscrowVault: new PublicKey(PRIZE_ESCROW_VAULT),
+          winnerTokenAccount: winnerTokenAccountPubkey,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+    );
 
-    return { success: true, tx };
+    return { success: true, tx: sig };
   }
 
   // ── Write: claimReferral (permissionless — call after executeDraw for each referral) ─
@@ -949,20 +977,21 @@ export default class TykhePotSDK {
     const [drawResult]  = getDrawResultPda(poolType, roundNumber);
     const [globalState] = getGlobalStatePda();
 
-    const tx = await this.program.methods
-      .claimReferral(poolType, new BN(roundNumber))
-      .accounts({
-        caller,
-        drawResult,
-        userDeposit:          userDepositPubkey,
-        globalState,
-        referralVault:        new PublicKey(REFERRAL_VAULT),
-        referrerTokenAccount: referrerTokenAccountPubkey,
-        tokenProgram:         TOKEN_PROGRAM_ID,
-      })
-      .rpc();
+    const sig = await this._sendTx(
+      this.program.methods
+        .claimReferral(poolType, new BN(roundNumber))
+        .accounts({
+          caller,
+          drawResult,
+          userDeposit:          userDepositPubkey,
+          globalState,
+          referralVault:        new PublicKey(REFERRAL_VAULT),
+          referrerTokenAccount: referrerTokenAccountPubkey,
+          tokenProgram:         TOKEN_PROGRAM_ID,
+        })
+    );
 
-    return { success: true, tx };
+    return { success: true, tx: sig };
   }
 
   // ── Build remaining_accounts for executeDraw / executeRefund ─────────────────
@@ -1050,24 +1079,25 @@ export default class TykhePotSDK {
     const userToken = await getAssociatedTokenAddress(new PublicKey(TOKEN_MINT), user);
     const { STAKING_VAULT } = await import("../config/contract");
 
-    const tx = await this.program.methods
-      .stake(
-        new BN(stakeIndex),
-        toBN(amountTpot),
-        isLongTerm ? { longTerm: {} } : { shortTerm: {} }
-      )
-      .accounts({
-        user,
-        stakingState,
-        userStake,
-        userToken,
-        stakingVault:  new PublicKey(STAKING_VAULT),
-        tokenProgram:  TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+    const sig = await this._sendTx(
+      this.program.methods
+        .stake(
+          new BN(stakeIndex),
+          toBN(amountTpot),
+          isLongTerm ? { longTerm: {} } : { shortTerm: {} }
+        )
+        .accounts({
+          user,
+          stakingState,
+          userStake,
+          userToken,
+          stakingVault:  new PublicKey(STAKING_VAULT),
+          tokenProgram:  TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+    );
 
-    return { success: true, tx };
+    return { success: true, tx: sig };
   }
 
   async releaseStake(stakeIndex) {
@@ -1099,19 +1129,20 @@ export default class TykhePotSDK {
     const userToken = await getAssociatedTokenAddress(new PublicKey(TOKEN_MINT), user);
     const { STAKING_VAULT } = await import("../config/contract");
 
-    const tx = await this.program.methods[method](new BN(stakeIndex))
-      .accounts({
-        user,
-        stakingState,
-        userStake,
-        userToken,
-        stakingVault:     new PublicKey(STAKING_VAULT),
-        stakingAuthority,
-        tokenProgram:     TOKEN_PROGRAM_ID,
-      })
-      .rpc();
+    const sig = await this._sendTx(
+      this.program.methods[method](new BN(stakeIndex))
+        .accounts({
+          user,
+          stakingState,
+          userStake,
+          userToken,
+          stakingVault:     new PublicKey(STAKING_VAULT),
+          stakingAuthority,
+          tokenProgram:     TOKEN_PROGRAM_ID,
+        })
+    );
 
-    return { success: true, tx };
+    return { success: true, tx: sig };
   }
 
   // Returns all UserStake accounts belonging to the connected wallet.
@@ -1182,19 +1213,20 @@ export default class TykhePotSDK {
     const userToken = await getAssociatedTokenAddress(new PublicKey(TOKEN_MINT), user);
     const { AIRDROP_VAULT: PROFIT_VAULT } = await import("../config/contract");
 
-    const tx = await this.program.methods
-      .claimProfitAirdrop()
-      .accounts({
-        user,
-        airdropState,
-        userAirdrop,
-        userToken,
-        airdropVault:     new PublicKey(PROFIT_VAULT),
-        airdropAuthority,
-        tokenProgram:     TOKEN_PROGRAM_ID,
-      })
-      .rpc();
+    const sig = await this._sendTx(
+      this.program.methods
+        .claimProfitAirdrop()
+        .accounts({
+          user,
+          airdropState,
+          userAirdrop,
+          userToken,
+          airdropVault:     new PublicKey(PROFIT_VAULT),
+          airdropAuthority,
+          tokenProgram:     TOKEN_PROGRAM_ID,
+        })
+    );
 
-    return { success: true, tx };
+    return { success: true, tx: sig };
   }
 }
