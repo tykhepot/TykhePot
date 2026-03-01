@@ -44,7 +44,7 @@ const {
 const fs   = require("fs");
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const PROGRAM_ID          = new web3.PublicKey("BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5");
+const PROGRAM_ID          = new web3.PublicKey("9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ");
 const TOKEN_MINT          = new web3.PublicKey("FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY");
 const PLATFORM_FEE_WALLET = new web3.PublicKey("F4dQpEz69oQhhsYGiCASbPNAg3XaoGggbHAeuytqZtrm");
 const RPC                 = process.env.RPC_URL || "https://api.devnet.solana.com";

@@ -16,7 +16,7 @@ import { Program } from "@coral-xyz/anchor";
 import { SwitchboardVrf } from "@switchboard-xyz/vrf.js";
 import { createHash } from "crypto";
 
-const PROGRAM_ID = new PublicKey("BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5");
+const PROGRAM_ID = new PublicKey("9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ");
 
 async function main() {
   console.log("🎰 Initializing Switchboard VRF for TykhePot...\n");

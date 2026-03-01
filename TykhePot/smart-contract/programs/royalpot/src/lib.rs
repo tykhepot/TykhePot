@@ -32,7 +32,7 @@ pub const PRIZE_VEST_DAY_BP: u64 = 500; // 5% per day
 
 // Referral (paid from referral_vault when remaining_accounts supplied in deposit)
 pub const REFERRER_BP: u64 = 800; // 8% to referrer
-                                  // Note: 2% one-time referee bonus — tracked off-chain by cron; on-chain TODO v3
+pub const REFERRAL_REFERRER_BP: u64 = 200; // 2% one-time referee bonus
 
 pub const MIN_PARTICIPANTS: u32 = 12; // need ≥12 (11 prize slots + ≥1 universal)
 pub const LOCK_PERIOD: i64 = 300; // 5-min deposit lock before draw
@@ -67,6 +67,8 @@ pub const USER_DEPOSIT_SIZE: usize = 8 + 32 + 1 + 8 + 8 + 32 + 1 + 6;
 // FreeDeposit: disc(8)+user(32)+pool_type(1)+is_active(1)+amount(8)+referrer(32)+bump(1)+pad(7) = 90
 pub const FREE_DEPOSIT_SIZE: usize = 8 + 32 + 1 + 1 + 8 + 32 + 1 + 7;
 pub const AIRDROP_CLAIM_SIZE: usize = 8 + 32 + 1 + 1 + 6;
+// RefereeBonusClaim: disc(8)+user(32)+has_claimed(1)+pool_type(1)+round(8)+amount(8)+bump(1)+pad(7) = 67
+pub const REFEREE_BONUS_CLAIM_SIZE: usize = 8 + 32 + 1 + 1 + 8 + 8 + 1 + 7;
 // DrawResult: disc(8)+pool_type(1)+round(8)+top_winners(192)+top_amounts(48)+
 //             top_claimed(48)+draw_timestamp(8)+bump(1) = 314
 pub const DRAW_RESULT_SIZE: usize = 8 + 1 + 8 + 192 + 48 + 48 + 8 + 1;
@@ -201,6 +203,20 @@ pub struct AirdropClaim {
     pub _padding: [u8; 6],
 }
 
+/// One-time referee bonus claim tracker.
+/// Created during user's first deposit with a referrer.
+/// Tracks whether the 2% referee bonus has been claimed.
+#[account]
+pub struct RefereeBonusClaim {
+    pub user: Pubkey,
+    pub has_claimed: bool,
+    pub first_deposit_pool_type: u8,
+    pub first_deposit_round: u64,
+    pub first_deposit_amount: u64,
+    pub bump: u8,
+    pub _padding: [u8; 7],
+}
+
 /// Created during execute_draw for every successful (≥12-participant) round.
 /// Tracks the 6 top-prize winners and their individual vested claims.
 /// top_winners[0]      = 1st prize winner
@@ -289,6 +305,12 @@ pub enum ErrorCode {
     OperationMismatch,
     #[msg("Timelock already pending for another operation")]
     TimelockAlreadyPending,
+    #[msg("Referee bonus already claimed")]
+    RefereeBonusAlreadyClaimed,
+    #[msg("No referee bonus eligibility")]
+    NoRefereeEligibility,
+    #[msg("Unauthorized: only the user can claim their own referee bonus")]
+    UnauthorizedClaimer,
 }
 
 // ============================================================
@@ -372,6 +394,15 @@ pub struct VrfFulfilled {
     pub round_number: u64,
     pub randomness: [u8; 32],
     pub timestamp: i64,
+}
+
+#[event]
+pub struct RefereeBonusClaimed {
+    pub user: Pubkey,
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub deposit_amount: u64,
+    pub bonus_amount: u64,
 }
 
 // ============================================================
@@ -647,6 +678,25 @@ pub mod royalpot {
         };
         dep.bump = ctx.bumps.user_deposit;
         dep._padding = [0u8; 6];
+
+        // ---------------------------------------------------
+        // Record referee bonus eligibility (first deposit with referrer)
+        // ---------------------------------------------------
+        let has_referrer = dep.referrer != Pubkey::default();
+        if has_referrer {
+            let claim = &mut ctx.accounts.referee_bonus_claim;
+            // If this is the user's first ever deposit with a referrer, record it
+            // Otherwise, do nothing (bonus is one-time only)
+            if !claim.has_claimed {
+                claim.user = ctx.accounts.user.key();
+                claim.has_claimed = false; // Will be set true when bonus is claimed
+                claim.first_deposit_pool_type = pool.pool_type;
+                claim.first_deposit_round = pool.round_number;
+                claim.first_deposit_amount = amount;
+                claim.bump = ctx.bumps.referee_bonus_claim;
+                claim._padding = [0u8; 7];
+            }
+        }
 
         // User → pool vault
         token::transfer(
@@ -1363,6 +1413,60 @@ pub mod royalpot {
         Ok(())
     }
 
+    /// Claim the 2% referee bonus for a user's first deposit.
+    ///
+    /// Permissionless — user can call this anytime after depositing with a referrer.
+    /// Awards a 2% bonus based on the first deposit amount.
+    pub fn claim_referee_bonus(ctx: Context<ClaimRefereeBonus>) -> Result<()> {
+        let claim = &mut ctx.accounts.referee_bonus_claim;
+
+        // Verify the bonus hasn't been claimed yet
+        require!(!claim.has_claimed, ErrorCode::RefereeBonusAlreadyClaimed);
+
+        // Verify there was a first deposit recorded
+        require!(claim.first_deposit_amount > 0, ErrorCode::NoRefereeEligibility);
+
+        // Calculate 2% bonus based on first deposit amount
+        let bonus_amount = claim
+            .first_deposit_amount
+            .checked_mul(REFERRAL_REFERRER_BP)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        // Transfer bonus from referral_vault to user
+        if bonus_amount > 0 && ctx.accounts.referral_vault.amount >= bonus_amount {
+            let gs_bump = ctx.accounts.global_state.bump;
+            let gs_seeds: &[&[u8]] = &[b"global_state", &[gs_bump]];
+            let signer = &[gs_seeds];
+            token::transfer(
+                CpiContext::new_with_signer(
+                    ctx.accounts.token_program.to_account_info(),
+                    Transfer {
+                        from: ctx.accounts.referral_vault.to_account_info(),
+                        to: ctx.accounts.user_token_account.to_account_info(),
+                        authority: ctx.accounts.global_state.to_account_info(),
+                    },
+                    signer,
+                ),
+                bonus_amount,
+            )?;
+        }
+
+        // Mark as claimed to prevent double-claim
+        claim.has_claimed = true;
+
+        emit!(RefereeBonusClaimed {
+            user: ctx.accounts.user.key(),
+            pool_type: claim.first_deposit_pool_type,
+            round_number: claim.first_deposit_round,
+            deposit_amount: claim.first_deposit_amount,
+            bonus_amount,
+        });
+
+        Ok(())
+    }
+
     // ----------------------------------------------------------
     // Staking (delegated)
     // ----------------------------------------------------------
@@ -1674,6 +1778,17 @@ pub struct Deposit<'info> {
     )]
     pub reserve_vault: Account<'info, TokenAccount>,
 
+    /// Referee bonus claim account - created only if user has a referrer
+    /// Uses init_if_needed to handle first-time bonus setup
+    #[account(
+        init_if_needed,
+        payer = user,
+        space = REFEREE_BONUS_CLAIM_SIZE,
+        seeds = [b"referee_claim", user.key().as_ref()],
+        bump,
+    )]
+    pub referee_bonus_claim: Account<'info, RefereeBonusClaim>,
+
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
     // remaining_accounts[0] (optional, read-only): referrer's token account pubkey stored in PDA.
@@ -1893,6 +2008,47 @@ pub struct ClaimReferral<'info> {
     /// Must match user_deposit.referrer — verified in instruction body.
     #[account(mut)]
     pub referrer_token_account: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+/// Context for claim_referee_bonus().
+/// Permissionless — user can call this anytime after their first deposit with a referrer.
+/// Awards a 2% one-time bonus based on the first deposit amount.
+#[derive(Accounts)]
+pub struct ClaimRefereeBonus<'info> {
+    /// The user claiming their referee bonus
+    #[account(mut)]
+    pub user: Signer<'info>,
+
+    /// Referee bonus claim account - tracks eligibility
+    #[account(
+        mut,
+        constraint = referee_bonus_claim.user == user.key() @ ErrorCode::UnauthorizedClaimer,
+    )]
+    pub referee_bonus_claim: Account<'info, RefereeBonusClaim>,
+
+    /// Global state for vault authority
+    #[account(
+        seeds = [b"global_state"],
+        bump = global_state.bump,
+    )]
+    pub global_state: Account<'info, GlobalState>,
+
+    /// Referral rewards vault (same vault used for referrer rewards). Authority = global_state PDA.
+    #[account(
+        mut,
+        constraint = referral_vault.key() == global_state.referral_vault @ ErrorCode::ReferralVaultMismatch,
+    )]
+    pub referral_vault: Account<'info, TokenAccount>,
+
+    /// User's TPOT token account to receive the bonus
+    #[account(
+        mut,
+        constraint = user_token_account.owner == user.key(),
+        constraint = user_token_account.mint == referral_vault.mint,
+    )]
+    pub user_token_account: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
 }

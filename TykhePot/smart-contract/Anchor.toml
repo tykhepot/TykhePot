@@ -3,13 +3,13 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-royalpot = "BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5"
+royalpot = "9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ"
 
 [programs.devnet]
-royalpot = "BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5"
+royalpot = "9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ"
 
 [programs.mainnet]
-royalpot = "BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5"
+royalpot = "9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ"
 
 [registry]
 url = "https://api.apr.dev"

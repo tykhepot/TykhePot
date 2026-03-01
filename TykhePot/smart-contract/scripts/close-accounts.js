@@ -7,7 +7,7 @@ const { web3, BN } = anchor;
 const fs = require("fs");
 const path = require("path");
 
-const PROGRAM_ID = new web3.PublicKey("BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5");
+const PROGRAM_ID = new web3.PublicKey("9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ");
 
 async function main() {
   console.log("🔒 Closing TykhePot accounts for reinit\n");
