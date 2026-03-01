@@ -16,26 +16,26 @@ const FAQ = () => {
     {
       q: language === 'en' ? 'How do I participate?' : '如何参与?',
       a: language === 'en'
-        ? 'Connect your Solana wallet, ensure you have TPOT tokens, and deposit into either the Hourly Pool or Daily Pool to participate.'
-        : '连接您的 Solana 钱包，确保您有 TPOT 代币，然后存入小时池或天池即可参与。',
+        ? 'Connect your Solana wallet, ensure you have TPOT tokens, and deposit into the 30 Min Pool, Hourly Pool, or Daily Pool. Equal probability — each wallet gets one entry per deposit, regardless of amount.'
+        : '连接您的 Solana 钱包，确保您有 TPOT 代币，然后存入30分钟池、小时池或天池即可参与。等概率设计——每个钱包每次存款获得一次中奖机会，与金额无关。',
     },
     {
       q: language === 'en' ? 'Is it safe?' : '安全吗?',
       a: language === 'en'
-        ? 'Yes! The contract has passed security audits, includes emergency pause functionality, anti-whale measures, and anti-flash loan protections.'
-        : '是的！合约已通过安全审计，包含紧急暂停功能、防鲸鱼措施和防闪电贷保护。',
+        ? 'The smart contract runs fully on-chain on Solana. All draws and fund movements are verifiable on the blockchain explorer. There are no admin keys — the protocol operates autonomously once deployed.'
+        : '智能合约完全运行在 Solana 链上，所有开奖和资金流动均可在区块链浏览器上验证。无管理员密钥，协议部署后自主运行。',
     },
     {
       q: language === 'en' ? 'What are the prize tiers?' : '奖金等级是什么?',
       a: language === 'en'
-        ? '1st Prize (30%), 2nd Prize (20%), 3rd Prize (15%), Lucky Prize (10%), Universal Prize (20%), and 5% rolls over to next round.'
-        : '头奖(30%)、二等奖(20%)、三等奖(15%)、幸运奖(10%)、普惠奖(20%)，5%回流到下期。',
+        ? '11 fixed winners every draw: 🥇 1st×1 (30%) · 🥈 2nd×2 (10% each) · 🥉 3rd×3 (5% each) — all vested over 20 days. 🍀 Lucky×5 (2% each, instant). Universal prize: remaining 20% split equally among all non-winners (instant). 5% rolls over to the next round.'
+        : '每期11个固定奖位：🥇 头奖×1（30%）、🥈 二等×2（各10%）、🥉 三等×3（各5%）——均20天线性归属；🍀 幸运×5（各2%，即时到账）；普惠奖：剩余20%平分给所有未中奖者（即时）；5%结转下期。',
     },
     {
       q: language === 'en' ? 'How is the referral reward calculated?' : '推广奖励如何计算?',
       a: language === 'en'
-        ? 'Referrers earn 8% of the deposit amount when their invitees participate in the Daily Pool. This is paid from the referral reward pool.'
-        : '邀请人可获得被邀请人天池投入的 8% 作为奖励，从推广奖励池中支付。',
+        ? 'Referrers earn 8% of the deposit amount when their invitee deposits in the Daily Pool. Rewards are paid from the referral pool after the round succeeds on-chain — not immediately at deposit time. Only Daily Pool deposits are eligible.'
+        : '被推荐人在天池存款时，推荐人可获得存款额的 8% 作为奖励，从推广池中支付。奖励在该轮开奖成功后由链上自动发放（非存款时即时支付）。仅天池存款计入推广奖励。',
     },
   ];
 

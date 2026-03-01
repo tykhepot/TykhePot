@@ -1,342 +1,453 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { useTranslation } from '../i18n/LanguageContext';
+
+// Placeholder data — real data requires an on-chain indexer
+const SAMPLE_PARTICIPATION = [
+  { id: 1, type: 'hourly', amount: 200, time: '2026-02-19 14:30', tx: '5xK9...3mN2', result: 'pending' },
+  { id: 2, type: 'daily',  amount: 500, time: '2026-02-18 23:55', tx: '7xL2...8nP4', result: 'universal', reward: 25 },
+  { id: 3, type: 'hourly', amount: 200, time: '2026-02-18 13:00', tx: '3mN8...4jP7', result: 'win',       reward: 1200 },
+];
+
+const SAMPLE_REWARDS = [
+  { id: 1, type: 'prize',    amount: 1200, pool: 'hourly', time: '2026-02-18 14:00', tx: 'ClaimTx...9kQ1' },
+  { id: 2, type: 'universal', amount: 25,  pool: 'daily',  time: '2026-02-19 00:00', tx: 'ClaimTx...2hR5' },
+  { id: 3, type: 'referral', amount: 40,   from: '7xK9...3mN2', time: '2026-02-17 10:20', tx: 'RefTx...5jM8' },
+];
+
+const SAMPLE_STAKING = [
+  { id: 1, type: 'short', amount: 10000, startTime: '2026-02-01', endTime: '2026-03-03', status: 'active',   estimatedReward: 65 },
+  { id: 2, type: 'long',  amount: 50000, startTime: '2026-01-15', endTime: '2026-07-14', status: 'active',   estimatedReward: 3945 },
+];
 
 const UserHistory = () => {
   const { wallet } = useApp();
+  const { language } = useTranslation();
   const [activeTab, setActiveTab] = useState('participation');
-  
-  // 模拟历史数据
-  const participationHistory = [
-    { id: 1, type: 'hourly', amount: 200, time: '2026-02-19 14:30', tx: '5xK9...3mN2', result: 'pending' },
-    { id: 2, type: 'daily', amount: 500, time: '2026-02-18 23:55', tx: '7xL2...8nP4', result: 'universal', reward: 25 },
-    { id: 3, type: 'hourly', amount: 200, time: '2026-02-18 13:00', tx: '3mN8...4jP7', result: 'win', reward: 1200 },
-  ];
-
-  const rewardsHistory = [
-    { id: 1, type: 'prize', amount: 1200, pool: 'hourly', time: '2026-02-18 14:00', tx: 'ClaimTx...9kQ1' },
-    { id: 2, type: 'universal', amount: 25, pool: 'daily', time: '2026-02-19 00:00', tx: 'ClaimTx...2hR5' },
-    { id: 3, type: 'referral', amount: 40, from: '7xK9...3mN2', time: '2026-02-17 10:20', tx: 'RefTx...5jM8' },
-  ];
-
-  const stakingHistory = [
-    { id: 1, type: 'short', amount: 10000, startTime: '2026-02-01', endTime: '2026-03-03', status: 'active', estimatedReward: 65 },
-    { id: 2, type: 'long', amount: 50000, startTime: '2026-01-15', endTime: '2026-07-14', status: 'active', estimatedReward: 3945 },
-  ];
 
   const getResultBadge = (result) => {
-    const badges = {
-      pending: { text: '等待开奖', color: '#FFA500' },
-      win: { text: '🎉 中奖', color: '#00FF88' },
-      universal: { text: '🌟 普惠奖', color: '#4488FF' },
-      lose: { text: '未中奖', color: '#888' },
+    const map = {
+      pending:   { text: language === 'en' ? 'Pending' : '等待开奖', cls: 'uh-badge-pending' },
+      win:       { text: language === 'en' ? '🎉 Won'  : '🎉 中奖',  cls: 'uh-badge-win' },
+      universal: { text: language === 'en' ? '🌟 Universal' : '🌟 普惠奖', cls: 'uh-badge-universal' },
+      lose:      { text: language === 'en' ? 'No prize' : '未中奖',  cls: 'uh-badge-lose' },
     };
-
-// Modern UI enhancements applied via global styles.css
-
-    const badge = badges[result] || badges.lose;
-    return <span style={{...styles.badge, background: badge.color + '20', color: badge.color}}>{badge.text}</span>;
+    const b = map[result] || map.lose;
+    return <span className={`uh-badge ${b.cls}`}>{b.text}</span>;
   };
 
-// Modern UI enhancements applied via global styles.css
+  const poolLabel = (type) => {
+    if (type === 'hourly') return language === 'en' ? '⏰ Hourly' : '⏰ 小时池';
+    if (type === 'daily')  return language === 'en' ? '🌙 Daily'  : '🌙 天池';
+    return language === 'en' ? '⏱️ 30 Min' : '⏱️ 30分钟池';
+  };
 
+  const tabs = [
+    { key: 'participation', label: language === 'en' ? '🎮 Participation' : '🎮 参与记录' },
+    { key: 'rewards',       label: language === 'en' ? '💰 Rewards'       : '💰 收益记录' },
+    { key: 'staking',       label: language === 'en' ? '📊 Staking'       : '📊 质押记录' },
+  ];
+
+  if (!wallet?.publicKey) {
+    return (
+      <div className="page-container">
+        <div className="container">
+          <div className="uh-header">
+            <div className="page-badge">📜 {language === 'en' ? 'History' : '历史记录'}</div>
+            <h1 className="page-title-modern">
+              {language === 'en' ? 'My History' : '我的记录'}
+            </h1>
+          </div>
+          <div className="card card-glass uh-no-wallet">
+            <p>{language === 'en' ? 'Connect your wallet to view your history.' : '请先连接钱包以查看您的历史记录。'}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h1 style={styles.title}>📜 {t('myHistory')}</h1>
-        <p style={styles.subtitle}>查看您的参与记录、收益和质押</p>
-      </div>
+    <div className="page-container">
+      <div className="container">
 
-      {/* 统计卡片 */}
-      <div style={styles.statsGrid}>
-        <div style={styles.statCard}>
-          <span style={styles.statLabel}>总参与次数</span>
-          <span style={styles.statValue}>23 次</span>
+        {/* Header */}
+        <div className="uh-header">
+          <div className="page-badge">📜 {language === 'en' ? 'History' : '历史记录'}</div>
+          <h1 className="page-title-modern">
+            {language === 'en' ? 'My History' : '我的记录'}
+          </h1>
+          <p className="page-subtitle-modern">
+            {language === 'en'
+              ? 'Participation, rewards, and staking records'
+              : '参与记录、收益记录与质押记录'}
+          </p>
         </div>
-        <div style={styles.statCard}>
-          <span style={styles.statLabel}>累计中奖</span>
-          <span style={styles.statValue}>1,245 TPOT</span>
+
+        {/* Stats strip */}
+        <div className="uh-stats-strip">
+          {[
+            { label: language === 'en' ? 'Total Entries'    : '总参与次数', value: '23' },
+            { label: language === 'en' ? 'Total Won'        : '累计中奖',   value: '1,245 TPOT' },
+            { label: language === 'en' ? 'Referral Earned'  : '推广奖励',   value: '120 TPOT' },
+            { label: language === 'en' ? 'Staked'           : '质押中',     value: '60,000 TPOT' },
+          ].map((s, i) => (
+            <div key={i} className="uh-stat">
+              <span className="uh-stat-label">{s.label}</span>
+              <span className="uh-stat-value">{s.value}</span>
+            </div>
+          ))}
         </div>
-        <div style={styles.statCard}>
-          <span style={styles.statLabel}>推广奖励</span>
-          <span style={styles.statValue}>120 TPOT</span>
+
+        <p className="uh-placeholder-note">
+          ℹ️ {language === 'en'
+            ? 'Sample data shown — real history requires an on-chain indexer (coming soon).'
+            : '当前显示示例数据，真实历史记录需要链上索引服务（即将上线）。'}
+        </p>
+
+        {/* Tabs */}
+        <div className="uh-tabs">
+          {tabs.map(tab => (
+            <button
+              key={tab.key}
+              className={`uh-tab ${activeTab === tab.key ? 'active' : ''}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-        <div style={styles.statCard}>
-          <span style={styles.statLabel}>质押中</span>
-          <span style={styles.statValue}>60,000 TPOT</span>
-        </div>
-      </div>
 
-      {/* 标签页 */}
-      <div style={styles.tabs}>
-        <button
-          onClick={() => setActiveTab('participation')}
-          style={{...styles.tab, ...(activeTab === 'participation' ? styles.tabActive : {})}}
-        >
-          🎮 参与记录
-        </button>
-        <button
-          onClick={() => setActiveTab('rewards')}
-          style={{...styles.tab, ...(activeTab === 'rewards' ? styles.tabActive : {})}}
-        >
-          💰 收益记录
-        </button>
-        <button
-          onClick={() => setActiveTab('staking')}
-          style={{...styles.tab, ...(activeTab === 'staking' ? styles.tabActive : {})}}
-        >
-          📊 质押记录
-        </button>
-      </div>
+        {/* Content */}
+        <div className="card card-glass uh-content">
 
-      {/* 内容区域 */}
-      <div style={styles.content}>
-        {activeTab === 'participation' && (
-          <div>
-            <h3 style={styles.sectionTitle}>参与记录</h3>
-            {participationHistory.map(item => (
-              <div key={item.id} style={styles.historyItem}>
-                <div style={styles.itemHeader}>
-                  <span style={styles.itemType}>
-                    {item.type === 'hourly' ? '⏰ 小时池' : '🌙 天池'}
-                  </span>
-                  <span style={styles.itemTime}>{item.time}</span>
-                </div>
-                <div style={styles.itemDetails}>
-                  <span>投入: {item.amount} TPOT</span>
-                  {getResultBadge(item.result)}
-                  {item.reward && <span style={styles.reward}>+{item.reward} TPOT</span>}
-                </div>
-                <a 
-                  href={`https://solscan.io/tx/${item.tx}`} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={styles.txLink}
-                >
-                  查看交易 →
-                </a>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 'rewards' && (
-          <div>
-            <h3 style={styles.sectionTitle}>收益记录</h3>
-            {rewardsHistory.map(item => (
-              <div key={item.id} style={styles.historyItem}>
-                <div style={styles.itemHeader}>
-                  <span style={styles.itemType}>
-                    {item.type === 'prize' ? '🏆 奖金' : 
-                     item.type === 'universal' ? '🌟 普惠奖' : '🤝 推广奖励'}
-                  </span>
-                  <span style={styles.itemTime}>{item.time}</span>
-                </div>
-                <div style={styles.itemDetails}>
-                  <span style={styles.rewardAmount}>+{item.amount} TPOT</span>
-                  {item.pool && <span>来自: {item.pool === 'hourly' ? '小时池' : '天池'}</span>}
-                  {item.from && <span>来自: {item.from}</span>}
-                </div>
-                <a 
-                  href={`https://solscan.io/tx/${item.tx}`} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={styles.txLink}
-                >
-                  查看交易 →
-                </a>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === 'staking' && (
-          <div>
-            <h3 style={styles.sectionTitle}>质押记录</h3>
-            {stakingHistory.map(item => (
-              <div key={item.id} style={styles.historyItem}>
-                <div style={styles.itemHeader}>
-                  <span style={styles.itemType}>
-                    {item.type === 'short' ? '⚡ 短期质押 (30天)' : '💎 长期质押 (180天)'}
-                  </span>
-                  <span style={{...styles.status, background: item.status === 'active' ? '#00ff8820' : '#88888820', color: item.status === 'active' ? '#00ff88' : '#888'}}>
-                    {item.status === 'active' ? '进行中' : '已结束'}
-                  </span>
-                </div>
-                <div style={styles.stakingDetails}>
-                  <div style={styles.detailRow}>
-                    <span>质押金额: {item.amount.toLocaleString()} TPOT</span>
-                    <span>预计收益: +{item.estimatedReward} TPOT</span>
+          {activeTab === 'participation' && (
+            <>
+              <h3 className="uh-section-title">
+                {language === 'en' ? 'Participation Records' : '参与记录'}
+              </h3>
+              {SAMPLE_PARTICIPATION.map(item => (
+                <div key={item.id} className="uh-item">
+                  <div className="uh-item-top">
+                    <span className="uh-item-type">{poolLabel(item.type)}</span>
+                    <span className="uh-item-time">{item.time}</span>
                   </div>
-                  <div style={styles.detailRow}>
-                    <span>开始: {item.startTime}</span>
-                    <span>结束: {item.endTime}</span>
+                  <div className="uh-item-details">
+                    <span className="uh-item-amount">
+                      {language === 'en' ? 'Deposit:' : '投入:'} {item.amount} TPOT
+                    </span>
+                    {getResultBadge(item.result)}
+                    {item.reward && (
+                      <span className="uh-reward">+{item.reward} TPOT</span>
+                    )}
+                  </div>
+                  <a
+                    className="uh-tx-link"
+                    href={`https://solscan.io/tx/${item.tx}?cluster=devnet`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {language === 'en' ? 'View Tx →' : '查看交易 →'}
+                  </a>
+                </div>
+              ))}
+            </>
+          )}
+
+          {activeTab === 'rewards' && (
+            <>
+              <h3 className="uh-section-title">
+                {language === 'en' ? 'Reward Records' : '收益记录'}
+              </h3>
+              {SAMPLE_REWARDS.map(item => (
+                <div key={item.id} className="uh-item">
+                  <div className="uh-item-top">
+                    <span className="uh-item-type">
+                      {item.type === 'prize'     ? (language === 'en' ? '🏆 Prize'       : '🏆 奖金')
+                       : item.type === 'universal' ? (language === 'en' ? '🌟 Universal'   : '🌟 普惠奖')
+                       :                            (language === 'en' ? '🤝 Referral'    : '🤝 推广奖励')}
+                    </span>
+                    <span className="uh-item-time">{item.time}</span>
+                  </div>
+                  <div className="uh-item-details">
+                    <span className="uh-reward-amount">+{item.amount} TPOT</span>
+                    {item.pool && (
+                      <span className="uh-item-meta">
+                        {language === 'en' ? 'From:' : '来自:'} {poolLabel(item.pool)}
+                      </span>
+                    )}
+                    {item.from && (
+                      <span className="uh-item-meta">
+                        {language === 'en' ? 'Referee:' : '来自:'} {item.from}
+                      </span>
+                    )}
+                  </div>
+                  <a
+                    className="uh-tx-link"
+                    href={`https://solscan.io/tx/${item.tx}?cluster=devnet`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {language === 'en' ? 'View Tx →' : '查看交易 →'}
+                  </a>
+                </div>
+              ))}
+            </>
+          )}
+
+          {activeTab === 'staking' && (
+            <>
+              <h3 className="uh-section-title">
+                {language === 'en' ? 'Staking Records' : '质押记录'}
+              </h3>
+              <p className="uh-staking-note">
+                {language === 'en'
+                  ? 'For live staking data and actions, visit the Staking page.'
+                  : '实时质押数据和操作请前往质押页面。'}
+              </p>
+              {SAMPLE_STAKING.map(item => (
+                <div key={item.id} className="uh-item">
+                  <div className="uh-item-top">
+                    <span className="uh-item-type">
+                      {item.type === 'short'
+                        ? (language === 'en' ? '⚡ Short Term (30d)' : '⚡ 短期质押 (30天)')
+                        : (language === 'en' ? '💎 Long Term (180d)' : '💎 长期质押 (180天)')}
+                    </span>
+                    <span className={`uh-status-badge ${item.status === 'active' ? 'active' : ''}`}>
+                      {item.status === 'active'
+                        ? (language === 'en' ? 'Active' : '进行中')
+                        : (language === 'en' ? 'Ended'  : '已结束')}
+                    </span>
+                  </div>
+                  <div className="uh-staking-details">
+                    <div className="uh-detail-row">
+                      <span>{language === 'en' ? 'Staked:' : '质押额:'} {item.amount.toLocaleString()} TPOT</span>
+                      <span>{language === 'en' ? 'Est. Reward:' : '预计收益:'} +{item.estimatedReward} TPOT</span>
+                    </div>
+                    <div className="uh-detail-row">
+                      <span>{language === 'en' ? 'Start:' : '开始:'} {item.startTime}</span>
+                      <span>{language === 'en' ? 'End:' : '到期:'} {item.endTime}</span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </>
+          )}
+
+        </div>
       </div>
+
+      <style>{`
+        .uh-header {
+          text-align: center;
+          padding: var(--space-12) 0 var(--space-6);
+        }
+
+        .uh-no-wallet {
+          text-align: center;
+          padding: var(--space-16);
+          color: var(--text-tertiary);
+        }
+
+        .uh-stats-strip {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: var(--space-4);
+          margin-bottom: var(--space-4);
+        }
+
+        @media (max-width: 640px) {
+          .uh-stats-strip { grid-template-columns: 1fr 1fr; }
+        }
+
+        .uh-stat {
+          background: var(--gradient-card);
+          border: 1px solid var(--border-subtle);
+          border-radius: var(--radius-lg);
+          padding: var(--space-4);
+          text-align: center;
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-2);
+        }
+
+        .uh-stat-label {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+        }
+
+        .uh-stat-value {
+          font-size: var(--text-base);
+          font-weight: 700;
+          color: var(--color-gold);
+        }
+
+        .uh-placeholder-note {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          text-align: center;
+          margin-bottom: var(--space-5);
+          background: oklch(55% 0.2 270 / 0.08);
+          border: 1px solid oklch(55% 0.2 270 / 0.2);
+          border-radius: var(--radius-md);
+          padding: var(--space-2) var(--space-4);
+        }
+
+        .uh-tabs {
+          display: flex;
+          gap: var(--space-2);
+          margin-bottom: var(--space-4);
+          border-bottom: 1px solid var(--border-subtle);
+          padding-bottom: var(--space-4);
+          flex-wrap: wrap;
+        }
+
+        .uh-tab {
+          padding: var(--space-2) var(--space-5);
+          background: transparent;
+          border: 1px solid transparent;
+          border-radius: var(--radius-full);
+          color: var(--text-secondary);
+          font-size: var(--text-sm);
+          cursor: pointer;
+          transition: all var(--transition-fast);
+        }
+
+        .uh-tab:hover {
+          color: var(--text-primary);
+          border-color: var(--border-default);
+        }
+
+        .uh-tab.active {
+          background: oklch(55% 0.2 270 / 0.15);
+          border-color: var(--color-gold);
+          color: var(--color-gold);
+        }
+
+        .uh-content {
+          min-height: 300px;
+        }
+
+        .uh-section-title {
+          font-size: var(--text-base);
+          font-weight: 600;
+          color: var(--color-gold);
+          margin-bottom: var(--space-5);
+        }
+
+        .uh-staking-note {
+          font-size: var(--text-sm);
+          color: var(--text-tertiary);
+          margin-bottom: var(--space-4);
+        }
+
+        .uh-item {
+          padding: var(--space-4);
+          background: oklch(12% 0.02 280 / 0.5);
+          border-radius: var(--radius-lg);
+          margin-bottom: var(--space-3);
+        }
+
+        .uh-item-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: var(--space-2);
+          flex-wrap: wrap;
+          gap: var(--space-2);
+        }
+
+        .uh-item-type {
+          font-size: var(--text-sm);
+          font-weight: 600;
+          color: var(--text-primary);
+        }
+
+        .uh-item-time {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+          font-family: var(--font-mono);
+        }
+
+        .uh-item-details {
+          display: flex;
+          gap: var(--space-4);
+          align-items: center;
+          flex-wrap: wrap;
+          margin-bottom: var(--space-2);
+        }
+
+        .uh-item-amount {
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+        }
+
+        .uh-item-meta {
+          font-size: var(--text-xs);
+          color: var(--text-tertiary);
+        }
+
+        .uh-badge {
+          display: inline-block;
+          padding: 2px 10px;
+          border-radius: var(--radius-full);
+          font-size: var(--text-xs);
+          font-weight: 600;
+        }
+
+        .uh-badge-pending   { background: oklch(65% 0.15 60 / 0.2); color: oklch(75% 0.15 60); }
+        .uh-badge-win       { background: oklch(55% 0.2 140 / 0.2); color: #4ade80; }
+        .uh-badge-universal { background: oklch(55% 0.2 240 / 0.2); color: #60a5fa; }
+        .uh-badge-lose      { background: oklch(30% 0.02 280 / 0.5); color: var(--text-tertiary); }
+
+        .uh-reward {
+          font-size: var(--text-sm);
+          font-weight: 700;
+          color: #4ade80;
+        }
+
+        .uh-reward-amount {
+          font-size: var(--text-base);
+          font-weight: 700;
+          color: #4ade80;
+        }
+
+        .uh-tx-link {
+          font-size: var(--text-xs);
+          color: #60a5fa;
+          text-decoration: none;
+        }
+
+        .uh-tx-link:hover { text-decoration: underline; }
+
+        .uh-status-badge {
+          font-size: var(--text-xs);
+          padding: 2px 10px;
+          border-radius: var(--radius-full);
+          background: oklch(30% 0.02 280 / 0.5);
+          color: var(--text-tertiary);
+        }
+
+        .uh-status-badge.active {
+          background: oklch(55% 0.2 140 / 0.15);
+          color: #4ade80;
+        }
+
+        .uh-staking-details {
+          margin-top: var(--space-3);
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-2);
+        }
+
+        .uh-detail-row {
+          display: flex;
+          justify-content: space-between;
+          font-size: var(--text-sm);
+          color: var(--text-secondary);
+        }
+      `}</style>
     </div>
   );
 };
 
-// Modern UI enhancements applied via global styles.css
-
-
-const styles = {
-  container: {
-    padding: '40px 24px',
-    maxWidth: '900px',
-    margin: '0 auto',
-  },
-  header: {
-    textAlign: 'center',
-    marginBottom: '32px',
-  },
-  title: {
-    fontSize: '32px',
-    color: '#FFD700',
-    marginBottom: '8px',
-  },
-  subtitle: {
-    fontSize: '16px',
-    color: '#A0A0A0',
-  },
-  statsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-    gap: '16px',
-    marginBottom: '32px',
-  },
-  statCard: {
-    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
-    padding: '20px',
-    borderRadius: '12px',
-    textAlign: 'center',
-    border: '1px solid rgba(255, 215, 0, 0.2)',
-  },
-  statLabel: {
-    display: 'block',
-    fontSize: '14px',
-    color: '#A0A0A0',
-    marginBottom: '8px',
-  },
-  statValue: {
-    display: 'block',
-    fontSize: '24px',
-    fontWeight: 'bold',
-    color: '#FFD700',
-  },
-  tabs: {
-    display: 'flex',
-    gap: '12px',
-    marginBottom: '24px',
-    borderBottom: '1px solid rgba(255, 215, 0, 0.2)',
-    paddingBottom: '16px',
-  },
-  tab: {
-    padding: '12px 24px',
-    background: 'transparent',
-    border: 'none',
-    color: '#A0A0A0',
-    fontSize: '16px',
-    cursor: 'pointer',
-    borderRadius: '8px',
-    transition: 'all 0.3s',
-  },
-  tabActive: {
-    background: 'rgba(255, 215, 0, 0.2)',
-    color: '#FFD700',
-  },
-  content: {
-    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
-    borderRadius: '16px',
-    padding: '24px',
-    border: '1px solid rgba(255, 215, 0, 0.2)',
-  },
-  sectionTitle: {
-    fontSize: '20px',
-    color: '#FFD700',
-    marginBottom: '20px',
-  },
-  historyItem: {
-    padding: '16px',
-    background: 'rgba(0, 0, 0, 0.2)',
-    borderRadius: '8px',
-    marginBottom: '12px',
-  },
-  itemHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '8px',
-  },
-  itemType: {
-    fontSize: '16px',
-    color: '#FFFFFF',
-    fontWeight: 'bold',
-  },
-  itemTime: {
-    fontSize: '14px',
-    color: '#A0A0A0',
-  },
-  itemDetails: {
-    display: 'flex',
-    gap: '16px',
-    alignItems: 'center',
-    marginBottom: '8px',
-  },
-  badge: {
-    padding: '4px 12px',
-    borderRadius: '4px',
-    fontSize: '12px',
-  },
-  reward: {
-    color: '#00FF88',
-    fontWeight: 'bold',
-  },
-  rewardAmount: {
-    color: '#00FF88',
-    fontSize: '18px',
-    fontWeight: 'bold',
-  },
-  txLink: {
-    color: '#4488FF',
-    fontSize: '14px',
-    textDecoration: 'none',
-  },
-  status: {
-    padding: '4px 12px',
-    borderRadius: '4px',
-    fontSize: '12px',
-  },
-  stakingDetails: {
-    marginTop: '12px',
-  },
-  detailRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    marginBottom: '8px',
-    color: '#A0A0A0',
-    fontSize: '14px',
-  },
-};
-
-// Modern UI enhancements applied via global styles.css
-
-
 export default UserHistory;
-
-// Modern CSS Override
-const style = document.createElement('style');
-style.textContent = `
-  .history-page { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
-  .history-header { text-align: center; margin-bottom: 40px; }
-  .history-title { font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #FFD700, #8B5CF6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-  .history-card { background: var(--gradient-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 24px; margin-bottom: 24px; }
-  .history-item { display: flex; justify-content: space-between; align-items: center; padding: 16px; border-bottom: 1px solid var(--border-subtle); }
-  .history-item:last-child { border-bottom: none; }
-  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-tertiary); }
-`;
-if (document.head) document.head.appendChild(style);
