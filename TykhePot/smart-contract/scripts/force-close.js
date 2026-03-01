@@ -7,7 +7,7 @@ const { web3, BN } = anchor;
 const fs = require("fs");
 const path = require("path");
 
-const PROGRAM_ID = new web3.PublicKey("9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ");
+const PROGRAM_ID = new web3.PublicKey("BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5");
 
 async function main() {
   console.log("🔥 Force closing accounts (raw instruction)\n");

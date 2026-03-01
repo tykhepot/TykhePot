@@ -19,7 +19,7 @@
 
 - **线上地址**: https://www.tykhepot.io
 - **网络**: Solana Devnet（主网待上线）
-- **程序 ID**: `9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ`
+- **程序 ID**: `BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5`
 - **代币 TPOT**: `FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY`（总量 10 亿）
 
 ---

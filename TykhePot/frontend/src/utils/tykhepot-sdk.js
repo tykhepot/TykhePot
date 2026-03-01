@@ -11,10 +11,6 @@
  *   - On deposit: referrer's token account pubkey is stored in UserDeposit.referrer.
  *   - On draw: cron calls claimReferral() for each deposit with a non-default referrer.
  *   - On refund: no referral paid (referrer field remains set but no DrawResult exists).
- * Referee Bonus: 2% one-time from referral_vault, claimed via claim_referee_bonus().
- *   - On deposit with referrer: creates/updates RefereeBonusClaim PDA with first deposit info.
- *   - Anytime: user can call claimRefereeBonus() to receive 2% of first deposit.
- *   - Security: has_claimed flag prevents double-claim.
  */
 
 import * as anchor from "@coral-xyz/anchor";
@@ -175,20 +171,6 @@ const IDL = {
         { name: "poolType",    type: "u8"  },
         { name: "roundNumber", type: "u64" },
       ],
-    },
-    {
-      // Permissionless — user can call this anytime after their first deposit with a referrer.
-      // Awards a 2% one-time bonus based on the first deposit amount.
-      name: "claimRefereeBonus",
-      accounts: [
-        { name: "user",                  isMut: true,  isSigner: true  },
-        { name: "refereeBonusClaim",     isMut: true,  isSigner: false },
-        { name: "globalState",           isMut: false, isSigner: false },
-        { name: "referralVault",         isMut: true,  isSigner: false },
-        { name: "userTokenAccount",      isMut: true,  isSigner: false },
-        { name: "tokenProgram",          isMut: false, isSigner: false },
-      ],
-      args: [],
     },
     // ── Staking ──────────────────────────────────────────────────────────────
     {
@@ -466,20 +448,6 @@ const IDL = {
       },
     },
     {
-      name: "RefereeBonusClaim",
-      type: {
-        kind: "struct",
-        fields: [
-          { name: "user",                       type: "publicKey" },
-          { name: "hasClaimed",                 type: "bool"      },
-          { name: "firstDepositPoolType",        type: "u8"        },
-          { name: "firstDepositRound",           type: "u64"       },
-          { name: "firstDepositAmount",          type: "u64"       },
-          { name: "bump",                       type: "u8"        },
-        ],
-      },
-    },
-    {
       // Created during execute_draw. Tracks top-prize vesting for one round.
       // top_winners[0]    = 1st prize (30%)
       // top_winners[1..2] = 2nd prize (10% each)
@@ -643,16 +611,6 @@ const IDL = {
         { name: "timestamp",    type: "i64",       index: false },
       ],
     },
-    {
-      name: "RefereeBonusClaimed",
-      fields: [
-        { name: "user",            type: "publicKey", index: false },
-        { name: "poolType",        type: "u8",       index: false },
-        { name: "roundNumber",     type: "u64",       index: false },
-        { name: "depositAmount",   type: "u64",       index: false },
-        { name: "bonusAmount",     type: "u64",       index: false },
-      ],
-    },
   ],
 };
 
@@ -680,13 +638,6 @@ export function getUserDepositPda(poolType, userPubkey, roundNumber) {
       userPubkey.toBuffer(),
       rnBuf,
     ],
-    PROGRAM
-  );
-}
-
-export function getRefereeBonusClaimPda(userPubkey) {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from("referee_claim"), userPubkey.toBuffer()],
     PROGRAM
   );
 }
@@ -1272,34 +1223,6 @@ export default class TykhePotSDK {
           referralVault:        new PublicKey(REFERRAL_VAULT),
           referrerTokenAccount: referrerTokenAccountPubkey,
           tokenProgram:         TOKEN_PROGRAM_ID,
-        })
-    );
-
-    return { success: true, tx: sig };
-  }
-
-  // ── Write: claimRefereeBonus (permissionless — user calls after first deposit) ─
-  //
-  // userPubkey — the user's public key
-  // userTokenAccountPubkey — user's TPOT token account to receive the 2% bonus
-
-  async claimRefereeBonus(userTokenAccountPubkey) {
-    const user = this.wallet.publicKey;
-    if (!user) throw new Error("Wallet not connected");
-
-    const [refereeBonusClaim] = getRefereeBonusClaimPda(user);
-    const [globalState] = getGlobalStatePda();
-
-    const sig = await this._sendTx(
-      this.program.methods
-        .claimRefereeBonus()
-        .accounts({
-          user,
-          refereeBonusClaim,
-          globalState,
-          referralVault: new PublicKey(REFERRAL_VAULT),
-          userTokenAccount: userTokenAccountPubkey,
-          tokenProgram: TOKEN_PROGRAM_ID,
         })
     );
 

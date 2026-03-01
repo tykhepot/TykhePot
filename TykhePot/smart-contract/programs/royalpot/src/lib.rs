@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_lang::system_program;
 use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
 
 pub mod airdrop;
@@ -67,7 +68,6 @@ pub const USER_DEPOSIT_SIZE: usize = 8 + 32 + 1 + 8 + 8 + 32 + 1 + 6;
 // FreeDeposit: disc(8)+user(32)+pool_type(1)+is_active(1)+amount(8)+referrer(32)+bump(1)+pad(7) = 90
 pub const FREE_DEPOSIT_SIZE: usize = 8 + 32 + 1 + 1 + 8 + 32 + 1 + 7;
 pub const AIRDROP_CLAIM_SIZE: usize = 8 + 32 + 1 + 1 + 6;
-// RefereeBonusClaim: disc(8)+user(32)+has_claimed(1)+pool_type(1)+round(8)+amount(8)+bump(1)+pad(7) = 67
 pub const REFEREE_BONUS_CLAIM_SIZE: usize = 8 + 32 + 1 + 1 + 8 + 8 + 1 + 7;
 // DrawResult: disc(8)+pool_type(1)+round(8)+top_winners(192)+top_amounts(48)+
 //             top_claimed(48)+draw_timestamp(8)+bump(1) = 314
@@ -203,9 +203,8 @@ pub struct AirdropClaim {
     pub _padding: [u8; 6],
 }
 
-/// One-time referee bonus claim tracker.
-/// Created during user's first deposit with a referrer.
-/// Tracks whether the 2% referee bonus has been claimed.
+/// Tracks referee bonus eligibility for users who joined via a referral link.
+/// The bonus is one-time only: a 2% bonus based on the first deposit amount.
 #[account]
 pub struct RefereeBonusClaim {
     pub user: Pubkey,
@@ -309,7 +308,7 @@ pub enum ErrorCode {
     RefereeBonusAlreadyClaimed,
     #[msg("No referee bonus eligibility")]
     NoRefereeEligibility,
-    #[msg("Unauthorized: only the user can claim their own referee bonus")]
+    #[msg("Unauthorized: only user can claim their own referee bonus")]
     UnauthorizedClaimer,
 }
 
@@ -684,17 +683,58 @@ pub mod royalpot {
         // ---------------------------------------------------
         let has_referrer = dep.referrer != Pubkey::default();
         if has_referrer {
-            let claim = &mut ctx.accounts.referee_bonus_claim;
-            // If this is the user's first ever deposit with a referrer, record it
-            // Otherwise, do nothing (bonus is one-time only)
-            if !claim.has_claimed {
-                claim.user = ctx.accounts.user.key();
-                claim.has_claimed = false; // Will be set true when bonus is claimed
-                claim.first_deposit_pool_type = pool.pool_type;
-                claim.first_deposit_round = pool.round_number;
-                claim.first_deposit_amount = amount;
-                claim.bump = ctx.bumps.referee_bonus_claim;
-                claim._padding = [0u8; 7];
+            let referee_claim_info = &ctx.accounts.referee_bonus_claim.to_account_info();
+            let user_key = ctx.accounts.user.key();
+            let (_referee_claim_pda, referee_claim_bump) = Pubkey::find_program_address(
+                &[b"referee_claim", user_key.as_ref()],
+                ctx.program_id,
+            );
+
+            // Check if account exists and is initialized
+            if referee_claim_info.data_is_empty() {
+                // Create the account
+                let lamports = Rent::get()?.minimum_balance(REFEREE_BONUS_CLAIM_SIZE);
+                let space = REFEREE_BONUS_CLAIM_SIZE as u64;
+
+                system_program::create_account(
+                    CpiContext::new_with_signer(
+                        ctx.accounts.system_program.to_account_info(),
+                        system_program::CreateAccount {
+                            from: ctx.accounts.user.to_account_info(),
+                            to: referee_claim_info.clone(),
+                        },
+                        &[&[b"referee_claim", user_key.as_ref(), &[referee_claim_bump]][..]],
+                    ),
+                    lamports,
+                    space,
+                    ctx.program_id,
+                )?;
+
+                // Initialize the account
+                let mut claim_data = RefereeBonusClaim::try_deserialize(&mut &referee_claim_info.data.borrow()[..])?;
+                claim_data.user = ctx.accounts.user.key();
+                claim_data.has_claimed = false;
+                claim_data.first_deposit_pool_type = pool.pool_type;
+                claim_data.first_deposit_round = pool.round_number;
+                claim_data.first_deposit_amount = amount;
+                claim_data.bump = referee_claim_bump;
+                claim_data._padding = [0u8; 7];
+                claim_data.serialize(&mut &mut referee_claim_info.data.borrow_mut()[..])?;
+            } else {
+                // Account exists, check if already claimed
+                let claim_data = RefereeBonusClaim::try_deserialize(&mut &referee_claim_info.data.borrow()[..])?;
+                if !claim_data.has_claimed {
+                    // First deposit with referrer, update the data
+                    let mut claim_data = claim_data;
+                    claim_data.user = ctx.accounts.user.key();
+                    claim_data.has_claimed = false;
+                    claim_data.first_deposit_pool_type = pool.pool_type;
+                    claim_data.first_deposit_round = pool.round_number;
+                    claim_data.first_deposit_amount = amount;
+                    claim_data.bump = referee_claim_bump;
+                    claim_data._padding = [0u8; 7];
+                    claim_data.serialize(&mut &mut referee_claim_info.data.borrow_mut()[..])?;
+                }
             }
         }
 
@@ -1413,14 +1453,14 @@ pub mod royalpot {
         Ok(())
     }
 
-    /// Claim the 2% referee bonus for a user's first deposit.
+    /// Claim 2% referee bonus for a user's first deposit.
     ///
-    /// Permissionless — user can call this anytime after depositing with a referrer.
+    /// Permissionless — user can call this anytime after their first deposit with a referrer.
     /// Awards a 2% bonus based on the first deposit amount.
     pub fn claim_referee_bonus(ctx: Context<ClaimRefereeBonus>) -> Result<()> {
         let claim = &mut ctx.accounts.referee_bonus_claim;
 
-        // Verify the bonus hasn't been claimed yet
+        // Verify that bonus hasn't been claimed yet
         require!(!claim.has_claimed, ErrorCode::RefereeBonusAlreadyClaimed);
 
         // Verify there was a first deposit recorded
@@ -1778,16 +1818,9 @@ pub struct Deposit<'info> {
     )]
     pub reserve_vault: Account<'info, TokenAccount>,
 
-    /// Referee bonus claim account - created only if user has a referrer
-    /// Uses init_if_needed to handle first-time bonus setup
-    #[account(
-        init_if_needed,
-        payer = user,
-        space = REFEREE_BONUS_CLAIM_SIZE,
-        seeds = [b"referee_claim", user.key().as_ref()],
-        bump,
-    )]
-    pub referee_bonus_claim: Account<'info, RefereeBonusClaim>,
+    /// Referee bonus claim account (optional, created manually in instruction if user has referrer)
+    /// CHECK: Validated in instruction body
+    pub referee_bonus_claim: UncheckedAccount<'info>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
