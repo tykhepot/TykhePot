@@ -607,8 +607,7 @@ export default class TykhePotSDK {
       await this.connection.getLatestBlockhash("confirmed");
     const tx = await methodCall.transaction();
     tx.recentBlockhash = blockhash;
-    // feePayer is intentionally left unset here so the wallet adapter sets it
-    // to the currently active account, avoiding the stale-key issue.
+    tx.feePayer = this.wallet.publicKey;
     const sig = await this.wallet.sendTransaction(tx, this.connection, {
       signers: additionalSigners,
     });
