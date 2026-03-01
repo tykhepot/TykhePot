@@ -598,14 +598,19 @@ export default class TykhePotSDK {
   }
 
   // ── Transaction helper ──────────────────────────────────────────────────────
-  // Build a VersionedTransaction (v0) instead of a legacy Transaction.
+  // Dual signing strategy to handle two different wallet ecosystems:
   //
-  // Why: Phantom's bridge calls tx.serialize() on legacy transactions BEFORE
-  // sending to the extension for signing. serialize() defaults to
-  // requireAllSignatures:true and throws "Missing signature" on an unsigned tx.
-  // VersionedTransaction.serialize() does NOT check for missing signatures
-  // (fills absent slots with zero bytes), so the transaction reaches the
-  // extension cleanly and is signed there.
+  // 1. WalletConnect wallets: Use adapter.signAndSendTransaction() which maps to
+  //    the `solana_signAndSendTransaction` WalletConnect RPC method. The mobile
+  //    wallet signs AND broadcasts atomically, returning only the signature hash.
+  //    This sidesteps the "Missing signature" issue caused by WalletConnect's
+  //    signTransaction returning unsigned bytes on some mobile wallets.
+  //
+  // 2. Phantom / Solflare / browser wallets: Use VersionedTransaction (v0) via
+  //    wallet.sendTransaction(). Phantom's bridge calls tx.serialize() on legacy
+  //    transactions BEFORE signing (throwing "Missing signature"), but
+  //    VersionedTransaction.serialize() fills absent slots with zero bytes so the
+  //    unsigned tx reaches the extension cleanly and is signed there.
 
   async _sendTx(methodCall, additionalSigners = []) {
     const { blockhash, lastValidBlockHeight } =
@@ -614,11 +619,36 @@ export default class TykhePotSDK {
     // Build Anchor's legacy tx to get the compiled instruction(s).
     const legacyTx = await methodCall.transaction();
 
-    // Wrap into a v0 VersionedTransaction.
+    // ── Path 1: WalletConnect ────────────────────────────────────────────────
+    // WalletConnectWalletAdapter exposes signAndSendTransaction() but
+    // Phantom/Solflare adapters do not — use this as a reliable detector.
+    const adapter = this.wallet.wallet?.adapter;
+    if (typeof adapter?.signAndSendTransaction === "function") {
+      // Prepare the legacy tx (feePayer + blockhash required for serialization).
+      legacyTx.recentBlockhash = blockhash;
+      legacyTx.feePayer        = this.wallet.publicKey;
+      if (additionalSigners.length > 0) legacyTx.partialSign(...additionalSigners);
+
+      try {
+        // signAndSendTransaction: mobile wallet signs + broadcasts → returns sig.
+        const sig = await adapter.signAndSendTransaction(legacyTx);
+        await this.connection.confirmTransaction(
+          { signature: sig, blockhash, lastValidBlockHeight },
+          "confirmed"
+        );
+        return sig;
+      } catch (wcErr) {
+        // solana_signAndSendTransaction not in session or failed;
+        // fall through to the VersionedTransaction path below.
+        console.warn("WalletConnect signAndSendTransaction failed, falling back to VersionedTransaction:", wcErr?.message);
+      }
+    }
+
+    // ── Path 2: Phantom / browser wallets (VersionedTransaction) ─────────────
     const message = new TransactionMessage({
-      payerKey:       this.wallet.publicKey,
+      payerKey:        this.wallet.publicKey,
       recentBlockhash: blockhash,
-      instructions:   legacyTx.instructions,
+      instructions:    legacyTx.instructions,
     }).compileToV0Message();
 
     const vtx = new VersionedTransaction(message);
