@@ -1,25 +1,22 @@
 import React, { useState, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
-import { POOL_TYPE, POOL_CONFIG } from '../config/contract';
+import { POOL_TYPE } from '../config/contract';
 
 const Airdrop = () => {
   const { wallet, sdk, userStatus, refreshStats } = useApp();
   const { language } = useTranslation();
-  const [isClaiming, setIsClaiming]       = useState(false);
-  const [isUsingBet, setIsUsingBet]       = useState(false);
-  const [activatingPool, setActivatingPool] = useState(null);
-  const [error, setError]                 = useState('');
-  const [successMsg, setSuccessMsg]       = useState('');
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [isUsingBet, setIsUsingBet] = useState(false);
+  const [error, setError]           = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   // Derived state from userStatus (refreshed every 30s by AppContext)
   const hasClaimedAirdrop = userStatus?.hasClaimedAirdrop  ?? false;
   const hasFreeClaim      = userStatus?.hasFreeClaim       ?? false;
 
-  // Check if free bet is active in any pool
-  const freeBetPools = [POOL_TYPE.MIN30, POOL_TYPE.HOURLY, POOL_TYPE.DAILY].filter(
-    pt => userStatus?.pools?.[pt]?.freeBetActive
-  );
+  // v3: free bet is DAILY pool only
+  const freeBetActive = userStatus?.pools?.[POOL_TYPE.DAILY]?.freeBetActive ?? false;
 
   const handleClaim = useCallback(async () => {
     if (!wallet.publicKey || !sdk) return;
@@ -43,21 +40,17 @@ const Airdrop = () => {
     }
   }, [wallet, sdk, language, refreshStats]);
 
-  const handleUseFreeBet = useCallback(async (poolType) => {
+  const handleUseFreeBet = useCallback(async () => {
     if (!wallet.publicKey || !sdk) return;
     setIsUsingBet(true);
-    setActivatingPool(poolType);
     setError('');
     setSuccessMsg('');
     try {
-      const result = await sdk.useFreeBet(poolType);
+      const result = await sdk.useFreeBet();
       if (result.success) {
-        const label = language === 'en'
-          ? POOL_CONFIG[poolType].label
-          : { [POOL_TYPE.MIN30]: '30分钟池', [POOL_TYPE.HOURLY]: '小时池', [POOL_TYPE.DAILY]: '每日池' }[poolType];
         setSuccessMsg(language === 'en'
-          ? `🎰 Free bet placed in ${label}! Good luck!`
-          : `🎰 免费投注已进入${label}！祝你好运！`);
+          ? '🎰 Free bet placed in Daily Pool! Good luck!'
+          : '🎰 免费投注已进入每日池！祝你好运！');
         refreshStats();
       } else {
         setError(result.error || (language === 'en' ? 'Failed to place free bet' : '免费投注失败'));
@@ -66,7 +59,6 @@ const Airdrop = () => {
       setError(err.message || (language === 'en' ? 'Error' : '错误'));
     } finally {
       setIsUsingBet(false);
-      setActivatingPool(null);
     }
   }, [wallet, sdk, language, refreshStats]);
 
@@ -104,7 +96,7 @@ const Airdrop = () => {
       );
     }
 
-    // State 2: Claimed, free bet ready to place in a pool
+    // State 2: Claimed, free bet ready to place in Daily Pool
     if (hasFreeClaim) {
       return (
         <div className="ad-use-section">
@@ -114,36 +106,26 @@ const Airdrop = () => {
               <strong>{language === 'en' ? 'Free Bet Ready!' : '免费投注已就绪！'}</strong>
               <p>
                 {language === 'en'
-                  ? 'Choose a pool to place your 100 TPOT free bet:'
-                  : '选择一个奖池使用您的 100 TPOT 免费投注：'}
+                  ? 'Your 100 TPOT free bet is available for the Daily Pool.'
+                  : '您的 100 TPOT 免费投注可进入每日池参与开奖。'}
               </p>
             </div>
           </div>
-          <div className="ad-pool-buttons">
-            {[
-              { pt: POOL_TYPE.MIN30,  icon: '⏱️', enLabel: '30 Min Pool', zhLabel: '30分钟池', min: 500 },
-              { pt: POOL_TYPE.HOURLY, icon: '⏰', enLabel: 'Hourly Pool',  zhLabel: '小时池',   min: 200 },
-              { pt: POOL_TYPE.DAILY,  icon: '🌙', enLabel: 'Daily Pool',   zhLabel: '每日池',   min: 100 },
-            ].map(({ pt, icon, enLabel, zhLabel }) => (
-              <button
-                key={pt}
-                className="ad-pool-btn"
-                onClick={() => handleUseFreeBet(pt)}
-                disabled={isUsingBet}
-              >
-                {isUsingBet && activatingPool === pt
-                  ? (language === 'en' ? '⏳ Placing...' : '⏳ 投注中...')
-                  : `${icon} ${language === 'en' ? enLabel : zhLabel}`}
-              </button>
-            ))}
-          </div>
+          <button
+            className="ad-btn-primary"
+            onClick={handleUseFreeBet}
+            disabled={isUsingBet}
+          >
+            {isUsingBet
+              ? (language === 'en' ? '⏳ Placing...' : '⏳ 投注中...')
+              : `🌙 ${language === 'en' ? 'Use in Daily Pool' : '在每日池使用'}`}
+          </button>
         </div>
       );
     }
 
-    // State 3: Claimed, free bet active in a pool (waiting for draw)
-    if (freeBetPools.length > 0) {
-      const labels = { [POOL_TYPE.MIN30]: { en: '30 Min', zh: '30分钟' }, [POOL_TYPE.HOURLY]: { en: 'Hourly', zh: '小时' }, [POOL_TYPE.DAILY]: { en: 'Daily', zh: '每日' } };
+    // State 3: Claimed, free bet active in Daily Pool (waiting for draw)
+    if (freeBetActive) {
       return (
         <div className="ad-active-banner">
           <span className="ad-active-icon">🎰</span>
@@ -153,8 +135,8 @@ const Airdrop = () => {
             </strong>
             <p>
               {language === 'en'
-                ? `Active in: ${freeBetPools.map(pt => labels[pt].en + ' Pool').join(', ')}`
-                : `活跃奖池：${freeBetPools.map(pt => labels[pt].zh + '池').join('、')}`}
+                ? 'Active in: Daily Pool — draw at 00:00 UTC'
+                : '活跃奖池：每日池 — 每天 00:00 UTC 开奖'}
             </p>
             <p className="ad-carry-note">
               {language === 'en'
@@ -239,7 +221,7 @@ const Airdrop = () => {
               { icon: '🎰', en: 'The 100 TPOT is a free bet — deposited directly from the airdrop vault', zh: '100 TPOT 是免费投注，直接从空投库注入奖池，不扣您钱包' },
               { icon: '⚖️', en: 'Equal winning probability with regular depositors (1 wallet = 1 chance)', zh: '与普通投注者相同的中奖概率（1个钱包 = 1次机会）' },
               { icon: '♻️', en: 'If round fails (<12 players), your free bet auto-carries to the next round', zh: '若当期人数不足12人，免费投注自动续到下一期' },
-              { icon: '🔥', en: 'On successful draw: 95% prize to winner · 3% burned · 2% platform', zh: '开奖成功：95% 奖金 · 3% 销毁 · 2% 平台' },
+              { icon: '🏆', en: 'On successful draw: 11 winners — top 6 vest over 20 days, lucky×5 and universal prize paid instantly', zh: '开奖成功：11位获奖者 — 前6名奖金20天线性归属，幸运×5和普惠奖即时到账' },
             ].map((rule, i) => (
               <div key={i} className="ad-rule-item">
                 <span>{rule.icon}</span>
@@ -254,9 +236,9 @@ const Airdrop = () => {
           <h2 className="card-title-modern">💡 {language === 'en' ? 'Tips' : '小贴士'}</h2>
           <div className="ad-tips">
             {[
-              { icon: '⏱️', en: 'Use your free bet in 30 Min Pool — fastest draws, min 500 TPOT regular', zh: '在30分钟池使用 — 开奖最快，普通最低 500 TPOT' },
-              { icon: '⏰', en: 'Hourly Pool — balanced, min 200 TPOT regular', zh: '小时池 — 平衡选择，普通最低 200 TPOT' },
-              { icon: '🌙', en: 'Daily Pool — biggest pools accumulate, min 100 TPOT regular', zh: '每日池 — 奖池积累最多，普通最低 100 TPOT' },
+              { icon: '🌙', en: 'Free bet is exclusive to Daily Pool — draws at 00:00 UTC every day', zh: '免费投注仅限每日池 — 每天 00:00 UTC 开奖' },
+              { icon: '💰', en: 'Daily Pool accumulates the largest prize pool with reserve matching', zh: '每日池奖金最丰厚，支持储备配捐翻倍' },
+              { icon: '🏆', en: '11 winners per draw: 1st / 2nd×2 / 3rd×3 / Lucky×5 + universal prize for all non-winners', zh: '每期11位获奖者：头奖/二等×2/三等×3/幸运×5 + 全员普惠奖' },
               { icon: '💎', en: 'Stake TPOT tokens for additional profit-sharing rewards', zh: '质押 TPOT 代币可获得额外分红收益' },
             ].map((tip, i) => (
               <div key={i} className="ad-tip-item">
