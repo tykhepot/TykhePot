@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from '../i18n/LanguageContext';
 
 const Whitepaper = () => {
-  const { t, language } = useTranslation();
+  const { language } = useTranslation();
 
   const content = {
     en: {
@@ -42,7 +42,7 @@ Key design principles:
             { label: 'Staking Rewards Pool', value: '350,000,000 (35%)', desc: 'Pays staking rewards to TPOT holders (Short-term 8% APR / Long-term 48% APR). Used until depleted.' },
             { label: 'Reserve Matching Pool', value: '200,000,000 (20%)', desc: 'Provides 1:1 deposit matching exclusively for Daily Pool participants while reserves last. 30-Minute and Hourly pools do not receive matching. Used until depleted.' },
             { label: 'Team Allocation', value: '100,000,000 (10%)', desc: 'For marketing, community maintenance and operations. Linear release over 4 years: Year 1 → 5%, Year 2 → 15%, Year 3 → 30%, Year 4 → 50%.' },
-            { label: 'Referral Rewards Pool', value: '200,000,000 (20%)', desc: 'Funds referral rewards (8% to referrer + 2% one-time to new referee). Used until depleted.' },
+            { label: 'Referral Rewards Pool', value: '200,000,000 (20%)', desc: 'Funds referral rewards (8% to referrer per deposit). Used until depleted.' },
           ],
         },
         {
@@ -52,7 +52,7 @@ Key design principles:
           items: [
             { label: '30-Minute Pool (MIN30)', value: 'Draws at :00 and :30 every hour', desc: 'Min deposit: 500 TPOT · Min participants: 12 · Deposits close 5 minutes before each draw · No reserve matching' },
             { label: 'Hourly Pool (HOURLY)', value: 'Draws at :00 every hour', desc: 'Min deposit: 200 TPOT · Min participants: 12 · Deposits close 5 minutes before each draw · No reserve matching' },
-            { label: 'Daily Pool (DAILY)', value: 'Draws at 00:00 UTC every day', desc: 'Min deposit: 100 TPOT · Min participants: 12 · Deposits close at 23:55 UTC · Supports free bet entry, 8% referral rewards & 1:1 reserve matching' },
+            { label: 'Daily Pool (DAILY)', value: 'Draws at 00:00 UTC every day', desc: 'Min deposit: 100 TPOT · Min participants: 12 · Deposits close at 23:55 UTC · Supports free bet entry and 1:1 reserve matching · Referral rewards apply' },
           ],
           heading2: '3.2 Round Lifecycle',
           content2: `Each round follows a fixed schedule:
@@ -86,7 +86,7 @@ A 100 TPOT deposit has the same selection probability as a 1,000,000 TPOT deposi
             { label: '3rd Prize', value: '15% — 3 winners (5% each)', desc: 'Three third-place winners. Each receives 5% per day over 20 days.' },
             { label: 'Lucky Prize', value: '10% — 5 winners (2% each)', desc: 'Five randomly selected lucky winners. Paid immediately to wallet.' },
             { label: 'Universal Prize', value: '20% — all remaining participants', desc: 'Split equally among every participant who did not win a prize above. Paid immediately. TykhePot has NO empty prizes — everyone wins something.' },
-            { label: 'Rollover', value: '5% — stays in vault', desc: 'Carried over to the next round\'s prize pool, growing the jackpot.' },
+            { label: 'Rollover', value: '5% — stays in vault', desc: "Carried over to the next round's prize pool, growing the jackpot." },
           ],
           heading3: '4.3 Prize Vesting (1st, 2nd, 3rd Prizes)',
           content3: `Top prizes are not paid all at once. Instead they are distributed over 20 days:
@@ -127,20 +127,20 @@ Since TykhePot has no empty prizes, your free bet will always result in a prize.
           heading2: '6.2 Free Bet Rules',
           items: [
             { label: 'One per wallet', value: 'Enforced on-chain', desc: 'Each wallet address can only claim and use the free bet once.' },
-            { label: 'Daily Pool only', value: 'Mandatory', desc: 'Free bets must be used in the Daily Pool — they cannot be used in 30-minute or Hourly pools.' },
+            { label: 'Daily Pool only', value: 'Mandatory', desc: 'Free bets must be used in the Daily Pool — they cannot be used in 30-minute or Hourly pools. Enforced by smart contract.' },
             { label: 'Carry-over', value: 'Automatic', desc: 'If the round is refunded, your free bet automatically carries over to the next round. No action required.' },
-            { label: 'Referral eligible', value: 'Yes', desc: 'If your free bet is associated with a referrer, the referral rewards apply as normal.' },
+            { label: 'Referral eligible', value: 'No', desc: 'Free bet entries do not carry a referrer — referral rewards apply only to regular (paid) deposits.' },
           ],
         },
         {
           title: '7. Referral System',
           heading: '7.1 Referral Rewards',
-          content: 'The referral system applies to all pool deposits (including free-bet entries):',
+          content: 'The referral system applies to all regular paid deposits across all pools:',
           items: [
-            { label: 'Referrer Reward', value: '8% of referee\'s deposit', desc: 'Paid immediately from the Referral Pool to the referrer\'s wallet each time a referred user deposits.' },
-            { label: 'Referee Bonus', value: '2% one-time bonus', desc: 'The new user (referee) receives a 2% bonus on their first deposit only. This is a lifetime one-time benefit per wallet address.' },
+            { label: 'Referrer Reward', value: '8% of referee\'s deposit', desc: 'Paid from the Referral Pool after the round succeeds (confirmed on-chain when the draw result is published). Processed automatically by the protocol cron service.' },
+            { label: 'Referee Bonus', value: '2% one-time bonus (coming soon)', desc: 'A 2% bonus on the new user\'s first deposit is planned. This feature is not yet live on-chain and will be introduced in a future protocol update.' },
           ],
-          content2: 'Both rewards are paid from the Referral Rewards Pool (200,000,000 TPOT). Once the pool is depleted, referral rewards stop — this is publicly visible in the pool\'s on-chain state.',
+          content2: "Referral rewards are funded from the Referral Rewards Pool (200,000,000 TPOT). Once the pool is depleted, referral rewards stop — this is publicly visible in the pool's on-chain state.",
           heading2: '7.2 Reserve Matching (Daily Pool Only)',
           content3: `The Daily Pool benefits from 1:1 reserve matching funded by the Reserve Matching Pool (200,000,000 TPOT, 20% of supply):
 
@@ -150,7 +150,7 @@ Since TykhePot has no empty prizes, your free bet will always result in a prize.
 • Free-bet entries (100 TPOT) also receive matching when reserves are available
 • Once the Reserve Pool is depleted, matching stops. The protocol state is publicly readable.
 
-Reserve matching combined with referral rewards makes the Daily Pool the highest expected-value pool, especially for early participants.`,
+Reserve matching makes the Daily Pool the highest expected-value pool, especially for early participants.`,
         },
         {
           title: '8. Verifiable Randomness',
@@ -183,10 +183,10 @@ This process requires no trust in TykhePot. All data is permanently on-chain.`,
           heading: '9.1 Overview',
           content: 'TykhePot offers on-chain staking for TPOT holders who prefer predictable yield over lottery variance.',
           items: [
-            { label: 'Short-Term Staking', value: '30-day lock, 8% APR', desc: 'Lower commitment; rewards calculated daily; principal + rewards returned after 30 days.' },
-            { label: 'Long-Term Staking', value: '180-day lock, 48% APR', desc: 'Higher yield for long-term holders; early exit forfeits rewards (principal is returned).' },
+            { label: 'Short-Term Staking', value: '30-day lock, 8% APR', desc: 'Lower commitment; rewards calculated at stake time; principal + rewards returned after 30 days.' },
+            { label: 'Long-Term Staking', value: '180-day lock, 48% APR', desc: 'Higher yield for long-term holders; early exit forfeits rewards (principal is returned in full).' },
           ],
-          content2: 'Staking rewards are funded from the Staking Rewards Pool (350,000,000 TPOT). Each stake is tracked independently via a UserStake PDA.',
+          content2: 'Staking rewards are funded from the Staking Rewards Pool (350,000,000 TPOT). Each stake is tracked independently via a UserStake PDA. The remaining pool capacity is visible on the Staking page.',
         },
         {
           title: '10. Security & Protocol Safeguards',
@@ -277,7 +277,7 @@ Please carefully evaluate your financial situation and risk tolerance before par
             { label: '质押奖励池', value: '350,000,000 (35%)', desc: '向TPOT持有者支付质押奖励（短期8% APR / 长期48% APR）。用完为止。' },
             { label: '储备配捐池', value: '200,000,000 (20%)', desc: '专门用于天池的1:1存款配捐，储备充足期间有效。30分钟池和小时池不支持配捐。用完为止。' },
             { label: '团队分配', value: '100,000,000 (10%)', desc: '用于市场推广和社区维护等。4年线性释放：第一年5%、第二年15%、第三年30%、第四年50%。' },
-            { label: '推广奖励池', value: '200,000,000 (20%)', desc: '为推广奖励（推荐人8%+被推荐人2%一次性）提供资金。用完为止。' },
+            { label: '推广奖励池', value: '200,000,000 (20%)', desc: '为推荐人奖励（每笔存款8%）提供资金。用完为止。' },
           ],
         },
         {
@@ -287,7 +287,7 @@ Please carefully evaluate your financial situation and risk tolerance before par
           items: [
             { label: '30分钟池（MIN30）', value: '每小时整点和半点自动开奖', desc: '最低投入：500 TPOT · 最低参与人数：12人 · 开奖前5分钟停止存款 · 不支持储备配捐' },
             { label: '小时池（HOURLY）', value: '每天各整点自动开奖', desc: '最低投入：200 TPOT · 最低参与人数：12人 · 开奖前5分钟停止存款 · 不支持储备配捐' },
-            { label: '天池（DAILY）', value: '每天0点（UTC）自动开奖', desc: '最低投入：100 TPOT · 最低参与人数：12人 · 23:55 UTC截止存款 · 支持免费投注、推荐奖励和1:1储备配捐' },
+            { label: '天池（DAILY）', value: '每天0点（UTC）自动开奖', desc: '最低投入：100 TPOT · 最低参与人数：12人 · 23:55 UTC截止存款 · 支持免费投注和1:1储备配捐 · 推荐奖励适用' },
           ],
           heading2: '3.2 轮次生命周期',
           content2: `每个轮次遵循固定时间表：
@@ -353,7 +353,7 @@ Please carefully evaluate your financial situation and risk tolerance before par
 
 重要：空投代币不会直接进入您的钱包。它赋予您一次天池免费参与权。
 
-领取后，天池页面将出现"使用免费投注"按钮。点击后：
+领取后，空投页面将出现"在每日池使用"按钮。点击后：
 • 协议代您将100 TPOT从空投金库转入天池金库
 • 链上记录您的免费投注参与（FreeDeposit PDA）
 • 标记您的资格为已使用，防止重复参与
@@ -362,20 +362,20 @@ Please carefully evaluate your financial situation and risk tolerance before par
           heading2: '6.2 免费投注规则',
           items: [
             { label: '每钱包仅限一次', value: '链上强制执行', desc: '每个钱包地址只能领取并使用一次免费投注。' },
-            { label: '仅限天池', value: '强制规定', desc: '免费投注必须且只能用于天池，不能用于30分钟池或小时池。' },
+            { label: '仅限天池', value: '强制规定', desc: '免费投注必须且只能用于天池，不能用于30分钟池或小时池，智能合约层面强制执行。' },
             { label: '自动结转', value: '无需操作', desc: '若当轮退款，您的免费投注自动结转至下一轮，无需任何操作。' },
-            { label: '推荐奖励适用', value: '是', desc: '若您的免费投注关联了推荐人，推荐奖励规则同样适用。' },
+            { label: '推荐奖励适用', value: '否', desc: '免费投注不关联推荐人，推荐奖励仅适用于普通付费存款。' },
           ],
         },
         {
           title: '7. 推荐系统与储备配捐',
           heading: '7.1 推荐奖励',
-          content: '推荐系统适用于所有奖池的存款（包括免费投注）：',
+          content: '推荐系统适用于所有奖池的普通付费存款：',
           items: [
-            { label: '推荐人奖励', value: '被推荐人存款金额的8%', desc: '每笔成功存款后立即从推广奖励池转至推荐人钱包。' },
-            { label: '被推荐人奖励', value: '一次性2%加成', desc: '新用户（被推荐人）在其首笔存款时获得2%额外奖励。每个钱包地址终身只享受一次此福利。' },
+            { label: '推荐人奖励', value: '被推荐人存款金额的8%', desc: '在该轮次成功开奖后（DrawResult 上链确认），由协议定时服务从推广奖励池自动转至推荐人钱包。' },
+            { label: '被推荐人奖励', value: '一次性2%加成（即将上线）', desc: '新用户首笔存款享受2%额外奖励，此功能尚未在链上实现，将在未来版本更新中推出。' },
           ],
-          content2: '两项奖励均来自推广奖励池（200,000,000 TPOT）。池子耗尽后推荐奖励停止，这一状态可通过链上数据公开查询。',
+          content2: '推荐奖励来自推广奖励池（200,000,000 TPOT）。池子耗尽后推荐奖励停止，这一状态可通过链上数据公开查询。',
           heading2: '7.2 储备配捐（仅限天池）',
           content3: `天池享有1:1储备配捐，资金来自储备配捐池（200,000,000 TPOT，总供应量的20%）：
 
@@ -385,7 +385,7 @@ Please carefully evaluate your financial situation and risk tolerance before par
 • 免费投注（100 TPOT）在储备充足时同样享受配捐
 • 储备池耗尽后配捐停止，可通过链上状态查看
 
-储备配捐结合推荐奖励，使天池成为早期参与者预期收益最高的奖池。`,
+储备配捐使天池成为早期参与者预期收益最高的奖池。`,
         },
         {
           title: '8. 可验证随机性',
@@ -418,10 +418,10 @@ Please carefully evaluate your financial situation and risk tolerance before par
           heading: '9.1 概览',
           content: 'TykhePot 为偏好稳定收益而非彩票波动的TPOT持有者提供链上质押功能。',
           items: [
-            { label: '短期质押', value: '30天锁仓，8% APR', desc: '承诺期较短；奖励每日累积；30天后返还本金+奖励。' },
-            { label: '长期质押', value: '180天锁仓，48% APR', desc: '为长期持有者提供更高收益；提前赎回将放弃奖励（本金可退还）。' },
+            { label: '短期质押', value: '30天锁仓，8% APR', desc: '承诺期较短；奖励在质押时计算锁定；30天后自动返还本金+奖励。' },
+            { label: '长期质押', value: '180天锁仓，48% APR', desc: '为长期持有者提供更高收益；提前赎回将放弃奖励（本金全额退还）。' },
           ],
-          content2: '质押奖励来自质押奖励池（350,000,000 TPOT）。每笔质押通过 UserStake PDA 独立追踪。',
+          content2: '质押奖励来自质押奖励池（350,000,000 TPOT）。每笔质押通过 UserStake PDA 独立追踪。剩余可用容量可在质押页面实时查看。',
         },
         {
           title: '10. 安全与协议保障',
@@ -480,132 +480,234 @@ Please carefully evaluate your financial situation and risk tolerance before par
 
   const c = content[language] || content.en;
 
-  return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <Link to="/" style={styles.backLink}>← {language === 'en' ? 'Back to Home' : '返回主页'}</Link>
-        <h1 style={styles.title}>{c.title}</h1>
-        <p style={styles.subtitle}>{c.subtitle}</p>
-        <p style={styles.version}>{c.version}</p>
-        <p style={styles.disclaimer}>{c.disclaimer}</p>
-      </div>
-
-      <div style={styles.toc}>
-        <h3 style={styles.tocTitle}>{language === 'en' ? 'Table of Contents' : '目录'}</h3>
-        <ol style={styles.tocList}>
-          {c.sections.map((section, index) => (
-            <li key={index} style={styles.tocItem}>
-              <a href={`#section-${index}`} style={styles.tocLink}>{section.title}</a>
-            </li>
-          ))}
-        </ol>
-      </div>
-
-      <div style={styles.content}>
-        {c.sections.map((section, index) => (
-          <div key={index} id={`section-${index}`} style={styles.section}>
-            <h2 style={styles.sectionTitle}>{section.title}</h2>
-
-            {section.heading && <h3 style={styles.heading}>{section.heading}</h3>}
-            {section.content && <p style={styles.paragraph}>{section.content}</p>}
-            {section.items && (
-              <div style={styles.table}>
-                {section.items.map((item, i) => (
-                  <div key={i} style={styles.tableRow}>
-                    <span style={styles.tableLabel}>{item.label}</span>
-                    {item.value && <span style={styles.tableValue}>{item.value}</span>}
-                    {item.desc && <span style={styles.tableDesc}>{item.desc}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {section.heading2 && <h3 style={styles.heading}>{section.heading2}</h3>}
-            {section.content2 && <p style={styles.paragraph}>{section.content2}</p>}
-            {section.items2 && (
-              <div style={styles.table}>
-                {section.items2.map((item, i) => (
-                  <div key={i} style={styles.tableRow}>
-                    <span style={styles.tableLabel}>{item.label}</span>
-                    {item.value && <span style={styles.tableValue}>{item.value}</span>}
-                    {item.desc && <span style={styles.tableDesc}>{item.desc}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {section.heading3 && <h3 style={styles.heading}>{section.heading3}</h3>}
-            {section.content3 && <p style={styles.paragraph}>{section.content3}</p>}
-            {section.items3 && (
-              <div style={styles.table}>
-                {section.items3.map((item, i) => (
-                  <div key={i} style={styles.tableRow}>
-                    <span style={styles.tableLabel}>{item.label}</span>
-                    {item.value && <span style={styles.tableValue}>{item.value}</span>}
-                    {item.desc && <span style={styles.tableDesc}>{item.desc}</span>}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {section.content4 && <p style={styles.paragraph}>{section.content4}</p>}
-          </div>
-        ))}
-      </div>
-
-      <div style={styles.footer}>
-        <p>© 2026 TykhePot Protocol. All rights reserved.</p>
-        <p style={styles.footerNote}>{language === 'en' ? 'Built on Solana · Fully Decentralized · Verifiable' : '构建于 Solana · 完全去中心化 · 可验证'}</p>
-      </div>
+  const renderItems = (items) => (
+    <div className="wp-table">
+      {items.map((item, i) => (
+        <div key={i} className="wp-table-row">
+          <span className="wp-table-label">{item.label}</span>
+          {item.value && <span className="wp-table-value">{item.value}</span>}
+          {item.desc  && <span className="wp-table-desc">{item.desc}</span>}
+        </div>
+      ))}
     </div>
   );
-};
 
-const styles = {
-  container: { maxWidth: '860px', margin: '0 auto', padding: '2rem 1.25rem', color: '#E0E0E0' },
-  header: {
-    textAlign: 'center', marginBottom: '2rem', padding: '2rem',
-    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
-    borderRadius: '16px', border: '1px solid rgba(255, 215, 0, 0.3)',
-  },
-  backLink: { display: 'inline-block', color: '#FFD700', textDecoration: 'none', marginBottom: '1.25rem', fontSize: '0.9rem', opacity: 0.8 },
-  title: {
-    fontSize: '2rem', fontWeight: '700',
-    background: 'linear-gradient(135deg, #FFD700, #FFA500)',
-    WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', marginBottom: '0.5rem',
-  },
-  subtitle: { fontSize: '1rem', color: '#A0A0A0', marginBottom: '0.25rem' },
-  version: { fontSize: '0.8rem', color: '#666', marginBottom: '1rem' },
-  disclaimer: {
-    fontSize: '0.78rem', color: '#FF6B6B', fontStyle: 'italic',
-    padding: '0.75rem 1rem', background: 'rgba(255, 107, 107, 0.08)',
-    borderRadius: '8px', border: '1px solid rgba(255, 107, 107, 0.2)', margin: '0',
-  },
-  toc: {
-    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
-    borderRadius: '12px', padding: '1.25rem 1.5rem', marginBottom: '1.5rem',
-    border: '1px solid rgba(255, 215, 0, 0.15)',
-  },
-  tocTitle: { fontSize: '0.95rem', color: '#FFD700', marginBottom: '0.75rem', fontWeight: '600' },
-  tocList: { margin: 0, paddingLeft: '1.25rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.25rem 1.5rem' },
-  tocItem: { lineHeight: 1.6 },
-  tocLink: { color: '#A0A0A0', textDecoration: 'none', fontSize: '0.85rem', transition: 'color 0.15s' },
-  content: { display: 'flex', flexDirection: 'column', gap: '1.25rem' },
-  section: {
-    background: 'linear-gradient(135deg, #1A1A2E 0%, #16213E 100%)',
-    borderRadius: '12px', padding: '1.5rem',
-    border: '1px solid rgba(255, 215, 0, 0.15)', scrollMarginTop: '80px',
-  },
-  sectionTitle: { fontSize: '1.15rem', color: '#FFD700', marginBottom: '1rem', paddingBottom: '0.6rem', borderBottom: '1px solid rgba(255, 215, 0, 0.2)', fontWeight: '700' },
-  heading: { fontSize: '0.95rem', color: '#FFFFFF', marginTop: '1.25rem', marginBottom: '0.5rem', fontWeight: '600' },
-  paragraph: { color: '#D0D0D0', lineHeight: 1.75, fontSize: '0.875rem', marginBottom: '0.75rem', whiteSpace: 'pre-wrap' },
-  table: { display: 'flex', flexDirection: 'column', gap: '0.25rem', marginBottom: '0.75rem' },
-  tableRow: { display: 'flex', flexDirection: 'column', padding: '0.6rem 0.75rem', borderRadius: '6px', background: 'rgba(0, 0, 0, 0.2)', borderLeft: '2px solid rgba(255, 215, 0, 0.3)' },
-  tableLabel: { color: '#FFD700', fontSize: '0.875rem', fontWeight: '600', marginBottom: '0.15rem' },
-  tableValue: { color: '#FFFFFF', fontSize: '0.85rem', fontWeight: '500', marginBottom: '0.1rem' },
-  tableDesc: { color: '#909090', fontSize: '0.8rem' },
-  footer: { textAlign: 'center', marginTop: '2rem', paddingTop: '1.25rem', borderTop: '1px solid rgba(255, 255, 255, 0.08)', color: '#555', fontSize: '0.8rem', lineHeight: 1.8 },
-  footerNote: { color: '#444', fontSize: '0.75rem' },
+  return (
+    <div className="page-container">
+      <div className="wp-container">
+
+        {/* Header */}
+        <div className="wp-header">
+          <Link to="/" className="wp-back-link">← {language === 'en' ? 'Back to Home' : '返回主页'}</Link>
+          <h1 className="wp-title">{c.title}</h1>
+          <p className="wp-subtitle">{c.subtitle}</p>
+          <p className="wp-version">{c.version}</p>
+          <p className="wp-disclaimer">{c.disclaimer}</p>
+        </div>
+
+        {/* Table of contents */}
+        <div className="wp-toc">
+          <h3 className="wp-toc-title">{language === 'en' ? 'Table of Contents' : '目录'}</h3>
+          <ol className="wp-toc-list">
+            {c.sections.map((section, i) => (
+              <li key={i}>
+                <a href={`#wp-section-${i}`} className="wp-toc-link">{section.title}</a>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        {/* Sections */}
+        <div className="wp-content">
+          {c.sections.map((section, i) => (
+            <div key={i} id={`wp-section-${i}`} className="wp-section">
+              <h2 className="wp-section-title">{section.title}</h2>
+
+              {section.heading  && <h3 className="wp-heading">{section.heading}</h3>}
+              {section.content  && <p  className="wp-paragraph">{section.content}</p>}
+              {section.items    && renderItems(section.items)}
+
+              {section.heading2 && <h3 className="wp-heading">{section.heading2}</h3>}
+              {section.content2 && <p  className="wp-paragraph">{section.content2}</p>}
+              {section.items2   && renderItems(section.items2)}
+
+              {section.heading3 && <h3 className="wp-heading">{section.heading3}</h3>}
+              {section.content3 && <p  className="wp-paragraph">{section.content3}</p>}
+              {section.items3   && renderItems(section.items3)}
+
+              {section.content4 && <p  className="wp-paragraph">{section.content4}</p>}
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="wp-footer">
+          <p>© 2026 TykhePot Protocol. All rights reserved.</p>
+          <p className="wp-footer-note">{language === 'en' ? 'Built on Solana · Fully Decentralized · Verifiable' : '构建于 Solana · 完全去中心化 · 可验证'}</p>
+        </div>
+
+      </div>
+
+      <style>{`
+        .wp-container {
+          max-width: 860px;
+          margin: 0 auto;
+          padding: var(--space-8) var(--space-5);
+          color: var(--text-secondary);
+        }
+
+        /* ── Header ─────────────────────────────────────────────────── */
+        .wp-header {
+          text-align: center;
+          margin-bottom: var(--space-6);
+          padding: var(--space-8);
+          background: oklch(15% 0.03 280);
+          border-radius: var(--radius-xl);
+          border: 1px solid oklch(55% 0.15 45 / 0.3);
+        }
+        .wp-back-link {
+          display: inline-block;
+          color: var(--color-gold);
+          text-decoration: none;
+          margin-bottom: var(--space-4);
+          font-size: var(--text-sm);
+          opacity: 0.8;
+          transition: opacity 0.15s;
+        }
+        .wp-back-link:hover { opacity: 1; }
+        .wp-title {
+          font-size: var(--text-3xl);
+          font-weight: 700;
+          background: linear-gradient(135deg, var(--color-gold), oklch(60% 0.18 55));
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          margin-bottom: var(--space-2);
+        }
+        .wp-subtitle { font-size: var(--text-base); color: var(--text-tertiary); margin-bottom: var(--space-1); }
+        .wp-version  { font-size: var(--text-xs);   color: oklch(40% 0.02 280); margin-bottom: var(--space-4); }
+        .wp-disclaimer {
+          font-size: var(--text-xs);
+          color: #FF6B6B;
+          font-style: italic;
+          padding: var(--space-3) var(--space-4);
+          background: oklch(20% 0.05 15 / 0.2);
+          border-radius: var(--radius-md);
+          border: 1px solid oklch(35% 0.08 15 / 0.3);
+          margin: 0;
+          line-height: 1.6;
+        }
+
+        /* ── Table of contents ──────────────────────────────────────── */
+        .wp-toc {
+          background: oklch(15% 0.02 280);
+          border-radius: var(--radius-lg);
+          padding: var(--space-5) var(--space-6);
+          margin-bottom: var(--space-5);
+          border: 1px solid oklch(55% 0.15 45 / 0.15);
+        }
+        .wp-toc-title {
+          font-size: var(--text-sm);
+          color: var(--color-gold);
+          margin-bottom: var(--space-3);
+          font-weight: 600;
+        }
+        .wp-toc-list {
+          margin: 0;
+          padding-left: var(--space-5);
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+          gap: 2px var(--space-6);
+          list-style-position: inside;
+        }
+        .wp-toc-list li { line-height: 1.7; }
+        .wp-toc-link {
+          color: var(--text-tertiary);
+          text-decoration: none;
+          font-size: var(--text-sm);
+          transition: color 0.15s;
+        }
+        .wp-toc-link:hover { color: var(--color-gold); }
+
+        /* ── Sections ──────────────────────────────────────────────── */
+        .wp-content { display: flex; flex-direction: column; gap: var(--space-4); }
+        .wp-section {
+          background: oklch(15% 0.02 280);
+          border-radius: var(--radius-lg);
+          padding: var(--space-6);
+          border: 1px solid oklch(55% 0.15 45 / 0.15);
+          scroll-margin-top: 80px;
+        }
+        .wp-section-title {
+          font-size: var(--text-lg);
+          color: var(--color-gold);
+          margin-bottom: var(--space-4);
+          padding-bottom: var(--space-2);
+          border-bottom: 1px solid oklch(55% 0.15 45 / 0.2);
+          font-weight: 700;
+        }
+        .wp-heading {
+          font-size: var(--text-base);
+          color: var(--text-primary);
+          margin-top: var(--space-5);
+          margin-bottom: var(--space-2);
+          font-weight: 600;
+        }
+        .wp-paragraph {
+          color: oklch(75% 0.02 280);
+          line-height: 1.8;
+          font-size: var(--text-sm);
+          margin-bottom: var(--space-3);
+          white-space: pre-wrap;
+        }
+
+        /* ── Table rows ────────────────────────────────────────────── */
+        .wp-table {
+          display: flex;
+          flex-direction: column;
+          gap: var(--space-1);
+          margin-bottom: var(--space-3);
+        }
+        .wp-table-row {
+          display: flex;
+          flex-direction: column;
+          padding: var(--space-2) var(--space-3);
+          border-radius: var(--radius-sm);
+          background: oklch(12% 0.02 280);
+          border-left: 2px solid oklch(55% 0.15 45 / 0.35);
+        }
+        .wp-table-label {
+          color: var(--color-gold);
+          font-size: var(--text-sm);
+          font-weight: 600;
+          margin-bottom: 2px;
+        }
+        .wp-table-value {
+          color: var(--text-primary);
+          font-size: var(--text-sm);
+          font-weight: 500;
+          margin-bottom: 1px;
+        }
+        .wp-table-desc {
+          color: oklch(55% 0.02 280);
+          font-size: var(--text-xs);
+          line-height: 1.5;
+        }
+
+        /* ── Footer ────────────────────────────────────────────────── */
+        .wp-footer {
+          text-align: center;
+          margin-top: var(--space-8);
+          padding-top: var(--space-5);
+          border-top: 1px solid oklch(25% 0.02 280);
+          color: oklch(40% 0.02 280);
+          font-size: var(--text-sm);
+          line-height: 1.8;
+        }
+        .wp-footer-note { font-size: var(--text-xs); color: oklch(35% 0.02 280); }
+      `}</style>
+    </div>
+  );
 };
 
 export default Whitepaper;
