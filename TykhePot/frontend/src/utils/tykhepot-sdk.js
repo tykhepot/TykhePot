@@ -629,19 +629,29 @@ export default class TykhePotSDK {
       legacyTx.feePayer        = this.wallet.publicKey;
       if (additionalSigners.length > 0) legacyTx.partialSign(...additionalSigners);
 
+      // Attempt A: solana_signAndSendTransaction (atomic — mobile wallet signs
+      // AND broadcasts, returns only the signature hash).
+      let wcSig;
       try {
-        // signAndSendTransaction: mobile wallet signs + broadcasts → returns sig.
-        const sig = await adapter.signAndSendTransaction(legacyTx);
-        await this.connection.confirmTransaction(
-          { signature: sig, blockhash, lastValidBlockHeight },
-          "confirmed"
-        );
-        return sig;
-      } catch (wcErr) {
-        // solana_signAndSendTransaction not in session or failed;
-        // fall through to the VersionedTransaction path below.
-        console.warn("WalletConnect signAndSendTransaction failed, falling back to VersionedTransaction:", wcErr?.message);
+        wcSig = await adapter.signAndSendTransaction(legacyTx);
+      } catch (e) {
+        console.warn("WC signAndSendTransaction:", e?.message);
       }
+
+      if (wcSig !== undefined) {
+        // Tx already broadcast by mobile wallet. Use string-form confirm to
+        // avoid blockhash-expiry issues from the mobile signing delay.
+        await this.connection.confirmTransaction(wcSig, "confirmed");
+        return wcSig;
+      }
+
+      // Attempt B: Legacy signTransaction + client-side broadcast.
+      // CRITICAL: we MUST return here and never reach the VersionedTransaction
+      // path below — mobile wallets drop the WC session with error 1001 when
+      // they receive a v0 (VersionedTransaction) payload they don't support.
+      const wcLegacySig = await this.wallet.sendTransaction(legacyTx, this.connection);
+      await this.connection.confirmTransaction(wcLegacySig, "confirmed");
+      return wcLegacySig;
     }
 
     // ── Path 2: Phantom / browser wallets (VersionedTransaction) ─────────────
