@@ -15,7 +15,7 @@
 
 import * as anchor from "@coral-xyz/anchor";
 import { BN } from "@coral-xyz/anchor";
-import { PublicKey, SystemProgram } from "@solana/web3.js";
+import { PublicKey, SystemProgram, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
@@ -598,19 +598,36 @@ export default class TykhePotSDK {
   }
 
   // ── Transaction helper ──────────────────────────────────────────────────────
-  // Use wallet.sendTransaction (native wallet adapter API) instead of Anchor's
-  // signTransaction → serialize → send chain, which has compatibility issues
-  // with some browser wallets (Phantom account switching, WalletConnect, etc.).
+  // Build a VersionedTransaction (v0) instead of a legacy Transaction.
+  //
+  // Why: Phantom's bridge calls tx.serialize() on legacy transactions BEFORE
+  // sending to the extension for signing. serialize() defaults to
+  // requireAllSignatures:true and throws "Missing signature" on an unsigned tx.
+  // VersionedTransaction.serialize() does NOT check for missing signatures
+  // (fills absent slots with zero bytes), so the transaction reaches the
+  // extension cleanly and is signed there.
 
   async _sendTx(methodCall, additionalSigners = []) {
     const { blockhash, lastValidBlockHeight } =
       await this.connection.getLatestBlockhash("confirmed");
-    const tx = await methodCall.transaction();
-    tx.recentBlockhash = blockhash;
-    tx.feePayer = this.wallet.publicKey;
-    const sig = await this.wallet.sendTransaction(tx, this.connection, {
-      signers: additionalSigners,
-    });
+
+    // Build Anchor's legacy tx to get the compiled instruction(s).
+    const legacyTx = await methodCall.transaction();
+
+    // Wrap into a v0 VersionedTransaction.
+    const message = new TransactionMessage({
+      payerKey:       this.wallet.publicKey,
+      recentBlockhash: blockhash,
+      instructions:   legacyTx.instructions,
+    }).compileToV0Message();
+
+    const vtx = new VersionedTransaction(message);
+
+    if (additionalSigners.length > 0) {
+      vtx.sign(additionalSigners);
+    }
+
+    const sig = await this.wallet.sendTransaction(vtx, this.connection);
     await this.connection.confirmTransaction(
       { signature: sig, blockhash, lastValidBlockHeight },
       "confirmed"
