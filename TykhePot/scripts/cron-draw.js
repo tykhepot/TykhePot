@@ -49,7 +49,7 @@ const {
 const fs = require("fs");
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const PROGRAM_ID  = new web3.PublicKey("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
+const PROGRAM_ID  = new web3.PublicKey("BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5");
 const TOKEN_MINT  = new web3.PublicKey("FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY");
 const RPC         = process.env.RPC_URL || "https://api.devnet.solana.com";
 const POLL_MS     = Number(process.env.POLL_INTERVAL) || 60_000;

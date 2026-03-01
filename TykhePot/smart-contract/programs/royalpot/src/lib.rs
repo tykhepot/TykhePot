@@ -63,7 +63,7 @@ pub const DRAW_RESULT_SIZE: usize = 8 + 1 + 8 + 192 + 48 + 48 + 8 + 1;
 pub const VESTING_DAYS: u64 = 20;
 pub const VESTING_RELEASE_PER_DAY: u64 = 500; // 5% per day
 
-declare_id!("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
+declare_id!("BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5");
 
 // ============================================================
 // Enums

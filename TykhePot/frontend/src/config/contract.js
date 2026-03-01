@@ -1,5 +1,5 @@
 // ─── Program Config ───────────────────────────────────────────────────────────
-export const PROGRAM_ID  = "5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b";
+export const PROGRAM_ID  = "BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5";
 export const TOKEN_MINT  = "FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY";
 export const NETWORK     = "devnet";
 export const RPC_ENDPOINT = "https://api.devnet.solana.com";
@@ -19,26 +19,26 @@ export const POOL_TYPE = { MIN30: 0, HOURLY: 1, DAILY: 2 };
 // staking_vault:   authority = staking auth PDA [b"staking"]
 // vesting_vault:   authority = vesting PDA      [b"vesting", beneficiary]
 
-// Pool Vaults — fill in after deploy
-export const POOL_30MIN_VAULT  = ""; // authority = PoolState[0] PDA
-export const POOL_HOURLY_VAULT = ""; // authority = PoolState[1] PDA
-export const POOL_DAILY_VAULT  = ""; // authority = PoolState[2] PDA
+// Pool Vaults — filled after deploy 2026-03-01
+export const POOL_30MIN_VAULT  = "J4VwzLdrpvjCsykP7P7JUR4UhvTdLnfyjcgysdQ8YuZG"; // authority = PoolState[0] PDA
+export const POOL_HOURLY_VAULT = "FJW1LuZMZbD5qobN95fMFwNQoYis23CmopZBVqzB4Xps"; // authority = PoolState[1] PDA
+export const POOL_DAILY_VAULT  = "GNXJ7eEtBHvh6K4Ppi3SX6skKTu7NuWCgXr99DyUeu4G"; // authority = PoolState[2] PDA
 
-// Airdrop source vault (funds free bets; authority = GlobalState PDA)
-export const AIRDROP_VAULT     = "";
+// Airdrop source vault (funds free bets; authority = GlobalState PDA) — pre-funded 100M TPOT
+export const AIRDROP_VAULT     = "Gagc5bk5pNh1sk79gs13W4RSK2wwZusdSFT9ZBMAwYUo";
 
 // Platform fee destination (plain wallet token account, no PDA)
 // Wallet: F4dQpEz69oQhhsYGiCASbPNAg3XaoGggbHAeuytqZtrm
-export const PLATFORM_FEE_VAULT = "";
+export const PLATFORM_FEE_VAULT = "2Gq8ZCP1jg3FXKaMJeEQCBJuyv1VznW5ZvYdVJvKiJQe";
 
 // Referral rewards source (authority = GlobalState PDA)
-export const REFERRAL_VAULT = "";
+export const REFERRAL_VAULT = "85HhmvBsE6VNGYWMWdC9WCK47mPLCVrsHGu1PxokY9xS";
 
 // Daily 1:1 deposit matching source (authority = GlobalState PDA)
-export const RESERVE_VAULT = "";
+export const RESERVE_VAULT = "78zVf9GNc2DZU87jS6R5qYS4A5cdZrzR15t1LqZmboRL";
 
 // Top-prize escrow — holds 1st/2nd/3rd prizes until vested (authority = GlobalState PDA)
-export const PRIZE_ESCROW_VAULT = "";
+export const PRIZE_ESCROW_VAULT = "G7NNS4QdM1Zau543TwdtBHwWa9UG4U1zVzAf3eS55SCK";
 
 // Staking / vesting vaults (unchanged from old deploy)
 export const STAKING_VAULT = "5CAwNZje1nyPRAKiLfPhsUAjNQu52Ymvzdo1iXBfatNt";

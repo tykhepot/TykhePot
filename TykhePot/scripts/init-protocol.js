@@ -44,7 +44,7 @@ const {
 const fs   = require("fs");
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const PROGRAM_ID          = new web3.PublicKey("5Mmrkgwppa2kJ93LJNuN5nmaMW3UQAVs2doaRBsjtV5b");
+const PROGRAM_ID          = new web3.PublicKey("BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5");
 const TOKEN_MINT          = new web3.PublicKey("FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY");
 const PLATFORM_FEE_WALLET = new web3.PublicKey("F4dQpEz69oQhhsYGiCASbPNAg3XaoGggbHAeuytqZtrm");
 const RPC                 = process.env.RPC_URL || "https://api.devnet.solana.com";
@@ -157,7 +157,7 @@ function section(title) {
 async function main() {
   // Load admin keypair
   const keypairPath = process.env.ADMIN_KEYPAIR
-    || path.join(__dirname, "../smart-contract/target/deploy/royalpot-keypair.json");
+    || path.join(require("os").homedir(), ".config/solana/id.json");
   if (!fs.existsSync(keypairPath)) {
     console.error(`❌ Keypair not found at ${keypairPath}`);
     console.error("   Set ADMIN_KEYPAIR env to your wallet keypair path.");
