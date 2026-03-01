@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { PublicKey } from '@solana/web3.js';
 import { useApp } from '../context/AppContext';
 import { useTranslation } from '../i18n/LanguageContext';
-import { POOL_TYPE, POOL_CONFIG, PROGRAM_ID } from '../config/contract';
+import { POOL_TYPE } from '../config/contract';
 import { getPoolStatePda } from '../utils/tykhepot-sdk';
 
 const POOL_LABELS = {
@@ -113,16 +112,23 @@ const DrawHistory = () => {
     [POOL_TYPE.HOURLY]: null,
     [POOL_TYPE.DAILY]:  null,
   });
+  const [errorMap, setErrorMap] = useState({
+    [POOL_TYPE.MIN30]:  false,
+    [POOL_TYPE.HOURLY]: false,
+    [POOL_TYPE.DAILY]:  false,
+  });
   const [loading, setLoading] = useState(false);
 
   const loadHistory = useCallback(async (poolType) => {
     if (!connection || !sdk) return;
     setLoading(true);
+    setErrorMap(prev => ({ ...prev, [poolType]: false }));
     try {
       const data = await fetchDrawHistory(connection, sdk, poolType);
       setHistoryMap(prev => ({ ...prev, [poolType]: data }));
     } catch {
       setHistoryMap(prev => ({ ...prev, [poolType]: [] }));
+      setErrorMap(prev => ({ ...prev, [poolType]: true }));
     } finally {
       setLoading(false);
     }
@@ -190,6 +196,25 @@ const DrawHistory = () => {
             <div className="dh-loading">
               <div className="dh-spinner" />
               <p>{language === 'en' ? 'Loading draw history...' : '加载开奖记录中...'}</p>
+            </div>
+          ) : errorMap[activePool] ? (
+            <div className="dh-empty">
+              <div className="dh-empty-icon">⚠️</div>
+              <p className="dh-empty-title">
+                {language === 'en' ? 'Failed to load records' : '加载失败'}
+              </p>
+              <p className="dh-empty-desc">
+                {language === 'en'
+                  ? 'Could not fetch draw history from the network. Please try again.'
+                  : '无法从链上获取开奖记录，请重试。'}
+              </p>
+              <button
+                className="dh-retry-btn"
+                onClick={() => loadHistory(activePool)}
+                disabled={loading}
+              >
+                {language === 'en' ? '🔄 Retry' : '🔄 重试'}
+              </button>
             </div>
           ) : draws.length === 0 ? (
             <div className="dh-empty">
@@ -296,13 +321,27 @@ const DrawHistory = () => {
                           </div>
                         </div>
 
-                        {/* Lucky + Universal */}
-                        <div className="dh-cell dh-cell-half">
-                          <span className="dh-cell-label">
+                        {/* Lucky×5 — full address list */}
+                        <div className="dh-cell dh-cell-full">
+                          <span className="dh-cell-label" style={{ marginBottom: 6 }}>
                             🍀 {language === 'en' ? 'Lucky ×5 (instant)' : '幸运×5 (即时)'}
                           </span>
-                          <span className="dh-cell-value">{draw.luckyAmountEach} TPOT {language === 'en' ? 'each' : '×5'}</span>
+                          <div className="dh-prize-list">
+                            {draw.luckyWinners.map((addr, i) => (
+                              <div key={i} className="dh-prize-row">
+                                <span className="dh-prize-badge">🍀</span>
+                                <a className="dh-cell-value dh-winner"
+                                  href={`https://solscan.io/account/${addr}?cluster=devnet`}
+                                  target="_blank" rel="noopener noreferrer">
+                                  {shortAddr(addr)}
+                                </a>
+                                <span className="dh-prize-amt">{draw.luckyAmountEach} TPOT</span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
+
+                        {/* Universal */}
                         <div className="dh-cell dh-cell-half">
                           <span className="dh-cell-label">
                             🎁 {language === 'en' ? `Universal ×${draw.universalCount} (instant)` : `普惠×${draw.universalCount} (即时)`}
@@ -509,6 +548,27 @@ const DrawHistory = () => {
           margin: 0;
         }
 
+        .dh-retry-btn {
+          margin-top: var(--space-3);
+          padding: var(--space-2) var(--space-5);
+          background: oklch(55% 0.2 270 / 0.15);
+          border: 1px solid oklch(55% 0.2 270 / 0.5);
+          border-radius: var(--radius-full);
+          color: var(--text-primary);
+          font-size: var(--text-sm);
+          cursor: pointer;
+          transition: all var(--transition-fast);
+        }
+
+        .dh-retry-btn:hover:not(:disabled) {
+          background: oklch(55% 0.2 270 / 0.3);
+        }
+
+        .dh-retry-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
         .dh-list {
           display: flex;
           flex-direction: column;
@@ -574,10 +634,6 @@ const DrawHistory = () => {
           display: flex;
           flex-direction: column;
           gap: 2px;
-        }
-
-        .dh-cell-wide {
-          grid-column: span 2;
         }
 
         .dh-cell-label {
@@ -674,7 +730,6 @@ const DrawHistory = () => {
         @media (max-width: 640px) {
           .dh-tabs { gap: var(--space-2); }
           .dh-grid { grid-template-columns: 1fr 1fr; }
-          .dh-cell-wide { grid-column: span 2; }
           .dh-time { margin-left: 0; }
         }
       `}</style>
