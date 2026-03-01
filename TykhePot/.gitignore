@@ -16,10 +16,16 @@ dist/
 *.swo
 
 # Environment
+.env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Keypair / wallet files (private keys — never commit!)
+*-wallet.json
+*-keypair.json
+*-key.json
 
 # OS
 Thumbs.db
