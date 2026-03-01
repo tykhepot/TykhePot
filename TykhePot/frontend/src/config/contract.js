@@ -1,5 +1,5 @@
 // ─── Program Config ───────────────────────────────────────────────────────────
-export const PROGRAM_ID  = "BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5";
+export const PROGRAM_ID  = "9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ";
 export const TOKEN_MINT  = "FQwBuM6DU76rXCLrJVciS8wQUPvkS58sbtQmrxG1WgdY";
 export const NETWORK     = "devnet";
 export const RPC_ENDPOINT = "https://api.devnet.solana.com";
@@ -46,6 +46,13 @@ export const VESTING_VAULT = "939dBwYK6epmmUTAmYAco9cnCp3Vxa8MV27HBDmd3JYR";
 
 // Platform fee wallet (controls PLATFORM_FEE_VAULT)
 export const PLATFORM_FEE_WALLET = "F4dQpEz69oQhhsYGiCASbPNAg3XaoGggbHAeuytqZtrm";
+
+// VRF Account (Switchboard VRF - set after deployment)
+// Create via: ts-node scripts/create-vrf.ts
+export const VRF_ACCOUNT = ""; // TODO: Fill after VRF creation
+
+// Authority wallet (can pause/unpause protocol)
+export const AUTHORITY_WALLET = "F4dQpEz69oQhhsYGiCASbPNAg3XaoGggbHAeuytqZtrm";
 
 // ─── Pool Params ──────────────────────────────────────────────────────────────
 export const POOL_CONFIG = {

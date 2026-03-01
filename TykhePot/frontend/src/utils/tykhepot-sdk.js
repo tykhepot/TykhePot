@@ -55,6 +55,7 @@ const IDL = {
         { name: "referralVault",    type: "publicKey" },
         { name: "reserveVault",     type: "publicKey" },
         { name: "prizeEscrowVault", type: "publicKey" },
+        { name: "timelockDuration", type: { option: "i64" } },
       ],
     },
     {
@@ -185,6 +186,107 @@ const IDL = {
         { name: "longTermPool",  type: "u64" },
       ],
     },
+    // ── VRF Randomness ──────────────────────────────────────────────────────
+    {
+      name: "initializeVrf",
+      accounts: [
+        { name: "authority", isMut: true,  isSigner: true  },
+        { name: "vrfState",  isMut: true,  isSigner: false },
+        { name: "vrf",       isMut: false, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "requestVrf",
+      accounts: [
+        { name: "caller",     isMut: true,  isSigner: true  },
+        { name: "vrfState",   isMut: true,  isSigner: false },
+        { name: "poolState",  isMut: false, isSigner: false },
+        { name: "vrf",        isMut: false, isSigner: false },
+        { name: "systemProgram", isMut: false, isSigner: false },
+      ],
+      args: [{ name: "poolType", type: "u8" }],
+    },
+    {
+      name: "executeDrawVrf",
+      accounts: [
+        { name: "caller",            isMut: true,  isSigner: true  },
+        { name: "vrfState",          isMut: true,  isSigner: false },
+        { name: "poolState",         isMut: true,  isSigner: false },
+        { name: "poolVault",         isMut: true,  isSigner: false },
+        { name: "tokenMint",         isMut: true,  isSigner: false },
+        { name: "platformVault",     isMut: true,  isSigner: false },
+        { name: "prizeEscrowVault",  isMut: true,  isSigner: false },
+        { name: "globalState",       isMut: false, isSigner: false },
+        { name: "drawResult",        isMut: true,  isSigner: false },
+        { name: "vrf",               isMut: false, isSigner: false },
+        { name: "tokenProgram",      isMut: false, isSigner: false },
+        { name: "systemProgram",     isMut: false, isSigner: false },
+      ],
+      args: [],
+    },
+    // ── Timelock Admin ───────────────────────────────────────────────────────
+    {
+      name: "schedulePause",
+      accounts: [
+        { name: "authority",   isMut: false, isSigner: true  },
+        { name: "globalState", isMut: true,  isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "executePause",
+      accounts: [
+        { name: "authority",   isMut: false, isSigner: true  },
+        { name: "globalState", isMut: true,  isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "scheduleUnpause",
+      accounts: [
+        { name: "authority",   isMut: false, isSigner: true  },
+        { name: "globalState", isMut: true,  isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "executeUnpause",
+      accounts: [
+        { name: "authority",   isMut: false, isSigner: true  },
+        { name: "globalState", isMut: true,  isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "cancelTimelock",
+      accounts: [
+        { name: "authority",   isMut: false, isSigner: true  },
+        { name: "globalState", isMut: true,  isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "closeGlobalState",
+      accounts: [
+        { name: "authority",   isMut: false, isSigner: true  },
+        { name: "globalState", isMut: true,  isSigner: false },
+        { name: "recipient",   isMut: true,  isSigner: false },
+      ],
+      args: [],
+    },
+    {
+      name: "closePoolState",
+      accounts: [
+        { name: "authority",   isMut: false, isSigner: true  },
+        { name: "globalState", isMut: false, isSigner: false },
+        { name: "poolState",   isMut: true,  isSigner: false },
+        { name: "recipient",   isMut: true,  isSigner: false },
+      ],
+      args: [{ name: "poolType", type: "u8" }],
+    },
+    // ── Staking (continued) ──────────────────────────────────────────────────
     {
       name: "stake",
       accounts: [
@@ -276,6 +378,11 @@ const IDL = {
           { name: "referralVault",    type: "publicKey" },
           { name: "reserveVault",     type: "publicKey" },
           { name: "prizeEscrowVault", type: "publicKey" },
+          { name: "authority",        type: "publicKey" },
+          { name: "isPaused",         type: "bool"      },
+          { name: "timelockDuration", type: "i64"       },
+          { name: "pendingOperation", type: "u8"        },
+          { name: "timelockRelease",  type: "i64"       },
           { name: "bump",             type: "u8"        },
         ],
       },
@@ -432,6 +539,12 @@ const IDL = {
     { code: 6023, name: "WinnerTokenMismatch"      },
     { code: 6024, name: "NoReferral"               },
     { code: 6025, name: "ReferrerMismatch"         },
+    { code: 6026, name: "ProtocolPaused"           },
+    { code: 6027, name: "Unauthorized"             },
+    { code: 6028, name: "TimelockNotExpired"       },
+    { code: 6029, name: "NoPendingOperation"       },
+    { code: 6030, name: "OperationMismatch"        },
+    { code: 6031, name: "TimelockAlreadyPending"   },
   ],
   events: [
     {
@@ -502,7 +615,7 @@ const IDL = {
 };
 
 // ─── PDA helpers ──────────────────────────────────────────────────────────────
-const PROGRAM = new PublicKey(PROGRAM_ID);
+const PROGRAM = new PublicKey("9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ");
 
 export function getGlobalStatePda() {
   return PublicKey.findProgramAddressSync([Buffer.from("global_state")], PROGRAM);
@@ -552,6 +665,13 @@ export function getDrawResultPda(poolType, roundNumber) {
   );
 }
 
+export function getVrfStatePda() {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("vrf_state")],
+    PROGRAM
+  );
+}
+
 function vaultForPool(poolType) {
   if (poolType === POOL_TYPE.MIN30)  return POOL_30MIN_VAULT;
   if (poolType === POOL_TYPE.HOURLY) return POOL_HOURLY_VAULT;
@@ -584,9 +704,10 @@ export async function generateDrawSeed(connection) {
 
 // ─── SDK class ────────────────────────────────────────────────────────────────
 export default class TykhePotSDK {
-  constructor(connection, wallet) {
+  constructor(connection, wallet, vrfAccount = null) {
     this.connection = connection;
     this.wallet     = wallet;
+    this.vrfAccount = vrfAccount;
 
     const provider = new anchor.AnchorProvider(
       connection,
@@ -595,6 +716,10 @@ export default class TykhePotSDK {
     );
     this.program = new anchor.Program(IDL, PROGRAM, provider);
     this.provider = provider;
+  }
+
+  setVrfAccount(vrfAccount) {
+    this.vrfAccount = new PublicKey(vrfAccount);
   }
 
   // ── Transaction helper ──────────────────────────────────────────────────────
@@ -945,6 +1070,60 @@ export default class TykhePotSDK {
           prizeEscrowVault: new PublicKey(PRIZE_ESCROW_VAULT),
           globalState,
           drawResult,
+          tokenProgram:     TOKEN_PROGRAM_ID,
+          systemProgram:    SystemProgram.programId,
+        })
+        .remainingAccounts(remainingAccounts)
+    );
+
+    return { success: true, tx: sig };
+  }
+
+  // ── Write: executeDrawVrf (VRF-based draw) ─────────────────────────────────
+
+  async executeDrawVrf(poolType) {
+    const caller = this.wallet.publicKey;
+    if (!caller) throw new Error("Wallet not connected");
+
+    const pool = await this.getPoolState(poolType);
+    if (!pool) throw new Error("Pool not initialized");
+
+    const now = Math.floor(Date.now() / 1000);
+    if (now < pool.roundEndTime.toNumber()) {
+      throw new Error(`Draw time not reached. Wait ${pool.roundEndTime.toNumber() - now}s`);
+    }
+
+    const roundNumber = pool.roundNumber.toNumber();
+
+    const [poolStatePda]  = getPoolStatePda(poolType);
+    const [globalState]   = getGlobalStatePda();
+    const [drawResult]    = getDrawResultPda(poolType, roundNumber);
+    const [vrfState]      = PublicKey.findProgramAddressSync(
+      [Buffer.from("vrf_state")], PROGRAM
+    );
+    const poolVaultPubkey = new PublicKey(vaultForPool(poolType));
+
+    const remainingAccounts = await this._buildParticipantAccounts(
+      poolType,
+      roundNumber,
+      pool.regularCount,
+      pool.freeCount
+    );
+
+    const sig = await this._sendTx(
+      this.program.methods
+        .executeDrawVrf()
+        .accounts({
+          caller,
+          vrfState,
+          poolState:        poolStatePda,
+          poolVault:        poolVaultPubkey,
+          tokenMint:        new PublicKey(TOKEN_MINT),
+          platformVault:    new PublicKey(PLATFORM_FEE_VAULT),
+          prizeEscrowVault: new PublicKey(PRIZE_ESCROW_VAULT),
+          globalState,
+          drawResult,
+          vrf:               this.vrfAccount, // 需要在初始化时设置
           tokenProgram:     TOKEN_PROGRAM_ID,
           systemProgram:    SystemProgram.programId,
         })

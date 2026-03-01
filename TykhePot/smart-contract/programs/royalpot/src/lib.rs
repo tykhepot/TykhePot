@@ -1,23 +1,26 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Burn, Transfer, Token, TokenAccount, Mint};
+use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
 
-pub mod staking;
 pub mod airdrop;
+pub mod randomness;
+pub mod staking;
+
+pub use randomness::{PendingDraw, VrfErrorCode, VrfState};
 
 // ============================================================
 // Constants
 // ============================================================
 
 pub const BASE: u64 = 10_000;
-pub const BURN_RATE: u64 = 300;   // 3% burn on successful draw
-pub const PLAT_RATE: u64 = 200;   // 2% platform fee
+pub const BURN_RATE: u64 = 300; // 3% burn on successful draw
+pub const PLAT_RATE: u64 = 200; // 2% platform fee
 
 // Prize distribution within prize pool (basis points of prize_pool = 95% of total)
 // 30 + 20 + 15 + 10 + 20 + 5 = 100% of prize_pool ✓
-pub const ROLLOVER_BP: u64 = 500;         // 5%  — stays in vault for next round
-pub const PRIZE_1ST_BP: u64 = 3000;       // 30% — 1 winner
-pub const PRIZE_2ND_EACH_BP: u64 = 1000;  // 10% — 2 winners (10% each)
-pub const PRIZE_3RD_EACH_BP: u64 = 500;   // 5%  — 3 winners (5% each)
+pub const ROLLOVER_BP: u64 = 500; // 5%  — stays in vault for next round
+pub const PRIZE_1ST_BP: u64 = 3000; // 30% — 1 winner
+pub const PRIZE_2ND_EACH_BP: u64 = 1000; // 10% — 2 winners (10% each)
+pub const PRIZE_3RD_EACH_BP: u64 = 500; // 5%  — 3 winners (5% each)
 pub const PRIZE_LUCKY_EACH_BP: u64 = 200; // 2%  — 5 lucky winners (2% each)
 pub const PRIZE_UNIVERSAL_BP: u64 = 2000; // 20% — all non-prize-winners split equally
 
@@ -28,25 +31,34 @@ pub const PRIZE_VEST_DAYS: u64 = 20;
 pub const PRIZE_VEST_DAY_BP: u64 = 500; // 5% per day
 
 // Referral (paid from referral_vault when remaining_accounts supplied in deposit)
-pub const REFERRER_BP: u64 = 800;  // 8% to referrer
-// Note: 2% one-time referee bonus — tracked off-chain by cron; on-chain TODO v3
+pub const REFERRER_BP: u64 = 800; // 8% to referrer
+                                  // Note: 2% one-time referee bonus — tracked off-chain by cron; on-chain TODO v3
 
 pub const MIN_PARTICIPANTS: u32 = 12; // need ≥12 (11 prize slots + ≥1 universal)
-pub const LOCK_PERIOD: i64 = 300;     // 5-min deposit lock before draw
+pub const LOCK_PERIOD: i64 = 300; // 5-min deposit lock before draw
 
-pub const DURATION_30MIN:  i64 = 1_800;
+pub const DURATION_30MIN: i64 = 1_800;
 pub const DURATION_HOURLY: i64 = 3_600;
-pub const DURATION_DAILY:  i64 = 86_400;
+pub const DURATION_DAILY: i64 = 86_400;
 
-pub const MIN_30MIN:  u64 = 500_000_000_000; // 500 TPOT
+pub const MIN_30MIN: u64 = 500_000_000_000; // 500 TPOT
 pub const MIN_HOURLY: u64 = 200_000_000_000; // 200 TPOT
-pub const MIN_DAILY:  u64 = 100_000_000_000; // 100 TPOT
+pub const MIN_DAILY: u64 = 100_000_000_000; // 100 TPOT
 
 pub const FREE_BET_AMOUNT: u64 = 100_000_000_000; // 100 TPOT
 
+pub const VRF_TIMEOUT_SECONDS: i64 = 120; // 2 minutes timeout for VRF request
+pub const VRF_CALLBACK_DISCRIMINATOR: [u8; 8] = [240, 114, 134, 56, 189, 82, 35, 25];
+
+pub const DEFAULT_TIMELOCK_DURATION: i64 = 86_400; // 24 hours default timelock
+pub const TIMELOCK_OP_NONE: u8 = 0;
+pub const TIMELOCK_OP_PAUSE: u8 = 1;
+pub const TIMELOCK_OP_UNPAUSE: u8 = 2;
+
 // Account sizes (bytes)
-// GlobalState: disc(8) + 6×Pubkey(192) + bump(1) + pad(7) = 208
-pub const GLOBAL_STATE_SIZE: usize = 8 + 192 + 1 + 7;
+// GlobalState: disc(8) + 7×Pubkey(224) + is_paused(1) + timelock_duration(8) +
+//              pending_operation(1) + timelock_release(8) + bump(1) + pad(5) = 256
+pub const GLOBAL_STATE_SIZE: usize = 8 + 224 + 1 + 8 + 1 + 8 + 1 + 5;
 // PoolState: disc(8)+pool_type(1)+round_number(8)+start(8)+end(8)+deposited(8)+
 //            free_bet_total(8)+regular_count(4)+free_count(4)+vault(32)+rollover(8)+bump(1)+pad(7)=105
 pub const POOL_STATE_SIZE: usize = 8 + 1 + 8 + 8 + 8 + 8 + 8 + 4 + 4 + 32 + 8 + 1 + 7;
@@ -63,7 +75,7 @@ pub const DRAW_RESULT_SIZE: usize = 8 + 1 + 8 + 192 + 48 + 48 + 8 + 1;
 pub const VESTING_DAYS: u64 = 20;
 pub const VESTING_RELEASE_PER_DAY: u64 = 500; // 5% per day
 
-declare_id!("BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5");
+declare_id!("9U7hbTQEoM4vY2Uwd6RKKCz3TMvocAtEFjpHRbMxSHAQ");
 
 // ============================================================
 // Enums
@@ -71,24 +83,24 @@ declare_id!("BGvzwkQy2xVLewPANR8siksZJbQD8RN4wKPQczbMRMd5");
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PoolType {
-    Min30  = 0,
+    Min30 = 0,
     Hourly = 1,
-    Daily  = 2,
+    Daily = 2,
 }
 
 impl PoolType {
     pub fn duration(&self) -> i64 {
         match self {
-            PoolType::Min30  => DURATION_30MIN,
+            PoolType::Min30 => DURATION_30MIN,
             PoolType::Hourly => DURATION_HOURLY,
-            PoolType::Daily  => DURATION_DAILY,
+            PoolType::Daily => DURATION_DAILY,
         }
     }
     pub fn min_deposit(&self) -> u64 {
         match self {
-            PoolType::Min30  => MIN_30MIN,
+            PoolType::Min30 => MIN_30MIN,
             PoolType::Hourly => MIN_HOURLY,
-            PoolType::Daily  => MIN_DAILY,
+            PoolType::Daily => MIN_DAILY,
         }
     }
 }
@@ -109,74 +121,84 @@ pub fn pool_type_from_u8(v: u8) -> Result<PoolType> {
 /// One-time global config. Written at initialize, never changed.
 #[account]
 pub struct GlobalState {
-    pub token_mint:         Pubkey,
+    pub token_mint: Pubkey,
     /// Platform fee accumulator
     pub platform_fee_vault: Pubkey,
     /// Funds free-bet entries (airdrop source)
-    pub airdrop_vault:      Pubkey,
+    pub airdrop_vault: Pubkey,
     /// Referral rewards source (8% referrer bonus)
-    pub referral_vault:     Pubkey,
+    pub referral_vault: Pubkey,
     /// Daily-pool 1:1 deposit matching source
-    pub reserve_vault:      Pubkey,
+    pub reserve_vault: Pubkey,
     /// Unvested top-prize escrow (holds 1st/2nd/3rd prize tokens until vested)
     pub prize_escrow_vault: Pubkey,
+    /// Protocol authority (can pause/unpause)
+    pub authority: Pubkey,
+    /// Emergency pause flag
+    pub is_paused: bool,
+    /// Timelock duration in seconds (e.g., 86400 = 24 hours)
+    pub timelock_duration: i64,
+    /// Pending operation type (0 = none, 1 = pause, 2 = unpause)
+    pub pending_operation: u8,
+    /// When the pending operation can be executed
+    pub timelock_release: i64,
     pub bump: u8,
-    pub _padding: [u8; 7],
+    pub _padding: [u8; 5],
 }
 
 /// Per-pool state. Three PDAs: 30min / hourly / daily.
 #[account]
 pub struct PoolState {
-    pub pool_type:         u8,
-    pub round_number:      u64,
-    pub round_start_time:  i64,
-    pub round_end_time:    i64,
-    pub total_deposited:   u64,
-    pub free_bet_total:    u64,
-    pub regular_count:     u32,
-    pub free_count:        u32,
-    pub vault:             Pubkey,
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub round_start_time: i64,
+    pub round_end_time: i64,
+    pub total_deposited: u64,
+    pub free_bet_total: u64,
+    pub regular_count: u32,
+    pub free_count: u32,
+    pub vault: Pubkey,
     /// Rollover from previous successful draw (already in vault)
-    pub rollover:          u64,
-    pub bump:              u8,
-    pub _padding:          [u8; 7],
+    pub rollover: u64,
+    pub bump: u8,
+    pub _padding: [u8; 7],
 }
 
 /// One deposit per user per pool per round.
 #[account]
 pub struct UserDeposit {
-    pub user:         Pubkey,
-    pub pool_type:    u8,
+    pub user: Pubkey,
+    pub pool_type: u8,
     pub round_number: u64,
-    pub amount:       u64,
+    pub amount: u64,
     /// Referrer's token account (Pubkey::default = no referrer).
     /// Cleared to default once referral has been paid via claim_referral().
-    pub referrer:     Pubkey,
-    pub bump:         u8,
-    pub _padding:     [u8; 6],
+    pub referrer: Pubkey,
+    pub bump: u8,
+    pub _padding: [u8; 6],
 }
 
 /// Free-bet entry. Persists across refunded rounds (is_active stays true).
 /// is_active byte offset: disc(8)+user(32)+pool_type(1) = 41
 #[account]
 pub struct FreeDeposit {
-    pub user:      Pubkey,
+    pub user: Pubkey,
     pub pool_type: u8,
     pub is_active: bool,
-    pub amount:    u64,
+    pub amount: u64,
     /// Always Pubkey::default() — free bets carry no referral obligation.
-    pub referrer:  Pubkey,
-    pub bump:      u8,
-    pub _padding:  [u8; 7],
+    pub referrer: Pubkey,
+    pub bump: u8,
+    pub _padding: [u8; 7],
 }
 
 /// Created once when user calls claim_free_airdrop.
 #[account]
 pub struct AirdropClaim {
-    pub user:               Pubkey,
+    pub user: Pubkey,
     pub free_bet_available: bool,
-    pub bump:               u8,
-    pub _padding:           [u8; 6],
+    pub bump: u8,
+    pub _padding: [u8; 6],
 }
 
 /// Created during execute_draw for every successful (≥12-participant) round.
@@ -188,13 +210,13 @@ pub struct AirdropClaim {
 /// top_claimed[i]      = cumulative amount already transferred to winner i
 #[account]
 pub struct DrawResult {
-    pub pool_type:       u8,
-    pub round_number:    u64,
-    pub top_winners:     [Pubkey; 6],
-    pub top_amounts:     [u64; 6],
-    pub top_claimed:     [u64; 6],
-    pub draw_timestamp:  i64,
-    pub bump:            u8,
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub top_winners: [Pubkey; 6],
+    pub top_amounts: [u64; 6],
+    pub top_claimed: [u64; 6],
+    pub draw_timestamp: i64,
+    pub bump: u8,
 }
 
 // ============================================================
@@ -255,6 +277,18 @@ pub enum ErrorCode {
     NoReferral,
     #[msg("Referrer token account does not match stored referrer")]
     ReferrerMismatch,
+    #[msg("Protocol is paused")]
+    ProtocolPaused,
+    #[msg("Unauthorized: only authority can call this function")]
+    Unauthorized,
+    #[msg("Timelock not yet expired")]
+    TimelockNotExpired,
+    #[msg("No pending operation to execute")]
+    NoPendingOperation,
+    #[msg("Operation type mismatch")]
+    OperationMismatch,
+    #[msg("Timelock already pending for another operation")]
+    TimelockAlreadyPending,
 }
 
 // ============================================================
@@ -263,64 +297,81 @@ pub enum ErrorCode {
 
 #[event]
 pub struct DrawExecuted {
-    pub pool_type:        u8,
-    pub round_number:     u64,
-    pub total_pool:       u64,
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub total_pool: u64,
     pub participant_count: u32,
     /// Winner pubkeys: [1st, 2nd_a, 2nd_b, 3rd_a, 3rd_b, 3rd_c]
-    pub top_winners:      [Pubkey; 6],
+    pub top_winners: [Pubkey; 6],
     /// Corresponding prize amounts (full amounts, vested over 20 days)
-    pub top_amounts:      [u64; 6],
+    pub top_amounts: [u64; 6],
     /// 5 lucky winners (immediate payout)
-    pub lucky_winners:    [Pubkey; 5],
+    pub lucky_winners: [Pubkey; 5],
     pub lucky_amount_each: u64,
     /// Universal prize (all non-prize-winners)
-    pub universal_count:  u32,
+    pub universal_count: u32,
     pub universal_amount_each: u64,
-    pub burn_amount:      u64,
-    pub platform_amount:  u64,
-    pub rollover_amount:  u64,
-    pub draw_seed:        [u8; 32],
-    pub timestamp:        i64,
+    pub burn_amount: u64,
+    pub platform_amount: u64,
+    pub rollover_amount: u64,
+    pub draw_seed: [u8; 32],
+    pub timestamp: i64,
 }
 
 #[event]
 pub struct RoundRefunded {
-    pub pool_type:         u8,
-    pub round_number:      u64,
-    pub regular_refunded:  u32,
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub regular_refunded: u32,
     pub free_carried_over: u32,
-    pub total_refunded:    u64,
-    pub timestamp:         i64,
+    pub total_refunded: u64,
+    pub timestamp: i64,
 }
 
 #[event]
 pub struct Deposited {
-    pub pool_type:    u8,
+    pub pool_type: u8,
     pub round_number: u64,
-    pub user:         Pubkey,
-    pub amount:       u64,
-    pub matched:      u64, // reserve matching amount (0 for non-daily)
-    pub timestamp:    i64,
+    pub user: Pubkey,
+    pub amount: u64,
+    pub matched: u64, // reserve matching amount (0 for non-daily)
+    pub timestamp: i64,
 }
 
 #[event]
 pub struct FreeBetActivated {
     pub pool_type: u8,
-    pub user:      Pubkey,
+    pub user: Pubkey,
     pub timestamp: i64,
 }
 
 #[event]
 pub struct PrizeVestingClaimed {
-    pub pool_type:      u8,
-    pub round_number:   u64,
-    pub winner_index:   u8,
-    pub winner:         Pubkey,
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub winner_index: u8,
+    pub winner: Pubkey,
     pub claimed_amount: u64,
-    pub total_claimed:  u64,
-    pub total_prize:    u64,
-    pub timestamp:      i64,
+    pub total_claimed: u64,
+    pub total_prize: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct VrfRequested {
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub vrf_account: Pubkey,
+    pub request_slot: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct VrfFulfilled {
+    pub pool_type: u8,
+    pub round_number: u64,
+    pub randomness: [u8; 32],
+    pub timestamp: i64,
 }
 
 // ============================================================
@@ -335,8 +386,9 @@ fn pick_winner_indices(seed: [u8; 32], total: usize) -> [usize; 11] {
     let mut rng = u64::from_le_bytes(seed[0..8].try_into().unwrap());
     for i in 0..11 {
         // LCG step
-        rng = rng.wrapping_mul(6_364_136_223_846_793_005u64)
-                 .wrapping_add(1_442_695_040_888_963_407u64);
+        rng = rng
+            .wrapping_mul(6_364_136_223_846_793_005u64)
+            .wrapping_add(1_442_695_040_888_963_407u64);
         let j = i + (rng >> 33) as usize % (total - i);
         pool.swap(i, j);
     }
@@ -365,16 +417,166 @@ pub mod royalpot {
         referral_vault: Pubkey,
         reserve_vault: Pubkey,
         prize_escrow_vault: Pubkey,
+        timelock_duration: Option<i64>,
     ) -> Result<()> {
         let state = &mut ctx.accounts.global_state;
-        state.token_mint         = ctx.accounts.token_mint.key();
+        state.token_mint = ctx.accounts.token_mint.key();
         state.platform_fee_vault = platform_fee_vault;
-        state.airdrop_vault      = ctx.accounts.airdrop_vault.key();
-        state.referral_vault     = referral_vault;
-        state.reserve_vault      = reserve_vault;
+        state.airdrop_vault = ctx.accounts.airdrop_vault.key();
+        state.referral_vault = referral_vault;
+        state.reserve_vault = reserve_vault;
         state.prize_escrow_vault = prize_escrow_vault;
-        state.bump               = ctx.bumps.global_state;
-        state._padding           = [0u8; 7];
+        state.authority = ctx.accounts.payer.key();
+        state.is_paused = false;
+        state.timelock_duration = timelock_duration.unwrap_or(DEFAULT_TIMELOCK_DURATION);
+        state.pending_operation = TIMELOCK_OP_NONE;
+        state.timelock_release = 0;
+        state.bump = ctx.bumps.global_state;
+        state._padding = [0u8; 5];
+        Ok(())
+    }
+
+    /// Emergency pause - stops all deposits and draws
+    /// Requires timelock: first call schedule_pause, then call execute_pause after timelock expires
+    pub fn schedule_pause(ctx: Context<Pause>) -> Result<()> {
+        require!(
+            ctx.accounts.global_state.authority == ctx.accounts.authority.key(),
+            ErrorCode::Unauthorized
+        );
+        require!(
+            ctx.accounts.global_state.pending_operation == TIMELOCK_OP_NONE,
+            ErrorCode::TimelockAlreadyPending
+        );
+
+        let clock = Clock::get()?;
+        ctx.accounts.global_state.pending_operation = TIMELOCK_OP_PAUSE;
+        ctx.accounts.global_state.timelock_release =
+            clock.unix_timestamp + ctx.accounts.global_state.timelock_duration;
+
+        Ok(())
+    }
+
+    /// Execute pause after timelock expires
+    pub fn execute_pause(ctx: Context<Pause>) -> Result<()> {
+        require!(
+            ctx.accounts.global_state.authority == ctx.accounts.authority.key(),
+            ErrorCode::Unauthorized
+        );
+        require!(
+            ctx.accounts.global_state.pending_operation == TIMELOCK_OP_PAUSE,
+            ErrorCode::NoPendingOperation
+        );
+
+        let clock = Clock::get()?;
+        require!(
+            clock.unix_timestamp >= ctx.accounts.global_state.timelock_release,
+            ErrorCode::TimelockNotExpired
+        );
+
+        ctx.accounts.global_state.is_paused = true;
+        ctx.accounts.global_state.pending_operation = TIMELOCK_OP_NONE;
+        ctx.accounts.global_state.timelock_release = 0;
+
+        Ok(())
+    }
+
+    /// Schedule unpause operation
+    pub fn schedule_unpause(ctx: Context<Unpause>) -> Result<()> {
+        require!(
+            ctx.accounts.global_state.authority == ctx.accounts.authority.key(),
+            ErrorCode::Unauthorized
+        );
+        require!(
+            ctx.accounts.global_state.pending_operation == TIMELOCK_OP_NONE,
+            ErrorCode::TimelockAlreadyPending
+        );
+
+        let clock = Clock::get()?;
+        ctx.accounts.global_state.pending_operation = TIMELOCK_OP_UNPAUSE;
+        ctx.accounts.global_state.timelock_release =
+            clock.unix_timestamp + ctx.accounts.global_state.timelock_duration;
+
+        Ok(())
+    }
+
+    /// Execute unpause after timelock expires
+    pub fn execute_unpause(ctx: Context<Unpause>) -> Result<()> {
+        require!(
+            ctx.accounts.global_state.authority == ctx.accounts.authority.key(),
+            ErrorCode::Unauthorized
+        );
+        require!(
+            ctx.accounts.global_state.pending_operation == TIMELOCK_OP_UNPAUSE,
+            ErrorCode::NoPendingOperation
+        );
+
+        let clock = Clock::get()?;
+        require!(
+            clock.unix_timestamp >= ctx.accounts.global_state.timelock_release,
+            ErrorCode::TimelockNotExpired
+        );
+
+        ctx.accounts.global_state.is_paused = false;
+        ctx.accounts.global_state.pending_operation = TIMELOCK_OP_NONE;
+        ctx.accounts.global_state.timelock_release = 0;
+
+        Ok(())
+    }
+
+    /// Cancel pending operation (only if not yet executed)
+    pub fn cancel_timelock(ctx: Context<CancelTimelock>) -> Result<()> {
+        require!(
+            ctx.accounts.global_state.authority == ctx.accounts.authority.key(),
+            ErrorCode::Unauthorized
+        );
+
+        ctx.accounts.global_state.pending_operation = TIMELOCK_OP_NONE;
+        ctx.accounts.global_state.timelock_release = 0;
+
+        Ok(())
+    }
+
+    /// Close GlobalState account (admin only - for migration/reset)
+    pub fn close_global_state(ctx: Context<CloseGlobalState>) -> Result<()> {
+        require!(
+            ctx.accounts.global_state.authority == ctx.accounts.authority.key(),
+            ErrorCode::Unauthorized
+        );
+
+        let lamports = ctx.accounts.global_state.to_account_info().lamports();
+        **ctx
+            .accounts
+            .global_state
+            .to_account_info()
+            .try_borrow_mut_lamports()? -= lamports;
+        **ctx
+            .accounts
+            .recipient
+            .to_account_info()
+            .try_borrow_mut_lamports()? += lamports;
+
+        Ok(())
+    }
+
+    /// Close PoolState account (admin only - for migration/reset)
+    pub fn close_pool_state(ctx: Context<ClosePoolState>) -> Result<()> {
+        require!(
+            ctx.accounts.global_state.authority == ctx.accounts.authority.key(),
+            ErrorCode::Unauthorized
+        );
+
+        let lamports = ctx.accounts.pool_state.to_account_info().lamports();
+        **ctx
+            .accounts
+            .pool_state
+            .to_account_info()
+            .try_borrow_mut_lamports()? -= lamports;
+        **ctx
+            .accounts
+            .recipient
+            .to_account_info()
+            .try_borrow_mut_lamports()? += lamports;
+
         Ok(())
     }
 
@@ -386,18 +588,18 @@ pub mod royalpot {
     ) -> Result<()> {
         let pt = pool_type_from_u8(pool_type)?;
         let pool = &mut ctx.accounts.pool_state;
-        pool.pool_type        = pool_type;
-        pool.round_number     = 1;
+        pool.pool_type = pool_type;
+        pool.round_number = 1;
         pool.round_start_time = initial_start_time;
-        pool.round_end_time   = initial_start_time + pt.duration();
-        pool.total_deposited  = 0;
-        pool.free_bet_total   = 0;
-        pool.regular_count    = 0;
-        pool.free_count       = 0;
-        pool.vault            = ctx.accounts.pool_vault.key();
-        pool.rollover         = 0;
-        pool.bump             = ctx.bumps.pool_state;
-        pool._padding         = [0u8; 7];
+        pool.round_end_time = initial_start_time + pt.duration();
+        pool.total_deposited = 0;
+        pool.free_bet_total = 0;
+        pool.regular_count = 0;
+        pool.free_count = 0;
+        pool.vault = ctx.accounts.pool_vault.key();
+        pool.rollover = 0;
+        pool.bump = ctx.bumps.pool_state;
+        pool._padding = [0u8; 7];
         Ok(())
     }
 
@@ -415,6 +617,11 @@ pub mod royalpot {
         ctx: Context<'_, '_, '_, 'info, Deposit<'info>>,
         amount: u64,
     ) -> Result<()> {
+        require!(
+            !ctx.accounts.global_state.is_paused,
+            ErrorCode::ProtocolPaused
+        );
+
         let clock = Clock::get()?;
         let pool = &mut ctx.accounts.pool_state;
         let pt = pool_type_from_u8(pool.pool_type)?;
@@ -427,37 +634,41 @@ pub mod royalpot {
 
         // Record deposit PDA (init fails if already exists → prevents double deposit)
         let dep = &mut ctx.accounts.user_deposit;
-        dep.user         = ctx.accounts.user.key();
-        dep.pool_type    = pool.pool_type;
+        dep.user = ctx.accounts.user.key();
+        dep.pool_type = pool.pool_type;
         dep.round_number = pool.round_number;
-        dep.amount       = amount;
+        dep.amount = amount;
         // Store referrer's token account for deferred payout via claim_referral().
         // Referral is only paid after a successful draw — never on deposit or refund.
-        dep.referrer     = if !ctx.remaining_accounts.is_empty() {
+        dep.referrer = if !ctx.remaining_accounts.is_empty() {
             ctx.remaining_accounts[0].key()
         } else {
             Pubkey::default()
         };
-        dep.bump         = ctx.bumps.user_deposit;
-        dep._padding     = [0u8; 6];
+        dep.bump = ctx.bumps.user_deposit;
+        dep._padding = [0u8; 6];
 
         // User → pool vault
         token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
-                    from:      ctx.accounts.user_token_account.to_account_info(),
-                    to:        ctx.accounts.pool_vault.to_account_info(),
+                    from: ctx.accounts.user_token_account.to_account_info(),
+                    to: ctx.accounts.pool_vault.to_account_info(),
                     authority: ctx.accounts.user.to_account_info(),
                 },
             ),
             amount,
         )?;
 
-        pool.total_deposited = pool.total_deposited
-            .checked_add(amount).ok_or(ErrorCode::MathOverflow)?;
-        pool.regular_count   = pool.regular_count
-            .checked_add(1).ok_or(ErrorCode::MathOverflow)?;
+        pool.total_deposited = pool
+            .total_deposited
+            .checked_add(amount)
+            .ok_or(ErrorCode::MathOverflow)?;
+        pool.regular_count = pool
+            .regular_count
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         // ---------------------------------------------------
         // Daily pool: 1:1 reserve matching
@@ -474,26 +685,28 @@ pub mod royalpot {
                     CpiContext::new_with_signer(
                         ctx.accounts.token_program.to_account_info(),
                         Transfer {
-                            from:      ctx.accounts.reserve_vault.to_account_info(),
-                            to:        ctx.accounts.pool_vault.to_account_info(),
+                            from: ctx.accounts.reserve_vault.to_account_info(),
+                            to: ctx.accounts.pool_vault.to_account_info(),
                             authority: ctx.accounts.global_state.to_account_info(),
                         },
                         signer,
                     ),
                     matched,
                 )?;
-                pool.total_deposited = pool.total_deposited
-                    .checked_add(matched).ok_or(ErrorCode::MathOverflow)?;
+                pool.total_deposited = pool
+                    .total_deposited
+                    .checked_add(matched)
+                    .ok_or(ErrorCode::MathOverflow)?;
             }
         }
 
         emit!(Deposited {
-            pool_type:    pool.pool_type,
+            pool_type: pool.pool_type,
             round_number: pool.round_number,
-            user:         ctx.accounts.user.key(),
+            user: ctx.accounts.user.key(),
             amount,
             matched,
-            timestamp:    clock.unix_timestamp,
+            timestamp: clock.unix_timestamp,
         });
         Ok(())
     }
@@ -504,6 +717,10 @@ pub mod royalpot {
     pub fn use_free_bet(ctx: Context<UseFreeBet>, pool_type: u8) -> Result<()> {
         // Enforce daily-pool-only rule
         require!(pool_type == 2, ErrorCode::FreeBetDailyOnly);
+        require!(
+            !ctx.accounts.global_state.is_paused,
+            ErrorCode::ProtocolPaused
+        );
 
         let clock = Clock::get()?;
         let pool = &mut ctx.accounts.pool_state;
@@ -517,13 +734,13 @@ pub mod royalpot {
         require!(claim.free_bet_available, ErrorCode::NoFreeBetAvailable);
 
         let free_dep = &mut ctx.accounts.free_deposit;
-        free_dep.user      = ctx.accounts.user.key();
+        free_dep.user = ctx.accounts.user.key();
         free_dep.pool_type = pool_type;
         free_dep.is_active = true;
-        free_dep.amount    = FREE_BET_AMOUNT;
-        free_dep.referrer  = Pubkey::default(); // free bets carry no referral
-        free_dep.bump      = ctx.bumps.free_deposit;
-        free_dep._padding  = [0u8; 7];
+        free_dep.amount = FREE_BET_AMOUNT;
+        free_dep.referrer = Pubkey::default(); // free bets carry no referral
+        free_dep.bump = ctx.bumps.free_deposit;
+        free_dep._padding = [0u8; 7];
 
         claim.free_bet_available = false;
 
@@ -535,8 +752,8 @@ pub mod royalpot {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
-                    from:      ctx.accounts.airdrop_vault.to_account_info(),
-                    to:        ctx.accounts.pool_vault.to_account_info(),
+                    from: ctx.accounts.airdrop_vault.to_account_info(),
+                    to: ctx.accounts.pool_vault.to_account_info(),
                     authority: ctx.accounts.global_state.to_account_info(),
                 },
                 signer,
@@ -544,14 +761,18 @@ pub mod royalpot {
             FREE_BET_AMOUNT,
         )?;
 
-        pool.free_bet_total = pool.free_bet_total
-            .checked_add(FREE_BET_AMOUNT).ok_or(ErrorCode::MathOverflow)?;
-        pool.free_count     = pool.free_count
-            .checked_add(1).ok_or(ErrorCode::MathOverflow)?;
+        pool.free_bet_total = pool
+            .free_bet_total
+            .checked_add(FREE_BET_AMOUNT)
+            .ok_or(ErrorCode::MathOverflow)?;
+        pool.free_count = pool
+            .free_count
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         emit!(FreeBetActivated {
             pool_type: pool.pool_type,
-            user:      ctx.accounts.user.key(),
+            user: ctx.accounts.user.key(),
             timestamp: clock.unix_timestamp,
         });
         Ok(())
@@ -579,21 +800,31 @@ pub mod royalpot {
         draw_seed: [u8; 32],
     ) -> Result<()> {
         let clock = Clock::get()?;
+        require!(
+            !ctx.accounts.global_state.is_paused,
+            ErrorCode::ProtocolPaused
+        );
 
         // Snapshot pool fields before mutable borrow
-        let pool_type       = ctx.accounts.pool_state.pool_type;
-        let pool_bump       = ctx.accounts.pool_state.bump;
-        let round_number    = ctx.accounts.pool_state.round_number;
-        let round_end       = ctx.accounts.pool_state.round_end_time;
-        let regular_count   = ctx.accounts.pool_state.regular_count as usize;
-        let free_count      = ctx.accounts.pool_state.free_count as usize;
+        let pool_type = ctx.accounts.pool_state.pool_type;
+        let pool_bump = ctx.accounts.pool_state.bump;
+        let round_number = ctx.accounts.pool_state.round_number;
+        let round_end = ctx.accounts.pool_state.round_end_time;
+        let regular_count = ctx.accounts.pool_state.regular_count as usize;
+        let free_count = ctx.accounts.pool_state.free_count as usize;
         let total_deposited = ctx.accounts.pool_state.total_deposited;
-        let free_bet_total  = ctx.accounts.pool_state.free_bet_total;
-        let prev_rollover   = ctx.accounts.pool_state.rollover;
-        let vault_key       = ctx.accounts.pool_state.vault;
+        let free_bet_total = ctx.accounts.pool_state.free_bet_total;
+        let prev_rollover = ctx.accounts.pool_state.rollover;
+        let vault_key = ctx.accounts.pool_state.vault;
 
-        require!(clock.unix_timestamp >= round_end, ErrorCode::TooEarlyForDraw);
-        require!(ctx.accounts.pool_vault.key() == vault_key, ErrorCode::VaultMismatch);
+        require!(
+            clock.unix_timestamp >= round_end,
+            ErrorCode::TooEarlyForDraw
+        );
+        require!(
+            ctx.accounts.pool_vault.key() == vault_key,
+            ErrorCode::VaultMismatch
+        );
 
         let total_count = regular_count + free_count;
         require!(
@@ -609,45 +840,66 @@ pub mod royalpot {
         // Compute prize amounts
         // -------------------------------------------------------
         let total_pool = total_deposited
-            .checked_add(free_bet_total).ok_or(ErrorCode::MathOverflow)?
-            .checked_add(prev_rollover).ok_or(ErrorCode::MathOverflow)?;
+            .checked_add(free_bet_total)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_add(prev_rollover)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         let burn_amount = total_pool
-            .checked_mul(BURN_RATE).ok_or(ErrorCode::MathOverflow)?
-            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+            .checked_mul(BURN_RATE)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE)
+            .ok_or(ErrorCode::MathOverflow)?;
         let plat_amount = total_pool
-            .checked_mul(PLAT_RATE).ok_or(ErrorCode::MathOverflow)?
-            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+            .checked_mul(PLAT_RATE)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         // prize_pool = 95% of total_pool
         let prize_pool = total_pool
-            .checked_sub(burn_amount).ok_or(ErrorCode::MathOverflow)?
-            .checked_sub(plat_amount).ok_or(ErrorCode::MathOverflow)?;
+            .checked_sub(burn_amount)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_sub(plat_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         // Rollover: 5% of prize_pool stays in vault
         let rollover_amount = prize_pool
-            .checked_mul(ROLLOVER_BP).ok_or(ErrorCode::MathOverflow)?
-            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+            .checked_mul(ROLLOVER_BP)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         // distributable = prize_pool - rollover
         let distributable = prize_pool
-            .checked_sub(rollover_amount).ok_or(ErrorCode::MathOverflow)?;
+            .checked_sub(rollover_amount)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         let prize_1st = distributable
-            .checked_mul(PRIZE_1ST_BP).ok_or(ErrorCode::MathOverflow)?
-            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+            .checked_mul(PRIZE_1ST_BP)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE)
+            .ok_or(ErrorCode::MathOverflow)?;
         let prize_2nd_each = distributable
-            .checked_mul(PRIZE_2ND_EACH_BP).ok_or(ErrorCode::MathOverflow)?
-            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+            .checked_mul(PRIZE_2ND_EACH_BP)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE)
+            .ok_or(ErrorCode::MathOverflow)?;
         let prize_3rd_each = distributable
-            .checked_mul(PRIZE_3RD_EACH_BP).ok_or(ErrorCode::MathOverflow)?
-            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+            .checked_mul(PRIZE_3RD_EACH_BP)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE)
+            .ok_or(ErrorCode::MathOverflow)?;
         let prize_lucky_each = distributable
-            .checked_mul(PRIZE_LUCKY_EACH_BP).ok_or(ErrorCode::MathOverflow)?
-            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+            .checked_mul(PRIZE_LUCKY_EACH_BP)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE)
+            .ok_or(ErrorCode::MathOverflow)?;
         let prize_universal_total = distributable
-            .checked_mul(PRIZE_UNIVERSAL_BP).ok_or(ErrorCode::MathOverflow)?
-            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+            .checked_mul(PRIZE_UNIVERSAL_BP)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         // universal_count = total participants - 11 prize winners
         let universal_count = total_count.saturating_sub(11);
@@ -661,9 +913,17 @@ pub mod royalpot {
 
         // Total going to prize_escrow = 1st + 2×2nd + 3×3rd
         let top_prize_total = prize_1st
-            .checked_add(prize_2nd_each.checked_mul(2).ok_or(ErrorCode::MathOverflow)?)
+            .checked_add(
+                prize_2nd_each
+                    .checked_mul(2)
+                    .ok_or(ErrorCode::MathOverflow)?,
+            )
             .ok_or(ErrorCode::MathOverflow)?
-            .checked_add(prize_3rd_each.checked_mul(3).ok_or(ErrorCode::MathOverflow)?)
+            .checked_add(
+                prize_3rd_each
+                    .checked_mul(3)
+                    .ok_or(ErrorCode::MathOverflow)?,
+            )
             .ok_or(ErrorCode::MathOverflow)?;
 
         // -------------------------------------------------------
@@ -686,8 +946,8 @@ pub mod royalpot {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 Burn {
-                    mint:      ctx.accounts.token_mint.to_account_info(),
-                    from:      ctx.accounts.pool_vault.to_account_info(),
+                    mint: ctx.accounts.token_mint.to_account_info(),
+                    from: ctx.accounts.pool_vault.to_account_info(),
                     authority: ctx.accounts.pool_state.to_account_info(),
                 },
                 pool_signer,
@@ -702,8 +962,8 @@ pub mod royalpot {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
-                    from:      ctx.accounts.pool_vault.to_account_info(),
-                    to:        ctx.accounts.platform_vault.to_account_info(),
+                    from: ctx.accounts.pool_vault.to_account_info(),
+                    to: ctx.accounts.platform_vault.to_account_info(),
                     authority: ctx.accounts.pool_state.to_account_info(),
                 },
                 pool_signer,
@@ -719,8 +979,8 @@ pub mod royalpot {
                 CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
                     Transfer {
-                        from:      ctx.accounts.pool_vault.to_account_info(),
-                        to:        ctx.accounts.prize_escrow_vault.to_account_info(),
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: ctx.accounts.prize_escrow_vault.to_account_info(),
                         authority: ctx.accounts.pool_state.to_account_info(),
                     },
                     pool_signer,
@@ -741,8 +1001,8 @@ pub mod royalpot {
                     CpiContext::new_with_signer(
                         ctx.accounts.token_program.to_account_info(),
                         Transfer {
-                            from:      ctx.accounts.pool_vault.to_account_info(),
-                            to:        tok_acc.to_account_info(),
+                            from: ctx.accounts.pool_vault.to_account_info(),
+                            to: tok_acc.to_account_info(),
                             authority: ctx.accounts.pool_state.to_account_info(),
                         },
                         pool_signer,
@@ -769,8 +1029,8 @@ pub mod royalpot {
                     CpiContext::new_with_signer(
                         ctx.accounts.token_program.to_account_info(),
                         Transfer {
-                            from:      ctx.accounts.pool_vault.to_account_info(),
-                            to:        tok_acc.to_account_info(),
+                            from: ctx.accounts.pool_vault.to_account_info(),
+                            to: tok_acc.to_account_info(),
                             authority: ctx.accounts.pool_state.to_account_info(),
                         },
                         pool_signer,
@@ -803,13 +1063,13 @@ pub mod royalpot {
         }
 
         let draw_result = &mut ctx.accounts.draw_result;
-        draw_result.pool_type      = pool_type;
-        draw_result.round_number   = round_number;
-        draw_result.top_winners    = top_winners;
-        draw_result.top_amounts    = top_amounts;
-        draw_result.top_claimed    = [0u64; 6];
+        draw_result.pool_type = pool_type;
+        draw_result.round_number = round_number;
+        draw_result.top_winners = top_winners;
+        draw_result.top_amounts = top_amounts;
+        draw_result.top_claimed = [0u64; 6];
         draw_result.draw_timestamp = clock.unix_timestamp;
-        draw_result.bump           = ctx.bumps.draw_result;
+        draw_result.bump = ctx.bumps.draw_result;
 
         // -------------------------------------------------------
         // 7. Mark all free-bet accounts as consumed (is_active = false)
@@ -847,15 +1107,17 @@ pub mod royalpot {
         // -------------------------------------------------------
         let pt = pool_type_from_u8(pool_type)?;
         let pool = &mut ctx.accounts.pool_state;
-        pool.round_number     = pool.round_number
-            .checked_add(1).ok_or(ErrorCode::MathOverflow)?;
+        pool.round_number = pool
+            .round_number
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
         pool.round_start_time = round_end;
-        pool.round_end_time   = round_end + pt.duration();
-        pool.total_deposited  = 0;
-        pool.free_bet_total   = 0;
-        pool.regular_count    = 0;
-        pool.free_count       = 0;
-        pool.rollover         = rollover_amount;
+        pool.round_end_time = round_end + pt.duration();
+        pool.total_deposited = 0;
+        pool.free_bet_total = 0;
+        pool.regular_count = 0;
+        pool.free_count = 0;
+        pool.rollover = rollover_amount;
 
         Ok(())
     }
@@ -869,17 +1131,23 @@ pub mod royalpot {
     ) -> Result<()> {
         let clock = Clock::get()?;
 
-        let pool_type     = ctx.accounts.pool_state.pool_type;
-        let pool_bump     = ctx.accounts.pool_state.bump;
-        let round_number  = ctx.accounts.pool_state.round_number;
-        let round_end     = ctx.accounts.pool_state.round_end_time;
+        let pool_type = ctx.accounts.pool_state.pool_type;
+        let pool_bump = ctx.accounts.pool_state.bump;
+        let round_number = ctx.accounts.pool_state.round_number;
+        let round_end = ctx.accounts.pool_state.round_end_time;
         let regular_count = ctx.accounts.pool_state.regular_count as usize;
-        let free_count    = ctx.accounts.pool_state.free_count as usize;
+        let free_count = ctx.accounts.pool_state.free_count as usize;
         let total_deposited = ctx.accounts.pool_state.total_deposited;
-        let vault_key     = ctx.accounts.pool_state.vault;
+        let vault_key = ctx.accounts.pool_state.vault;
 
-        require!(clock.unix_timestamp >= round_end, ErrorCode::TooEarlyForDraw);
-        require!(ctx.accounts.pool_vault.key() == vault_key, ErrorCode::VaultMismatch);
+        require!(
+            clock.unix_timestamp >= round_end,
+            ErrorCode::TooEarlyForDraw
+        );
+        require!(
+            ctx.accounts.pool_vault.key() == vault_key,
+            ErrorCode::VaultMismatch
+        );
 
         let total_count = regular_count + free_count;
         require!(
@@ -895,21 +1163,25 @@ pub mod royalpot {
         let signer = &[pool_seeds];
 
         for i in 0..regular_count {
-            let dep_acc      = &ctx.remaining_accounts[i * 2];
+            let dep_acc = &ctx.remaining_accounts[i * 2];
             let user_tok_acc = &ctx.remaining_accounts[i * 2 + 1];
 
-            let dep_data = UserDeposit::try_deserialize(
-                &mut dep_acc.data.borrow().as_ref(),
-            )?;
-            require!(dep_data.pool_type == pool_type, ErrorCode::InvalidParticipant);
-            require!(dep_data.round_number == round_number, ErrorCode::WrongRoundNumber);
+            let dep_data = UserDeposit::try_deserialize(&mut dep_acc.data.borrow().as_ref())?;
+            require!(
+                dep_data.pool_type == pool_type,
+                ErrorCode::InvalidParticipant
+            );
+            require!(
+                dep_data.round_number == round_number,
+                ErrorCode::WrongRoundNumber
+            );
 
             token::transfer(
                 CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
                     Transfer {
-                        from:      ctx.accounts.pool_vault.to_account_info(),
-                        to:        user_tok_acc.to_account_info(),
+                        from: ctx.accounts.pool_vault.to_account_info(),
+                        to: user_tok_acc.to_account_info(),
                         authority: ctx.accounts.pool_state.to_account_info(),
                     },
                     signer,
@@ -921,20 +1193,22 @@ pub mod royalpot {
         emit!(RoundRefunded {
             pool_type,
             round_number,
-            regular_refunded:  regular_count as u32,
+            regular_refunded: regular_count as u32,
             free_carried_over: free_count as u32,
-            total_refunded:    total_deposited,
-            timestamp:         clock.unix_timestamp,
+            total_refunded: total_deposited,
+            timestamp: clock.unix_timestamp,
         });
 
         let pt = pool_type_from_u8(pool_type)?;
         let pool = &mut ctx.accounts.pool_state;
-        pool.round_number     = pool.round_number
-            .checked_add(1).ok_or(ErrorCode::MathOverflow)?;
+        pool.round_number = pool
+            .round_number
+            .checked_add(1)
+            .ok_or(ErrorCode::MathOverflow)?;
         pool.round_start_time = round_end;
-        pool.round_end_time   = round_end + pt.duration();
-        pool.total_deposited  = 0;
-        pool.regular_count    = 0;
+        pool.round_end_time = round_end + pt.duration();
+        pool.total_deposited = 0;
+        pool.regular_count = 0;
         // free_bet_total and free_count intentionally preserved
 
         Ok(())
@@ -946,10 +1220,7 @@ pub mod royalpot {
     /// elapsed_days = (now - draw_timestamp) / 86400
     /// vested = total_amount × min(elapsed_days + 1, 20) / 20
     /// claimable = vested - already_claimed
-    pub fn claim_prize_vesting(
-        ctx: Context<ClaimPrizeVesting>,
-        winner_index: u8,
-    ) -> Result<()> {
+    pub fn claim_prize_vesting(ctx: Context<ClaimPrizeVesting>, winner_index: u8) -> Result<()> {
         let clock = Clock::get()?;
         let wi = winner_index as usize;
         require!(wi < 6, ErrorCode::InvalidWinnerIndex);
@@ -958,7 +1229,10 @@ pub mod royalpot {
         let total_amount = draw.top_amounts[wi];
         let already_claimed = draw.top_claimed[wi];
 
-        require!(already_claimed < total_amount, ErrorCode::AlreadyFullyClaimed);
+        require!(
+            already_claimed < total_amount,
+            ErrorCode::AlreadyFullyClaimed
+        );
 
         // Verify winner_token_account belongs to the recorded winner
         require!(
@@ -966,12 +1240,13 @@ pub mod royalpot {
             ErrorCode::WinnerTokenMismatch
         );
 
-        let elapsed_days =
-            ((clock.unix_timestamp - draw.draw_timestamp) / 86_400) as u64;
+        let elapsed_days = ((clock.unix_timestamp - draw.draw_timestamp) / 86_400) as u64;
         let vested_days = (elapsed_days + 1).min(PRIZE_VEST_DAYS);
         let vested_amount = total_amount
-            .checked_mul(vested_days).ok_or(ErrorCode::MathOverflow)?
-            .checked_div(PRIZE_VEST_DAYS).ok_or(ErrorCode::MathOverflow)?;
+            .checked_mul(vested_days)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(PRIZE_VEST_DAYS)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         let claimable = vested_amount.saturating_sub(already_claimed);
         require!(claimable > 0, ErrorCode::BelowMinimum);
@@ -984,8 +1259,8 @@ pub mod royalpot {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
-                    from:      ctx.accounts.prize_escrow_vault.to_account_info(),
-                    to:        ctx.accounts.winner_token_account.to_account_info(),
+                    from: ctx.accounts.prize_escrow_vault.to_account_info(),
+                    to: ctx.accounts.winner_token_account.to_account_info(),
                     authority: ctx.accounts.global_state.to_account_info(),
                 },
                 signer,
@@ -994,17 +1269,18 @@ pub mod royalpot {
         )?;
 
         draw.top_claimed[wi] = already_claimed
-            .checked_add(claimable).ok_or(ErrorCode::MathOverflow)?;
+            .checked_add(claimable)
+            .ok_or(ErrorCode::MathOverflow)?;
 
         emit!(PrizeVestingClaimed {
-            pool_type:      draw.pool_type,
-            round_number:   draw.round_number,
-            winner_index:   winner_index,
-            winner:         draw.top_winners[wi],
+            pool_type: draw.pool_type,
+            round_number: draw.round_number,
+            winner_index: winner_index,
+            winner: draw.top_winners[wi],
             claimed_amount: claimable,
-            total_claimed:  draw.top_claimed[wi],
-            total_prize:    total_amount,
-            timestamp:      clock.unix_timestamp,
+            total_claimed: draw.top_claimed[wi],
+            total_prize: total_amount,
+            timestamp: clock.unix_timestamp,
         });
 
         Ok(())
@@ -1013,10 +1289,10 @@ pub mod royalpot {
     /// Register user for one free bet (one-time per wallet).
     pub fn claim_free_airdrop(ctx: Context<ClaimFreeAirdrop>) -> Result<()> {
         let claim = &mut ctx.accounts.airdrop_claim;
-        claim.user               = ctx.accounts.user.key();
+        claim.user = ctx.accounts.user.key();
         claim.free_bet_available = true;
-        claim.bump               = ctx.bumps.airdrop_claim;
-        claim._padding           = [0u8; 6];
+        claim.bump = ctx.bumps.airdrop_claim;
+        claim._padding = [0u8; 6];
         Ok(())
     }
 
@@ -1047,20 +1323,24 @@ pub mod royalpot {
 
         let dep = &mut ctx.accounts.user_deposit;
         require!(dep.pool_type == pool_type, ErrorCode::InvalidParticipant);
-        require!(dep.round_number == round_number, ErrorCode::WrongRoundNumber);
+        require!(
+            dep.round_number == round_number,
+            ErrorCode::WrongRoundNumber
+        );
         require!(dep.referrer != Pubkey::default(), ErrorCode::NoReferral);
         require!(
             ctx.accounts.referrer_token_account.key() == dep.referrer,
             ErrorCode::ReferrerMismatch
         );
 
-        let referral_amount = dep.amount
-            .checked_mul(REFERRER_BP).ok_or(ErrorCode::MathOverflow)?
-            .checked_div(BASE).ok_or(ErrorCode::MathOverflow)?;
+        let referral_amount = dep
+            .amount
+            .checked_mul(REFERRER_BP)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(BASE)
+            .ok_or(ErrorCode::MathOverflow)?;
 
-        if referral_amount > 0
-            && ctx.accounts.referral_vault.amount >= referral_amount
-        {
+        if referral_amount > 0 && ctx.accounts.referral_vault.amount >= referral_amount {
             let gs_bump = ctx.accounts.global_state.bump;
             let gs_seeds: &[&[u8]] = &[b"global_state", &[gs_bump]];
             let signer = &[gs_seeds];
@@ -1068,8 +1348,8 @@ pub mod royalpot {
                 CpiContext::new_with_signer(
                     ctx.accounts.token_program.to_account_info(),
                     Transfer {
-                        from:      ctx.accounts.referral_vault.to_account_info(),
-                        to:        ctx.accounts.referrer_token_account.to_account_info(),
+                        from: ctx.accounts.referral_vault.to_account_info(),
+                        to: ctx.accounts.referrer_token_account.to_account_info(),
                         authority: ctx.accounts.global_state.to_account_info(),
                     },
                     signer,
@@ -1111,10 +1391,7 @@ pub mod royalpot {
     // ----------------------------------------------------------
     // Profit airdrop (delegated)
     // ----------------------------------------------------------
-    pub fn initialize_airdrop(
-        ctx: Context<InitializeAirdrop>,
-        total_airdrop: u64,
-    ) -> Result<()> {
+    pub fn initialize_airdrop(ctx: Context<InitializeAirdrop>, total_airdrop: u64) -> Result<()> {
         airdrop::initialize_airdrop(ctx, total_airdrop)
     }
     pub fn record_profit(ctx: Context<RecordProfit>, profit_amount: u64) -> Result<()> {
@@ -1130,18 +1407,18 @@ pub mod royalpot {
     pub fn init_vesting(ctx: Context<InitVesting>, total_amount: u64) -> Result<()> {
         let clock = Clock::get()?;
         let v = &mut ctx.accounts.vesting_account;
-        v.beneficiary    = ctx.accounts.beneficiary.key();
-        v.total_amount   = total_amount;
+        v.beneficiary = ctx.accounts.beneficiary.key();
+        v.total_amount = total_amount;
         v.claimed_amount = 0;
-        v.start_time     = clock.unix_timestamp;
-        v.bump           = ctx.bumps.vesting_account;
+        v.start_time = clock.unix_timestamp;
+        v.bump = ctx.bumps.vesting_account;
 
         token::transfer(
             CpiContext::new(
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
-                    from:      ctx.accounts.funder_token_account.to_account_info(),
-                    to:        ctx.accounts.vesting_vault.to_account_info(),
+                    from: ctx.accounts.funder_token_account.to_account_info(),
+                    to: ctx.accounts.vesting_vault.to_account_info(),
                     authority: ctx.accounts.funder.to_account_info(),
                 },
             ),
@@ -1155,8 +1432,9 @@ pub mod royalpot {
         let v = &ctx.accounts.vesting_account;
 
         let elapsed_days = ((clock.unix_timestamp - v.start_time) / 86400) as u64;
-        let vested_days  = elapsed_days.min(VESTING_DAYS);
-        let vested_amount = v.total_amount
+        let vested_days = elapsed_days.min(VESTING_DAYS);
+        let vested_amount = v
+            .total_amount
             .checked_mul(vested_days * VESTING_RELEASE_PER_DAY)
             .ok_or(ErrorCode::MathOverflow)?
             .checked_div(10_000)
@@ -1172,8 +1450,8 @@ pub mod royalpot {
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
                 Transfer {
-                    from:      ctx.accounts.vesting_vault.to_account_info(),
-                    to:        ctx.accounts.beneficiary_token_account.to_account_info(),
+                    from: ctx.accounts.vesting_vault.to_account_info(),
+                    to: ctx.accounts.beneficiary_token_account.to_account_info(),
                     authority: ctx.accounts.vesting_account.to_account_info(),
                 },
                 signer,
@@ -1182,8 +1460,11 @@ pub mod royalpot {
         )?;
 
         ctx.accounts.vesting_account.claimed_amount = ctx
-            .accounts.vesting_account.claimed_amount
-            .checked_add(claimable).ok_or(ErrorCode::MathOverflow)?;
+            .accounts
+            .vesting_account
+            .claimed_amount
+            .checked_add(claimable)
+            .ok_or(ErrorCode::MathOverflow)?;
         Ok(())
     }
 }
@@ -1200,7 +1481,10 @@ fn read_participant_pubkey(
     if is_regular {
         let dep = UserDeposit::try_deserialize(&mut pda_acc.data.borrow().as_ref())?;
         require!(dep.pool_type == pool_type, ErrorCode::InvalidParticipant);
-        require!(dep.round_number == round_number, ErrorCode::WrongRoundNumber);
+        require!(
+            dep.round_number == round_number,
+            ErrorCode::WrongRoundNumber
+        );
         Ok(dep.user)
     } else {
         let dep = FreeDeposit::try_deserialize(&mut pda_acc.data.borrow().as_ref())?;
@@ -1234,6 +1518,87 @@ pub struct Initialize<'info> {
     pub airdrop_vault: Account<'info, TokenAccount>,
 
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct Pause<'info> {
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"global_state"],
+        bump = global_state.bump,
+        constraint = global_state.authority == authority.key() @ ErrorCode::Unauthorized,
+    )]
+    pub global_state: Account<'info, GlobalState>,
+}
+
+#[derive(Accounts)]
+pub struct Unpause<'info> {
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"global_state"],
+        bump = global_state.bump,
+        constraint = global_state.authority == authority.key() @ ErrorCode::Unauthorized,
+    )]
+    pub global_state: Account<'info, GlobalState>,
+}
+
+#[derive(Accounts)]
+pub struct CancelTimelock<'info> {
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"global_state"],
+        bump = global_state.bump,
+        constraint = global_state.authority == authority.key() @ ErrorCode::Unauthorized,
+    )]
+    pub global_state: Account<'info, GlobalState>,
+}
+
+#[derive(Accounts)]
+pub struct CloseGlobalState<'info> {
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"global_state"],
+        bump = global_state.bump,
+        constraint = global_state.authority == authority.key() @ ErrorCode::Unauthorized,
+        close = recipient,
+    )]
+    pub global_state: Account<'info, GlobalState>,
+
+    /// CHECK: Receives lamports
+    #[account(mut)]
+    pub recipient: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+#[instruction(pool_type: u8)]
+pub struct ClosePoolState<'info> {
+    pub authority: Signer<'info>,
+
+    #[account(
+        seeds = [b"global_state"],
+        bump = global_state.bump,
+    )]
+    pub global_state: Account<'info, GlobalState>,
+
+    #[account(
+        mut,
+        seeds = [b"pool", &[pool_type]],
+        bump = pool_state.bump,
+        close = recipient,
+    )]
+    pub pool_state: Account<'info, PoolState>,
+
+    /// CHECK: Receives lamports
+    #[account(mut)]
+    pub recipient: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
@@ -1538,11 +1903,11 @@ pub struct ClaimReferral<'info> {
 
 #[account]
 pub struct VestingAccount {
-    pub beneficiary:    Pubkey,
-    pub total_amount:   u64,
+    pub beneficiary: Pubkey,
+    pub total_amount: u64,
     pub claimed_amount: u64,
-    pub start_time:     i64,
-    pub bump:           u8,
+    pub start_time: i64,
+    pub bump: u8,
 }
 
 impl VestingAccount {
@@ -1725,4 +2090,118 @@ pub struct ClaimProfitAirdrop<'info> {
     #[account(seeds = [b"airdrop"], bump)]
     pub airdrop_authority: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
+}
+
+// ============================================================
+// VRF Accounts
+// ============================================================
+
+#[derive(Accounts)]
+pub struct InitializeVrf<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(
+        init,
+        payer = authority,
+        space = 8 + VrfState::SIZE,
+        seeds = [b"vrf_state"],
+        bump,
+    )]
+    pub vrf_state: Account<'info, VrfState>,
+
+    /// CHECK: Switchboard VRF account (created externally via Switchboard SDK)
+    pub vrf: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RequestVrf<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"vrf_state"],
+        bump = vrf_state.bump,
+    )]
+    pub vrf_state: Account<'info, VrfState>,
+
+    #[account(
+        seeds = [b"pool".as_ref(), &[pool_state.pool_type]],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Account<'info, PoolState>,
+
+    /// CHECK: Switchboard VRF account
+    pub vrf: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct ExecuteDrawVrf<'info> {
+    #[account(mut)]
+    pub caller: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [b"vrf_state"],
+        bump = vrf_state.bump,
+    )]
+    pub vrf_state: Account<'info, VrfState>,
+
+    #[account(
+        mut,
+        seeds = [b"pool".as_ref(), &[pool_state.pool_type]],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+
+    #[account(
+        mut,
+        constraint = pool_vault.key() == pool_state.vault @ ErrorCode::VaultMismatch,
+    )]
+    pub pool_vault: Box<Account<'info, TokenAccount>>,
+
+    #[account(mut)]
+    pub token_mint: Account<'info, Mint>,
+
+    #[account(
+        mut,
+        constraint = platform_vault.key() == global_state.platform_fee_vault @ ErrorCode::PlatformVaultMismatch,
+    )]
+    pub platform_vault: Box<Account<'info, TokenAccount>>,
+
+    #[account(
+        mut,
+        constraint = prize_escrow_vault.key() == global_state.prize_escrow_vault @ ErrorCode::PrizeEscrowMismatch,
+    )]
+    pub prize_escrow_vault: Box<Account<'info, TokenAccount>>,
+
+    #[account(
+        seeds = [b"global_state"],
+        bump = global_state.bump,
+    )]
+    pub global_state: Box<Account<'info, GlobalState>>,
+
+    #[account(
+        init,
+        payer = caller,
+        space = DRAW_RESULT_SIZE,
+        seeds = [
+            b"draw_result".as_ref(),
+            &[pool_state.pool_type],
+            pool_state.round_number.to_le_bytes().as_ref(),
+        ],
+        bump,
+    )]
+    pub draw_result: Box<Account<'info, DrawResult>>,
+
+    /// CHECK: Switchboard VRF account
+    pub vrf: AccountInfo<'info>,
+
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }

@@ -71,7 +71,7 @@ pub fn initialize_staking(
     long_term_pool: u64,
 ) -> Result<()> {
     let staking_state = &mut ctx.accounts.staking_state;
-    
+
     staking_state.authority = ctx.accounts.payer.key();
     staking_state.token_mint = ctx.accounts.token_mint.key();
     staking_state.short_term_pool = short_term_pool;
@@ -81,12 +81,12 @@ pub fn initialize_staking(
     staking_state.short_term_released = 0;
     staking_state.long_term_released = 0;
     staking_state.bump = ctx.bumps.staking_state;
-    
+
     emit!(StakingInitialized {
         short_term_pool,
         long_term_pool,
     });
-    
+
     Ok(())
 }
 
@@ -98,30 +98,33 @@ pub fn stake(
     stake_type: StakeType,
 ) -> Result<()> {
     require!(amount > 0, StakingErrorCode::InvalidAmount);
-    
+
     let staking_state = &mut ctx.accounts.staking_state;
     let user_stake = &mut ctx.accounts.user_stake;
     let clock = Clock::get()?;
-    
+
     // 计算奖励和结束时间
     let (apr, days, pool_remaining) = match stake_type {
         StakeType::ShortTerm => (
             STAKING_APR_SHORT,
             SHORT_STAKE_DAYS,
-            staking_state.short_term_pool
+            staking_state.short_term_pool,
         ),
         StakeType::LongTerm => (
             STAKING_APR_LONG,
             LONG_STAKE_DAYS,
-            staking_state.long_term_pool
+            staking_state.long_term_pool,
         ),
     };
-    
+
     let reward = calculate_reward(amount, apr, days)?;
-    
+
     // 检查奖励池是否充足
-    require!(reward <= pool_remaining, StakingErrorCode::InsufficientRewardPool);
-    
+    require!(
+        reward <= pool_remaining,
+        StakingErrorCode::InsufficientRewardPool
+    );
+
     // 转账到质押金库
     token::transfer(
         CpiContext::new(
@@ -134,19 +137,19 @@ pub fn stake(
         ),
         amount,
     )?;
-    
+
     // 更新状态
     match stake_type {
         StakeType::ShortTerm => {
             staking_state.short_term_pool -= reward;
             staking_state.total_staked_short += amount;
-        },
+        }
         StakeType::LongTerm => {
             staking_state.long_term_pool -= reward;
             staking_state.total_staked_long += amount;
-        },
+        }
     }
-    
+
     // 设置用户质押信息
     user_stake.owner = ctx.accounts.user.key();
     user_stake.amount = amount;
@@ -156,7 +159,7 @@ pub fn stake(
     user_stake.stake_type = stake_type;
     user_stake.claimed = false;
     user_stake.stake_index = stake_index;
-    
+
     emit!(StakeEvent {
         user: ctx.accounts.user.key(),
         amount,
@@ -164,30 +167,27 @@ pub fn stake(
         stake_type,
         end_time: user_stake.end_time,
     });
-    
+
     Ok(())
 }
 
 // 到期释放质押
-pub fn release_stake(
-    ctx: Context<crate::ReleaseStake>,
-    _stake_index: u64,
-) -> Result<()> {
+pub fn release_stake(ctx: Context<crate::ReleaseStake>, _stake_index: u64) -> Result<()> {
     let staking_state = &mut ctx.accounts.staking_state;
     let user_stake = &mut ctx.accounts.user_stake;
     let clock = Clock::get()?;
-    
+
     // 检查是否已领取
     require!(!user_stake.claimed, StakingErrorCode::AlreadyClaimed);
-    
+
     // 检查是否到期
     require!(
         clock.unix_timestamp >= user_stake.end_time,
         StakingErrorCode::StakeNotMatured
     );
-    
+
     let total_return = user_stake.amount + user_stake.reward;
-    
+
     // 转账给用户（本金+奖励）
     token::transfer(
         CpiContext::new_with_signer(
@@ -201,52 +201,49 @@ pub fn release_stake(
         ),
         total_return,
     )?;
-    
+
     // 更新状态
     match user_stake.stake_type {
         StakeType::ShortTerm => {
             staking_state.total_staked_short -= user_stake.amount;
             staking_state.short_term_released += total_return;
-        },
+        }
         StakeType::LongTerm => {
             staking_state.total_staked_long -= user_stake.amount;
             staking_state.long_term_released += total_return;
-        },
+        }
     }
-    
+
     user_stake.claimed = true;
-    
+
     emit!(ReleaseEvent {
         user: ctx.accounts.user.key(),
         principal: user_stake.amount,
         reward: user_stake.reward,
         total: total_return,
     });
-    
+
     Ok(())
 }
 
 // 提前赎回（无收益）
-pub fn early_withdraw(
-    ctx: Context<crate::ReleaseStake>,
-    _stake_index: u64,
-) -> Result<()> {
+pub fn early_withdraw(ctx: Context<crate::ReleaseStake>, _stake_index: u64) -> Result<()> {
     let staking_state = &mut ctx.accounts.staking_state;
     let user_stake = &mut ctx.accounts.user_stake;
     let clock = Clock::get()?;
-    
+
     // 检查是否已领取
     require!(!user_stake.claimed, StakingErrorCode::AlreadyClaimed);
-    
+
     // 检查是否未到期
     require!(
         clock.unix_timestamp < user_stake.end_time,
         StakingErrorCode::StakeMaturedUseRelease
     );
-    
+
     // 只返还本金
     let principal = user_stake.amount;
-    
+
     // 转账给用户（仅本金）
     token::transfer(
         CpiContext::new_with_signer(
@@ -260,27 +257,27 @@ pub fn early_withdraw(
         ),
         principal,
     )?;
-    
+
     // 将奖励返回到奖励池
     match user_stake.stake_type {
         StakeType::ShortTerm => {
             staking_state.total_staked_short -= user_stake.amount;
             staking_state.short_term_pool += user_stake.reward;
-        },
+        }
         StakeType::LongTerm => {
             staking_state.total_staked_long -= user_stake.amount;
             staking_state.long_term_pool += user_stake.reward;
-        },
+        }
     }
-    
+
     user_stake.claimed = true;
-    
+
     emit!(EarlyWithdrawEvent {
         user: ctx.accounts.user.key(),
         principal,
         forfeited_reward: user_stake.reward,
     });
-    
+
     Ok(())
 }
 

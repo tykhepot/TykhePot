@@ -19,3 +19,4 @@ init-if-needed = ["anchor-lang/init-if-needed"]
 [dependencies]
 anchor-lang = "0.30.0"
 anchor-spl = "0.30.0"
+# switchboard-v2 = "0.2.0"  # Temporarily disabled due to version conflict
