@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useWallet } from '@solana/wallet-adapter-react';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import WalletConnectButton from './WalletConnectButton';
 import { useTranslation } from '../i18n/LanguageContext';
 
 // 短地址显示
@@ -74,7 +74,7 @@ const Layout = ({ children }) => {
                 </div>
               ) : (
                 /* 未连接: 显示连接按钮 */
-                <WalletMultiButton className="wallet-connect-btn" />
+                <WalletConnectButton className="wallet-connect-btn" />
               )}
             </div>
 
@@ -124,7 +124,7 @@ const Layout = ({ children }) => {
                   </div>
                 ) : (
                   /* 未连接: 显示连接按钮 */
-                  <WalletMultiButton className="wallet-connect-btn-mobile" />
+                  <WalletConnectButton className="wallet-connect-btn-mobile" />
                 )}
               </div>
             </div>
