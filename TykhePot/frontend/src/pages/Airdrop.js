@@ -145,7 +145,7 @@ const Airdrop = () => {
       }
 
     // State 2: Claimed, free bet ready to place in Daily Pool
-    if (hasFreeClaim) {
+    if (hasFreeClaim && !freeBetActive) {
         return (
           <div className="ad-use-section">
             <div className="ad-ready-banner">
