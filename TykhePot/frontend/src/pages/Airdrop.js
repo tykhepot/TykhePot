@@ -23,8 +23,21 @@ const Airdrop = () => {
     setIsClaiming(true);
     setError('');
     setSuccessMsg('');
+
+    // Add timeout protection (30 seconds max)
+    const timeout = setTimeout(() => {
+      console.error('Claim operation timeout after 30 seconds');
+      setIsClaiming(false);
+      setError(language === 'en'
+        ? '⏰ Operation timed out. Please try again.'
+        : '⏰ 操作超时，请重试。');
+    }, 30000);
+
     try {
+      console.log('Starting claimFreeAirdrop...');
       const result = await sdk.claimFreeAirdrop();
+      console.log('Claim result:', result);
+
       if (result.success) {
         setSuccessMsg(language === 'en'
           ? '🎉 Airdrop claimed! Your free bet is ready to use.'
@@ -40,16 +53,21 @@ const Airdrop = () => {
       // Check for blockhash/RPC fetch errors
       if (err?.message?.includes('blockhash') || err?.message?.includes('Failed to fetch') ||
           err?.message?.includes('getRecentBlockhash') || err?.message?.includes('getLatestBlockhash') ||
-          err?.message?.includes('getLatestBlockhash') || err?.message?.includes('after 3 attempts')) {
+          err?.message?.includes('after 3 attempts')) {
         console.warn('RPC connection error:', err.message);
         setError(language === 'en'
           ? '⚠️ Network connection issue. Please check your internet and try again.'
           : '⚠️ 网络连接问题，请检查网络后重试。');
+      } else if (err?.message?.includes('User rejected')) {
+        setError(language === 'en'
+          ? 'Transaction cancelled by user.'
+          : '交易已被用户取消。');
       } else {
         setError(err.message || (language === 'en' ? 'Error' : '错误'));
       }
     } finally {
-      // Always reset claiming state to prevent UI stuck
+      // Clear timeout and reset claiming state
+      clearTimeout(timeout);
       setIsClaiming(false);
     }
   }, [wallet, sdk, language, refreshStats]);

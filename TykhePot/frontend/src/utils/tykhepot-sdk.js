@@ -783,7 +783,13 @@ export default class TykhePotSDK {
       // AND broadcasts, returns only the signature hash).
       let wcSig;
       try {
-        wcSig = await adapter.signAndSendTransaction(legacyTx);
+        const signTimeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Wallet signing timeout')), 30000)
+        );
+        wcSig = await Promise.race([
+          adapter.signAndSendTransaction(legacyTx),
+          signTimeout
+        ]);
       } catch (e) {
         console.warn("WC signAndSendTransaction:", e?.message);
       }
@@ -791,7 +797,13 @@ export default class TykhePotSDK {
       if (wcSig !== undefined) {
         // Tx already broadcast by mobile wallet. Use string-form confirm to
         // avoid blockhash-expiry issues from the mobile signing delay.
-        await this.connection.confirmTransaction(wcSig, "confirmed");
+        const confirmTimeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+        );
+        await Promise.race([
+          this.connection.confirmTransaction(wcSig, "confirmed"),
+          confirmTimeout
+        ]);
         return wcSig;
       }
 
@@ -799,8 +811,20 @@ export default class TykhePotSDK {
       // CRITICAL: we MUST return here and never reach the VersionedTransaction
       // path below — mobile wallets drop the WC session with error 1001 when
       // they receive a v0 (VersionedTransaction) payload they don't support.
-      const wcLegacySig = await this.wallet.sendTransaction(legacyTx, this.connection);
-      await this.connection.confirmTransaction(wcLegacySig, "confirmed");
+      const signTimeout2 = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Wallet signing timeout')), 30000)
+      );
+      const wcLegacySig = await Promise.race([
+        this.wallet.sendTransaction(legacyTx, this.connection),
+        signTimeout2
+      ]);
+      const confirmTimeout2 = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+      );
+      await Promise.race([
+        this.connection.confirmTransaction(wcLegacySig, "confirmed"),
+        confirmTimeout2
+      ]);
       return wcLegacySig;
     }
 
@@ -817,11 +841,28 @@ export default class TykhePotSDK {
       vtx.sign(additionalSigners);
     }
 
-    const sig = await this.wallet.sendTransaction(vtx, this.connection);
-    await this.connection.confirmTransaction(
-      { signature: sig, blockhash, lastValidBlockHeight },
-      "confirmed"
+    // Add timeout for wallet signing (30 seconds)
+    const signTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Wallet signing timeout')), 30000)
     );
+
+    const sig = await Promise.race([
+      this.wallet.sendTransaction(vtx, this.connection),
+      signTimeout
+    ]);
+
+    // Add timeout for transaction confirmation (60 seconds)
+    const confirmTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+    );
+
+    await Promise.race([
+      this.connection.confirmTransaction(
+        { signature: sig, blockhash, lastValidBlockHeight },
+        "confirmed"
+      ),
+      confirmTimeout
+    ]);
     return sig;
   }
 
