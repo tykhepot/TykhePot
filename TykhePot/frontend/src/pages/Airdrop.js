@@ -34,8 +34,10 @@ const Airdrop = () => {
         setError(result.error || (language === 'en' ? 'Claim failed' : '领取失败'));
       }
     } catch (err) {
+      console.error('Claim error:', err);
       setError(err.message || (language === 'en' ? 'Error' : '错误'));
     } finally {
+      // Always reset claiming state to prevent UI stuck
       setIsClaiming(false);
     }
   }, [wallet, sdk, language, refreshStats]);

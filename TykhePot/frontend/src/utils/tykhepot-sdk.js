@@ -690,6 +690,14 @@ function toBN(tpot) {
 }
 
 // ─── Draw seed from finalized blockhash ──────────────────────────────────────
+export function getRefereeBonusClaimPda(userPubkey) {
+  const [refereeBonusClaim] = PublicKey.findProgramAddressSync(
+    [Buffer.from("referee_claim"), userPubkey.toBuffer()],
+    PROGRAM
+  );
+  return [refereeBonusClaim];
+}
+
 export async function generateDrawSeed(connection) {
   const slot  = await connection.getSlot("finalized");
   const block = await connection.getBlock(slot, { maxSupportedTransactionVersion: 0 });
@@ -1458,6 +1466,46 @@ export default class TykhePotSDK {
           userToken,
           airdropVault:     new PublicKey(PROFIT_VAULT),
           airdropAuthority,
+          tokenProgram:     TOKEN_PROGRAM_ID,
+        })
+    );
+
+    return { success: true, tx: sig };
+  }
+
+  /// Claim 2% referee bonus for a user's first deposit.
+  ///
+  /// Permissionless — user can call this anytime after their first deposit with a referrer.
+  /// Awards a 2% bonus based on first deposit amount.
+  async claimRefereeBonus(userTokenAccountPubkey) {
+    const user = this.wallet.publicKey;
+    if (!user) throw new Error("Wallet not connected");
+
+    const [refereeBonusClaim] = PublicKey.findProgramAddressSync(
+      [Buffer.from("referee_claim"), user.toBuffer()],
+      PROGRAM
+    );
+    const [globalState] = PublicKey.findProgramAddressSync(
+      [Buffer.from("global_state")],
+      PROGRAM
+    );
+    const [referralVault] = PublicKey.findProgramAddressSync(
+      [Buffer.from("referral_vault")],
+      PROGRAM
+    );
+    const { REFERRAL_VAULT } = await import("../config/contract");
+
+    const userToken = await getAssociatedTokenAddress(new PublicKey(TOKEN_MINT), user);
+
+    const sig = await this._sendTx(
+      this.program.methods
+        .claimRefereeBonus()
+        .accounts({
+          user,
+          refereeBonusClaim,
+          globalState,
+          referralVault,
+          userToken,
           tokenProgram:     TOKEN_PROGRAM_ID,
         })
     );
