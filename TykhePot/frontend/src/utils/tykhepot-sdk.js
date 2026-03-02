@@ -749,6 +749,14 @@ export default class TykhePotSDK {
     console.log('[SDK] _sendTx started');
     const MAX_RETRIES = 3;
 
+    // Get wallet adapter reference
+    const walletAdapter = this.wallet.wallet?.adapter;
+
+    // Check if wallet is truly connected
+    if (!this.wallet.connected || !this.wallet.publicKey) {
+      throw new Error('Wallet not connected. Please connect your wallet first.');
+    }
+
     // Build Anchor's legacy tx to get the compiled instruction(s).
     console.log('[SDK] Building transaction...');
     const legacyTx = await methodCall.transaction();
@@ -777,11 +785,10 @@ export default class TykhePotSDK {
     // ── Path 1: WalletConnect ────────────────────────────────────────────────
     // WalletConnectWalletAdapter exposes signAndSendTransaction() but
     // Phantom/Solflare adapters do not — use this as a reliable detector.
-    const adapter = this.wallet.wallet?.adapter;
-    if (typeof adapter?.signAndSendTransaction === "function") {
+    if (typeof walletAdapter?.signAndSendTransaction === "function") {
       console.log('[SDK] Using WalletConnect path');
-      console.log('[SDK] Wallet adapter name:', adapter.name);
-      console.log('[SDK] Adapter type:', adapter.constructor.name);
+      console.log('[SDK] Wallet adapter name:', walletAdapter.name);
+      console.log('[SDK] Adapter type:', walletAdapter.constructor.name);
       console.log('[SDK] Wallet connected:', this.wallet.connected);
       console.log('[SDK] Wallet public key:', this.wallet.publicKey?.toBase58());
 
@@ -803,7 +810,7 @@ export default class TykhePotSDK {
           setTimeout(() => reject(new Error('Wallet signing timeout')), 30000)
         );
         wcSig = await Promise.race([
-          adapter.signAndSendTransaction(legacyTx),
+          walletAdapter.signAndSendTransaction(legacyTx),
           signTimeout
         ]);
         console.log('[SDK] WalletConnect signAndSendTransaction completed:', wcSig);
@@ -887,27 +894,20 @@ export default class TykhePotSDK {
       }
     }
 
-    // ── Path 2: Phantom / browser wallets (VersionedTransaction) ─────────────
-    console.log('[SDK] Using Phantom/browser wallet path');
-    console.log('[SDK] Wallet adapter:', this.wallet.wallet?.adapter?.name);
+    // ── Path 2: Phantom / browser wallets (Legacy Transaction) ─────────────
+    console.log('[SDK] Using Phantom/browser wallet path (Legacy)');
+    console.log('[SDK] Wallet adapter:', walletAdapter?.name);
     console.log('[SDK] Wallet connected:', this.wallet.connected);
 
-    const message = new TransactionMessage({
-      payerKey:        this.wallet.publicKey,
-      recentBlockhash: blockhash,
-      instructions:    legacyTx.instructions,
-    }).compileToV0Message();
-
-    const vtx = new VersionedTransaction(message);
-
-    console.log('[SDK] VersionedTransaction created');
-    console.log('[SDK] Message:', message);
-    console.log('[SDK] Transaction:', vtx);
-
+    // Prepare legacy transaction
+    legacyTx.recentBlockhash = blockhash;
+    legacyTx.feePayer = this.wallet.publicKey;
     if (additionalSigners && additionalSigners.length > 0) {
-      console.log('[SDK] Adding additional signers:', additionalSigners.length);
-      vtx.sign(additionalSigners);
+      legacyTx.partialSign(...additionalSigners);
     }
+
+    console.log('[SDK] Legacy transaction prepared');
+    console.log('[SDK] Transaction instructions count:', legacyTx.instructions.length);
 
     // Add timeout for wallet signing (30 seconds)
     console.log('[SDK] Sending transaction to wallet for signing...');
@@ -918,7 +918,7 @@ export default class TykhePotSDK {
     let sig;
     try {
       sig = await Promise.race([
-        this.wallet.sendTransaction(vtx, this.connection),
+        this.wallet.sendTransaction(legacyTx, this.connection),
         signTimeout
       ]);
       console.log('[SDK] Transaction signed and sent:', sig);
@@ -926,6 +926,7 @@ export default class TykhePotSDK {
       console.error('[SDK] sendTransaction error:', e);
       console.error('[SDK] Error name:', e.name);
       console.error('[SDK] Error message:', e.message);
+      console.error('[SDK] Error stack:', e.stack);
       throw e;
     }
 
@@ -939,10 +940,7 @@ export default class TykhePotSDK {
     try {
       // Try 'processed' first - much faster than 'confirmed'
       await Promise.race([
-        this.connection.confirmTransaction(
-          { signature: sig, blockhash, lastValidBlockHeight },
-          "processed"
-        ),
+        this.connection.confirmTransaction(sig, "processed"),
         confirmTimeout
       ]);
       console.log('[SDK] Transaction confirmed (processed)');
@@ -955,10 +953,7 @@ export default class TykhePotSDK {
           setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
         );
         await Promise.race([
-          this.connection.confirmTransaction(
-            { signature: sig, blockhash, lastValidBlockHeight },
-            "confirmed"
-          ),
+          this.connection.confirmTransaction(sig, "confirmed"),
           confirmTimeout2
         ]);
         console.log('[SDK] Transaction confirmed (confirmed)');
