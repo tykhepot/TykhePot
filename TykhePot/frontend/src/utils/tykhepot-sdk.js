@@ -746,15 +746,18 @@ export default class TykhePotSDK {
   //    unsigned tx reaches the extension cleanly and is signed there.
 
   async _sendTx(methodCall, additionalSigners = []) {
+    console.log('[SDK] _sendTx started');
     let blockhash, lastValidBlockHeight;
     const MAX_RETRIES = 3;
 
     // Retry blockhash fetch with exponential backoff
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
+        console.log(`[SDK] Fetching blockhash (attempt ${attempt + 1}/${MAX_RETRIES})...`);
         const result = await this.connection.getLatestBlockhash("confirmed");
         blockhash = result.blockhash;
         lastValidBlockHeight = result.lastValidBlockHeight;
+        console.log('[SDK] Blockhash fetched successfully');
         break;
       } catch (err) {
         console.warn(`Blockhash fetch attempt ${attempt + 1}/${MAX_RETRIES} failed:`, err?.message);
@@ -767,13 +770,16 @@ export default class TykhePotSDK {
     }
 
     // Build Anchor's legacy tx to get the compiled instruction(s).
+    console.log('[SDK] Building transaction...');
     const legacyTx = await methodCall.transaction();
+    console.log('[SDK] Transaction built');
 
     // ── Path 1: WalletConnect ────────────────────────────────────────────────
     // WalletConnectWalletAdapter exposes signAndSendTransaction() but
     // Phantom/Solflare adapters do not — use this as a reliable detector.
     const adapter = this.wallet.wallet?.adapter;
     if (typeof adapter?.signAndSendTransaction === "function") {
+      console.log('[SDK] Using WalletConnect path');
       // Prepare the legacy tx (feePayer + blockhash required for serialization).
       legacyTx.recentBlockhash = blockhash;
       legacyTx.feePayer        = this.wallet.publicKey;
@@ -783,6 +789,7 @@ export default class TykhePotSDK {
       // AND broadcasts, returns only the signature hash).
       let wcSig;
       try {
+        console.log('[SDK] Attempting WalletConnect signAndSendTransaction...');
         const signTimeout = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Wallet signing timeout')), 30000)
         );
@@ -790,6 +797,7 @@ export default class TykhePotSDK {
           adapter.signAndSendTransaction(legacyTx),
           signTimeout
         ]);
+        console.log('[SDK] WalletConnect signAndSendTransaction completed:', wcSig);
       } catch (e) {
         console.warn("WC signAndSendTransaction:", e?.message);
       }
@@ -797,6 +805,7 @@ export default class TykhePotSDK {
       if (wcSig !== undefined) {
         // Tx already broadcast by mobile wallet. Use string-form confirm to
         // avoid blockhash-expiry issues from the mobile signing delay.
+        console.log('[SDK] Confirming transaction (WalletConnect broadcast)...');
         const confirmTimeout = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
         );
@@ -804,6 +813,7 @@ export default class TykhePotSDK {
           this.connection.confirmTransaction(wcSig, "confirmed"),
           confirmTimeout
         ]);
+        console.log('[SDK] Transaction confirmed');
         return wcSig;
       }
 
@@ -811,6 +821,7 @@ export default class TykhePotSDK {
       // CRITICAL: we MUST return here and never reach the VersionedTransaction
       // path below — mobile wallets drop the WC session with error 1001 when
       // they receive a v0 (VersionedTransaction) payload they don't support.
+      console.log('[SDK] Attempting fallback: sendTransaction...');
       const signTimeout2 = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Wallet signing timeout')), 30000)
       );
@@ -818,6 +829,7 @@ export default class TykhePotSDK {
         this.wallet.sendTransaction(legacyTx, this.connection),
         signTimeout2
       ]);
+      console.log('[SDK] Transaction sent, confirming...');
       const confirmTimeout2 = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
       );
@@ -825,10 +837,12 @@ export default class TykhePotSDK {
         this.connection.confirmTransaction(wcLegacySig, "confirmed"),
         confirmTimeout2
       ]);
+      console.log('[SDK] Transaction confirmed (fallback path)');
       return wcLegacySig;
     }
 
     // ── Path 2: Phantom / browser wallets (VersionedTransaction) ─────────────
+    console.log('[SDK] Using Phantom/browser wallet path');
     const message = new TransactionMessage({
       payerKey:        this.wallet.publicKey,
       recentBlockhash: blockhash,
@@ -842,6 +856,7 @@ export default class TykhePotSDK {
     }
 
     // Add timeout for wallet signing (30 seconds)
+    console.log('[SDK] Sending transaction to wallet for signing...');
     const signTimeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Wallet signing timeout')), 30000)
     );
@@ -850,8 +865,10 @@ export default class TykhePotSDK {
       this.wallet.sendTransaction(vtx, this.connection),
       signTimeout
     ]);
+    console.log('[SDK] Transaction signed and sent:', sig);
 
     // Add timeout for transaction confirmation (60 seconds)
+    console.log('[SDK] Waiting for transaction confirmation...');
     const confirmTimeout = new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
     );
@@ -863,6 +880,7 @@ export default class TykhePotSDK {
       ),
       confirmTimeout
     ]);
+    console.log('[SDK] Transaction confirmed');
     return sig;
   }
 
@@ -1041,10 +1059,25 @@ export default class TykhePotSDK {
   // ── Write: claimFreeAirdrop ─────────────────────────────────────────────────
 
   async claimFreeAirdrop() {
+    console.log('[SDK] claimFreeAirdrop called');
     const user = this.wallet.publicKey;
     if (!user) throw new Error("Wallet not connected");
 
+    // Check if program is accessible on devnet
+    try {
+      console.log('[SDK] Checking program accessibility...');
+      const account = await this.connection.getAccountInfo(PROGRAM);
+      if (!account) {
+        throw new Error(`Program ${PROGRAM.toBase58()} not found on devnet. The contract may not be deployed.`);
+      }
+      console.log('[SDK] Program is accessible');
+    } catch (err) {
+      console.error('[SDK] Program check failed:', err);
+      throw new Error(`Cannot access program on devnet: ${err.message}. Please ensure the contract is deployed.`);
+    }
+
     const [airdropClaim] = getAirdropClaimPda(user);
+    console.log('[SDK] AirdropClaim PDA:', airdropClaim.toBase58());
 
     const sig = await this._sendTx(
       this.program.methods
@@ -1056,6 +1089,7 @@ export default class TykhePotSDK {
         })
     );
 
+    console.log('[SDK] claimFreeAirdrop completed');
     return { success: true, tx: sig };
   }
 
