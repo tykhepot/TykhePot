@@ -747,10 +747,15 @@ export default class TykhePotSDK {
 
   async _sendTx(methodCall, additionalSigners = []) {
     console.log('[SDK] _sendTx started');
-    let blockhash, lastValidBlockHeight;
     const MAX_RETRIES = 3;
 
-    // Retry blockhash fetch with exponential backoff
+    // Build Anchor's legacy tx to get the compiled instruction(s).
+    console.log('[SDK] Building transaction...');
+    const legacyTx = await methodCall.transaction();
+    console.log('[SDK] Transaction built');
+
+    // Fetch blockhash AFTER building transaction to minimize time gap
+    let blockhash, lastValidBlockHeight;
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
         console.log(`[SDK] Fetching blockhash (attempt ${attempt + 1}/${MAX_RETRIES})...`);
@@ -768,11 +773,6 @@ export default class TykhePotSDK {
         await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
       }
     }
-
-    // Build Anchor's legacy tx to get the compiled instruction(s).
-    console.log('[SDK] Building transaction...');
-    const legacyTx = await methodCall.transaction();
-    console.log('[SDK] Transaction built');
 
     // ── Path 1: WalletConnect ────────────────────────────────────────────────
     // WalletConnectWalletAdapter exposes signAndSendTransaction() but
@@ -807,14 +807,31 @@ export default class TykhePotSDK {
         // avoid blockhash-expiry issues from the mobile signing delay.
         console.log('[SDK] Confirming transaction (WalletConnect broadcast)...');
         const confirmTimeout = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+          setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
         );
-        await Promise.race([
-          this.connection.confirmTransaction(wcSig, "confirmed"),
-          confirmTimeout
-        ]);
-        console.log('[SDK] Transaction confirmed');
-        return wcSig;
+        try {
+          // Try 'processed' first - much faster
+          await Promise.race([
+            this.connection.confirmTransaction(wcSig, "processed"),
+            confirmTimeout
+          ]);
+          console.log('[SDK] Transaction confirmed (processed)');
+          return wcSig;
+        } catch (e) {
+          if (e.message?.includes('Transaction confirmation timeout')) {
+            // Fallback to 'confirmed'
+            const confirmTimeout2 = new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+            );
+            await Promise.race([
+              this.connection.confirmTransaction(wcSig, "confirmed"),
+              confirmTimeout2
+            ]);
+            console.log('[SDK] Transaction confirmed (fallback)');
+            return wcSig;
+          }
+          throw e;
+        }
       }
 
       // Attempt B: Legacy signTransaction + client-side broadcast.
@@ -831,14 +848,31 @@ export default class TykhePotSDK {
       ]);
       console.log('[SDK] Transaction sent, confirming...');
       const confirmTimeout2 = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+        setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
       );
-      await Promise.race([
-        this.connection.confirmTransaction(wcLegacySig, "confirmed"),
-        confirmTimeout2
-      ]);
-      console.log('[SDK] Transaction confirmed (fallback path)');
-      return wcLegacySig;
+      try {
+        // Try 'processed' first
+        await Promise.race([
+          this.connection.confirmTransaction(wcLegacySig, "processed"),
+          confirmTimeout2
+        ]);
+        console.log('[SDK] Transaction confirmed (processed)');
+        return wcLegacySig;
+      } catch (e) {
+        if (e.message?.includes('Transaction confirmation timeout')) {
+          // Fallback to 'confirmed'
+          const confirmTimeout3 = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+          );
+          await Promise.race([
+            this.connection.confirmTransaction(wcLegacySig, "confirmed"),
+            confirmTimeout3
+          ]);
+          console.log('[SDK] Transaction confirmed (fallback)');
+          return wcLegacySig;
+        }
+        throw e;
+      }
     }
 
     // ── Path 2: Phantom / browser wallets (VersionedTransaction) ─────────────
@@ -867,21 +901,43 @@ export default class TykhePotSDK {
     ]);
     console.log('[SDK] Transaction signed and sent:', sig);
 
-    // Add timeout for transaction confirmation (60 seconds)
-    console.log('[SDK] Waiting for transaction confirmation...');
+    // Use faster confirmation strategy to avoid blockhash expiry
+    // First try 'processed' (faster), if that fails use 'confirmed'
+    console.log('[SDK] Waiting for transaction confirmation (processed)...');
     const confirmTimeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+      setTimeout(() => reject(new Error('Transaction confirmation timeout')), 30000)
     );
 
-    await Promise.race([
-      this.connection.confirmTransaction(
-        { signature: sig, blockhash, lastValidBlockHeight },
-        "confirmed"
-      ),
-      confirmTimeout
-    ]);
-    console.log('[SDK] Transaction confirmed');
-    return sig;
+    try {
+      // Try 'processed' first - much faster than 'confirmed'
+      await Promise.race([
+        this.connection.confirmTransaction(
+          { signature: sig, blockhash, lastValidBlockHeight },
+          "processed"
+        ),
+        confirmTimeout
+      ]);
+      console.log('[SDK] Transaction confirmed (processed)');
+      return sig;
+    } catch (e) {
+      if (e.message?.includes('Transaction confirmation timeout')) {
+        // Try 'confirmed' as fallback
+        console.log('[SDK] Retrying with "confirmed" commitment...');
+        const confirmTimeout2 = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Transaction confirmation timeout')), 60000)
+        );
+        await Promise.race([
+          this.connection.confirmTransaction(
+            { signature: sig, blockhash, lastValidBlockHeight },
+            "confirmed"
+          ),
+          confirmTimeout2
+        ]);
+        console.log('[SDK] Transaction confirmed (confirmed)');
+        return sig;
+      }
+      throw e;
+    }
   }
 
   // ── Read helpers ────────────────────────────────────────────────────────────
