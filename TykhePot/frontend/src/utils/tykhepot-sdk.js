@@ -780,10 +780,19 @@ export default class TykhePotSDK {
     const adapter = this.wallet.wallet?.adapter;
     if (typeof adapter?.signAndSendTransaction === "function") {
       console.log('[SDK] Using WalletConnect path');
+      console.log('[SDK] Wallet adapter name:', adapter.name);
+      console.log('[SDK] Adapter type:', adapter.constructor.name);
+      console.log('[SDK] Wallet connected:', this.wallet.connected);
+      console.log('[SDK] Wallet public key:', this.wallet.publicKey?.toBase58());
+
       // Prepare the legacy tx (feePayer + blockhash required for serialization).
       legacyTx.recentBlockhash = blockhash;
       legacyTx.feePayer        = this.wallet.publicKey;
       if (additionalSigners.length > 0) legacyTx.partialSign(...additionalSigners);
+
+      console.log('[SDK] Transaction prepared with blockhash:', blockhash);
+      console.log('[SDK] Transaction instructions count:', legacyTx.instructions.length);
+      console.log('[SDK] Transaction recentBlockhash:', legacyTx.recentBlockhash);
 
       // Attempt A: solana_signAndSendTransaction (atomic — mobile wallet signs
       // AND broadcasts, returns only the signature hash).
@@ -799,7 +808,10 @@ export default class TykhePotSDK {
         ]);
         console.log('[SDK] WalletConnect signAndSendTransaction completed:', wcSig);
       } catch (e) {
-        console.warn("WC signAndSendTransaction:", e?.message);
+        console.error('[SDK] WC signAndSendTransaction error:', e);
+        console.error('[SDK] Error name:', e.name);
+        console.error('[SDK] Error message:', e.message);
+        console.error('[SDK] Error stack:', e.stack);
       }
 
       if (wcSig !== undefined) {
@@ -877,6 +889,9 @@ export default class TykhePotSDK {
 
     // ── Path 2: Phantom / browser wallets (VersionedTransaction) ─────────────
     console.log('[SDK] Using Phantom/browser wallet path');
+    console.log('[SDK] Wallet adapter:', this.wallet.wallet?.adapter?.name);
+    console.log('[SDK] Wallet connected:', this.wallet.connected);
+
     const message = new TransactionMessage({
       payerKey:        this.wallet.publicKey,
       recentBlockhash: blockhash,
@@ -885,7 +900,12 @@ export default class TykhePotSDK {
 
     const vtx = new VersionedTransaction(message);
 
+    console.log('[SDK] VersionedTransaction created');
+    console.log('[SDK] Message accounts:', message.staticAccounts.length);
+    console.log('[SDK] Message instructions:', message.compiledInstructions.length);
+
     if (additionalSigners.length > 0) {
+      console.log('[SDK] Adding additional signers:', additionalSigners.length);
       vtx.sign(additionalSigners);
     }
 
@@ -895,11 +915,19 @@ export default class TykhePotSDK {
       setTimeout(() => reject(new Error('Wallet signing timeout')), 30000)
     );
 
-    const sig = await Promise.race([
-      this.wallet.sendTransaction(vtx, this.connection),
-      signTimeout
-    ]);
-    console.log('[SDK] Transaction signed and sent:', sig);
+    let sig;
+    try {
+      sig = await Promise.race([
+        this.wallet.sendTransaction(vtx, this.connection),
+        signTimeout
+      ]);
+      console.log('[SDK] Transaction signed and sent:', sig);
+    } catch (e) {
+      console.error('[SDK] sendTransaction error:', e);
+      console.error('[SDK] Error name:', e.name);
+      console.error('[SDK] Error message:', e.message);
+      throw e;
+    }
 
     // Use faster confirmation strategy to avoid blockhash expiry
     // First try 'processed' (faster), if that fails use 'confirmed'
