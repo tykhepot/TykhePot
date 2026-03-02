@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program;
-use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Burn, Mint, Token, TokenAccount, Transfer, SetAuthority};
 
 pub mod airdrop;
 pub mod randomness;
@@ -450,6 +450,7 @@ pub mod royalpot {
         timelock_duration: Option<i64>,
     ) -> Result<()> {
         let state = &mut ctx.accounts.global_state;
+        let global_state_pda = ctx.accounts.global_state.key();
         state.token_mint = ctx.accounts.token_mint.key();
         state.platform_fee_vault = platform_fee_vault;
         state.airdrop_vault = ctx.accounts.airdrop_vault.key();
@@ -463,6 +464,21 @@ pub mod royalpot {
         state.timelock_release = 0;
         state.bump = ctx.bumps.global_state;
         state._padding = [0u8; 5];
+
+        // Set AIRDROP_VAULT authority to global_state PDA
+        // This allows the program to transfer tokens from the vault
+        msg!("Setting AIRDROP_VAULT authority to global_state PDA");
+        token::set_authority(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                SetAuthority {
+                    account: ctx.accounts.airdrop_vault.to_account_info(),
+                    current_authority: ctx.accounts.payer.to_account_info(),
+                    new_authority: global_state_pda,
+                },
+            ),
+        )?;
+
         Ok(())
     }
 
@@ -1658,7 +1674,8 @@ pub struct Initialize<'info> {
 
     pub token_mint: Account<'info, Mint>,
 
-    /// The token account that funds free bets. Authority must be global_state PDA.
+        /// The token account that funds free bets. Authority will be set to global_state PDA.
+    #[account(mut)]
     pub airdrop_vault: Account<'info, TokenAccount>,
 
     pub system_program: Program<'info, System>,
