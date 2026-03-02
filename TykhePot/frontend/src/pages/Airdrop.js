@@ -37,13 +37,14 @@ const Airdrop = () => {
       // Enhanced error handling
       console.error('Claim error:', err);
 
-      // Check for blockhash fetch error (Solana Web3.js internal issue)
+      // Check for blockhash/RPC fetch errors
       if (err?.message?.includes('blockhash') || err?.message?.includes('Failed to fetch') ||
-          err?.message?.includes('getRecentBlockhash') || err?.message?.includes('getLatestBlockhash')) {
-        console.warn('Blockhash fetch error (expected):', err.message);
+          err?.message?.includes('getRecentBlockhash') || err?.message?.includes('getLatestBlockhash') ||
+          err?.message?.includes('getLatestBlockhash') || err?.message?.includes('after 3 attempts')) {
+        console.warn('RPC connection error:', err.message);
         setError(language === 'en'
-          ? '⚠️ Network query unavailable (new SDK version limitation)'
-          : '⚠️ 网络查询不可用（新版本SDK暂时不支持）');
+          ? '⚠️ Network connection issue. Please check your internet and try again.'
+          : '⚠️ 网络连接问题，请检查网络后重试。');
       } else {
         setError(err.message || (language === 'en' ? 'Error' : '错误'));
       }

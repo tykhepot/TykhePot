@@ -746,8 +746,25 @@ export default class TykhePotSDK {
   //    unsigned tx reaches the extension cleanly and is signed there.
 
   async _sendTx(methodCall, additionalSigners = []) {
-    const { blockhash, lastValidBlockHeight } =
-      await this.connection.getLatestBlockhash("confirmed");
+    let blockhash, lastValidBlockHeight;
+    const MAX_RETRIES = 3;
+
+    // Retry blockhash fetch with exponential backoff
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        const result = await this.connection.getLatestBlockhash("confirmed");
+        blockhash = result.blockhash;
+        lastValidBlockHeight = result.lastValidBlockHeight;
+        break;
+      } catch (err) {
+        console.warn(`Blockhash fetch attempt ${attempt + 1}/${MAX_RETRIES} failed:`, err?.message);
+        if (attempt === MAX_RETRIES - 1) {
+          throw new Error(`Failed to get blockhash after ${MAX_RETRIES} attempts. Please try again or check your network connection.`);
+        }
+        // Wait before retry (exponential backoff: 1s, 2s, 4s)
+        await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+      }
+    }
 
     // Build Anchor's legacy tx to get the compiled instruction(s).
     const legacyTx = await methodCall.transaction();
