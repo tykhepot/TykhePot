@@ -1,13 +1,12 @@
 import React, { useState, Component, useMemo, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ConnectionProvider, WalletProvider, useWallet } from '@solana/wallet-adapter-react';
-import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
+import { WalletModalProvider, WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
 
 import { AppProvider } from './context/AppContext';
 import { LanguageProvider } from './i18n/LanguageContext';
 import Layout from './components/Layout';
-import WalletConnectButton from './components/WalletConnectButton';
 import RiskDisclaimer from './components/RiskDisclaimer';
 import InitPage from './pages/InitPage';
 import Home from './pages/Home';
@@ -24,6 +23,7 @@ import ContractTest from './pages/ContractTest';
 import Whitepaper from './pages/Whitepaper';
 import DrawHistory from './pages/DrawHistory';
 
+import '@solana/wallet-adapter-react-ui/styles.css';
 import './styles.css';
 
 // Error Boundary to catch rendering errors
