@@ -1187,8 +1187,16 @@ export default class TykhePotSDK {
     const [freeDeposit]   = getFreeDepositPda(poolType, user);
     const poolVaultPubkey = new PublicKey(vaultForPool(poolType));
 
-    const sig = await this._sendTx(
-      this.program.methods
+    console.log('[SDK] useFreeBet: Starting...');
+    console.log('[SDK] User:', user.toBase58());
+    console.log('[SDK] Pool type:', poolType);
+    console.log('[SDK] Pool vault:', poolVaultPubkey.toBase58());
+    console.log('[SDK] Airdrop vault:', AIRDROP_VAULT);
+
+    try {
+      // Use Anchor's built-in .rpc() method which handles all transaction construction
+      // and wallet communication internally. This is more compatible with Phantom wallet.
+      const tx = this.program.methods
         .useFreeBet(poolType)
         .accounts({
           user,
@@ -1200,10 +1208,20 @@ export default class TykhePotSDK {
           poolVault:    poolVaultPubkey,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: SystemProgram.programId,
-        })
-    );
+        });
 
-    return { success: true, tx: sig };
+      console.log('[SDK] useFreeBet: Transaction built, sending...');
+      const sig = await tx.rpc();
+      console.log('[SDK] useFreeBet: Transaction successful:', sig);
+
+      return { success: true, tx: sig };
+    } catch (err) {
+      console.error('[SDK] useFreeBet: Error:', err);
+      console.error('[SDK] useFreeBet: Error name:', err?.name);
+      console.error('[SDK] useFreeBet: Error message:', err?.message);
+      console.error('[SDK] useFreeBet: Error stack:', err?.stack);
+      throw err;
+    }
   }
 
   // ── Write: executeDraw (permissionless crank, ≥12 participants) ──────────────
