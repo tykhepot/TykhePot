@@ -138,7 +138,7 @@ const DailyPool = () => {
             <div className="info-grid-modern">
               <div className="info-item-modern">
                 <span className="info-label-modern">{language === 'en' ? 'Participants' : '参与人数'}</span>
-                <span className="info-value-modern">{stats.dailyParticipants || 0} / 12</span>
+                <span className="info-value-modern">{stats.dailyParticipants > 0 ? `${stats.dailyParticipants} / 12` : language === 'en' ? '0 / 12' : '0 / 12'}</span>
               </div>
               <div className="info-item-modern">
                 <span className="info-label-modern">{language === 'en' ? 'Min Deposit' : '最低投入'}</span>
