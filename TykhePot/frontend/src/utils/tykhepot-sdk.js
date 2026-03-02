@@ -901,10 +901,10 @@ export default class TykhePotSDK {
     const vtx = new VersionedTransaction(message);
 
     console.log('[SDK] VersionedTransaction created');
-    console.log('[SDK] Message accounts:', message.staticAccounts.length);
-    console.log('[SDK] Message instructions:', message.compiledInstructions.length);
+    console.log('[SDK] Message:', message);
+    console.log('[SDK] Transaction:', vtx);
 
-    if (additionalSigners.length > 0) {
+    if (additionalSigners && additionalSigners.length > 0) {
       console.log('[SDK] Adding additional signers:', additionalSigners.length);
       vtx.sign(additionalSigners);
     }
